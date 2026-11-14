@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { classifyStatus, generateInteractionJson, generateJson, parseCompletedInteraction, retryWaitMs } from './generateJson.mjs'
+import { attemptTimeoutMs, classifyStatus, generateInteractionJson, generateJson, parseCompletedInteraction, retryWaitMs } from './generateJson.mjs'
 
 const draft = {
   candidates: [{ content: { parts: [{ text: '{"steps":[]}' }] } }],
@@ -196,6 +196,136 @@ test('reads a completed interaction and rejects unfinished output', async () => 
   })
   assert.equal(explained.citations[0].eventId, 'alert_b2')
 })
+
+test('accepts an interaction that arrives after 20 seconds and before 45 seconds', async () => {
+  assert.equal(attemptTimeoutMs(undefined), 45_000)
+  assert.equal(attemptTimeoutMs('90000'), 60_000)
+  const timing = mockTiming()
+  const completed = interactionPayload('completed', '{"steps":[{"instruction":"Stir"}]}')
+  let calls = 0
+  const value = await generateInteractionJson('prompt', {
+    ...interactionOptions(timing),
+    fetchImpl: async (_url, request) => {
+      calls += 1
+      timing.advance(30_000)
+      assert.equal(request.signal.aborted, false)
+      return fakeResponse(200, completed)
+    },
+  })
+  assert.equal(calls, 1)
+  assert.equal(timing.elapsed(), 30_000)
+  assert.equal(value.steps[0].instruction, 'Stir')
+})
+
+test('cancels outstanding work when the 60 second budget expires', async () => {
+  const timing = mockTiming()
+  let calls = 0
+  const stops = []
+  await assert.rejects(
+    () => generateInteractionJson('prompt', {
+      ...interactionOptions(timing),
+      fetchImpl: async (_url, request) => {
+        calls += 1
+        while (!request.signal.aborted) assert.equal(timing.advanceToNext(), true)
+        stops.push(timing.elapsed())
+        throw abortError()
+      },
+    }),
+    (error) => error.message === 'timeout',
+  )
+  assert.equal(calls, 2)
+  assert.deepEqual(stops, [45_000, 60_000])
+})
+
+test('retries a transient failure when the success still fits the budget', async () => {
+  const timing = mockTiming()
+  const completed = interactionPayload('completed', '{"steps":[{"instruction":"Stir"}]}')
+  let calls = 0
+  const value = await generateInteractionJson('prompt', {
+    ...interactionOptions(timing),
+    fetchImpl: async (_url, request) => {
+      calls += 1
+      if (calls === 1) {
+        timing.advance(1_000)
+        return fakeResponse(503, {})
+      }
+      timing.advance(20_000)
+      assert.equal(request.signal.aborted, false)
+      return fakeResponse(200, completed)
+    },
+  })
+  assert.equal(calls, 2)
+  assert.equal(timing.elapsed() < 60_000, true)
+  assert.equal(value.steps[0].instruction, 'Stir')
+})
+
+function interactionOptions(timing) {
+  return {
+    model: 'gemini-4-hydrogen',
+    apiKey: 'test-key',
+    attemptTimeoutMs: 45_000,
+    budgetMs: 60_000,
+    sleep: (ms) => timing.sleep(ms),
+    now: () => timing.now(),
+    schedule: (ms, fn) => timing.schedule(ms, fn),
+    cancelSchedule: (handle) => timing.cancel(handle),
+    random: () => 0,
+  }
+}
+
+function mockTiming() {
+  let clock = 0
+  const tasks = []
+  function runDue() {
+    let progressed = true
+    while (progressed) {
+      progressed = false
+      const next = tasks
+        .filter((task) => !task.cancelled && !task.ran && task.at <= clock)
+        .sort((left, right) => left.at - right.at)[0]
+      if (next) {
+        next.ran = true
+        next.fn()
+        progressed = true
+      }
+    }
+  }
+  return {
+    now: () => clock,
+    elapsed: () => clock,
+    schedule(ms, fn) {
+      const task = { at: clock + ms, fn, cancelled: false, ran: false }
+      tasks.push(task)
+      return task
+    },
+    cancel(task) {
+      if (task) task.cancelled = true
+    },
+    async sleep(ms) {
+      clock += ms
+      runDue()
+    },
+    advance(ms) {
+      clock += ms
+      runDue()
+    },
+    advanceToNext() {
+      const next = tasks
+        .filter((task) => !task.cancelled && !task.ran)
+        .sort((left, right) => left.at - right.at)[0]
+      if (!next) return false
+      clock = next.at
+      runDue()
+      return true
+    },
+  }
+}
+
+function abortError() {
+  const error = new Error('aborted')
+  error.name = 'AbortError'
+  return error
+}
 
 function interactionPayload(status, text) {
   return {

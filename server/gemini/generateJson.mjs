@@ -1,7 +1,8 @@
 export const DEFAULT_MODEL = 'gemini-4-hydrogen'
 export const EXTRACTION_BUDGET_MS = 60_000
 export const MAX_RETRIES = 2
-export const DEFAULT_ATTEMPT_TIMEOUT_MS = 20_000
+export const DEFAULT_ATTEMPT_TIMEOUT_MS = 45_000
+const MIN_ATTEMPT_MS = 250
 
 export function attemptTimeoutMs(configured, budgetMs = EXTRACTION_BUDGET_MS) {
   const value = Number(configured)
@@ -84,23 +85,29 @@ export function parseCompletedInteraction(payload, shape = 'steps') {
 }
 
 export async function generateJson(prompt, options) {
-  return runAttempts(options, (timeoutMs, fetchImpl) => oneAttempt({
+  return runAttempts(options, (timeoutMs, fetchImpl, deadlineSignal, schedule, cancelSchedule) => oneAttempt({
     prompt,
     model: options.model,
     apiKey: options.apiKey,
     timeoutMs,
     fetchImpl,
+    deadlineSignal,
+    schedule,
+    cancelSchedule,
   }))
 }
 
 export async function generateInteractionJson(prompt, options) {
-  return runAttempts(options, (timeoutMs, fetchImpl) => oneInteraction({
+  return runAttempts(options, (timeoutMs, fetchImpl, deadlineSignal, schedule, cancelSchedule) => oneInteraction({
     prompt,
     model: options.model,
     apiKey: options.apiKey,
     timeoutMs,
     fetchImpl,
     shape: options.shape ?? 'steps',
+    deadlineSignal,
+    schedule,
+    cancelSchedule,
   }))
 }
 
@@ -113,33 +120,47 @@ async function runAttempts(options, perform) {
   const random = options.random ?? Math.random
   const budgetMs = options.budgetMs ?? EXTRACTION_BUDGET_MS
   const maxRetries = options.maxRetries ?? MAX_RETRIES
+  const schedule = options.schedule ?? ((ms, fn) => setTimeout(fn, ms))
+  const cancelSchedule = options.cancelSchedule ?? ((handle) => clearTimeout(handle))
   const started = now()
+  const deadline = new AbortController()
+  const deadlineTimer = schedule(budgetMs, () => deadline.abort())
   let lastError = new GeminiError(504, 'timeout')
 
-  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
-    const remainingMs = budgetMs - (now() - started)
-    if (remainingMs < 250) throw lastError
-    const outcome = await perform(Math.min(options.attemptTimeoutMs, remainingMs), fetchImpl)
-    if (outcome.ok) return outcome.value
-    lastError = outcome.error
-    const retriesLeft = attempt < maxRetries && outcome.retry
-    const wait = retriesLeft
-      ? retryWaitMs({
-          attempt: attempt + 1,
-          retryAfter: outcome.retryAfter,
-          remainingMs: budgetMs - (now() - started),
-          random,
-        })
-      : null
-    if (wait == null) throw lastError
-    await sleep(wait)
+  try {
+    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+      const remainingMs = budgetMs - (now() - started)
+      if (remainingMs < MIN_ATTEMPT_MS || deadline.signal.aborted) throw lastError
+      const outcome = await perform(
+        Math.min(options.attemptTimeoutMs, remainingMs),
+        fetchImpl,
+        deadline.signal,
+        schedule,
+        cancelSchedule,
+      )
+      if (outcome.ok) return outcome.value
+      lastError = outcome.error
+      const remainingAfterFailure = budgetMs - (now() - started)
+      const retriesLeft = attempt < maxRetries && outcome.retry && !deadline.signal.aborted
+      const wait = retriesLeft
+        ? retryWaitMs({
+            attempt: attempt + 1,
+            retryAfter: outcome.retryAfter,
+            remainingMs: remainingAfterFailure,
+            random,
+          })
+        : null
+      if (wait == null || remainingAfterFailure - wait < MIN_ATTEMPT_MS) throw lastError
+      await sleep(wait)
+    }
+    throw lastError
+  } finally {
+    cancelSchedule(deadlineTimer)
   }
-  throw lastError
 }
 
-async function oneAttempt({ prompt, model, apiKey, timeoutMs, fetchImpl }) {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
+async function oneAttempt({ prompt, model, apiKey, timeoutMs, fetchImpl, deadlineSignal, schedule, cancelSchedule }) {
+  const attempt = armAttempt({ timeoutMs, deadlineSignal, schedule, cancelSchedule })
   try {
     const response = await fetchImpl(
       `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
@@ -153,7 +174,7 @@ async function oneAttempt({ prompt, model, apiKey, timeoutMs, fetchImpl }) {
           contents: [{ role: 'user', parts: [{ text: prompt }] }],
           generationConfig: { responseMimeType: 'application/json', temperature: 0.2 },
         }),
-        signal: controller.signal,
+        signal: attempt.signal,
       },
     )
     if (!response.ok) {
@@ -184,13 +205,12 @@ async function oneAttempt({ prompt, model, apiKey, timeoutMs, fetchImpl }) {
     }
     return { ok: false, retry: true, retryAfter: null, error: new GeminiError(503, 'model_unavailable') }
   } finally {
-    clearTimeout(timer)
+    attempt.cleanup()
   }
 }
 
-async function oneInteraction({ prompt, model, apiKey, timeoutMs, fetchImpl, shape }) {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
+async function oneInteraction({ prompt, model, apiKey, timeoutMs, fetchImpl, shape, deadlineSignal, schedule, cancelSchedule }) {
+  const attempt = armAttempt({ timeoutMs, deadlineSignal, schedule, cancelSchedule })
   try {
     const response = await fetchImpl(
       'https://generativelanguage.googleapis.com/v1beta/interactions',
@@ -205,7 +225,7 @@ async function oneInteraction({ prompt, model, apiKey, timeoutMs, fetchImpl, sha
           input: prompt,
           response_format: { type: 'text', mime_type: 'application/json' },
         }),
-        signal: controller.signal,
+        signal: attempt.signal,
       },
     )
     if (!response.ok) {
@@ -235,6 +255,23 @@ async function oneInteraction({ prompt, model, apiKey, timeoutMs, fetchImpl, sha
     }
     return { ok: false, retry: true, retryAfter: null, error: new GeminiError(503, 'model_unavailable') }
   } finally {
-    clearTimeout(timer)
+    attempt.cleanup()
+  }
+}
+
+function armAttempt({ timeoutMs, deadlineSignal, schedule, cancelSchedule }) {
+  const controller = new AbortController()
+  const abort = () => {
+    if (!controller.signal.aborted) controller.abort()
+  }
+  if (deadlineSignal?.aborted) abort()
+  else deadlineSignal?.addEventListener('abort', abort)
+  const timer = schedule(timeoutMs, abort)
+  return {
+    signal: controller.signal,
+    cleanup() {
+      cancelSchedule(timer)
+      deadlineSignal?.removeEventListener('abort', abort)
+    },
   }
 }
