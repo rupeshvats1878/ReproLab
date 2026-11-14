@@ -1,7 +1,16 @@
 import { randomUUID } from 'node:crypto'
 import { MongoClient } from 'mongodb'
 import { LibraryError } from './errors.mjs'
-import { experimentRecord, experimentSummary, replicationRecord } from './records.mjs'
+import {
+  appendExecutionEvent,
+  beginExecution,
+  experimentRecord,
+  experimentSummary,
+  finishExecution,
+  COMPLETION_NOTE,
+  presentReplication,
+  replicationRecord,
+} from './records.mjs'
 
 const DB_NAME = /^[A-Za-z0-9_-]{1,64}$/
 
@@ -36,12 +45,33 @@ export function createMemoryStore({ now = () => new Date().toISOString(), ids = 
       if (!found) throw new LibraryError('not_found')
       const record = replicationRecord(found, { id: ids(), createdAt: now() })
       replications.push(record)
-      return structuredClone(record)
+      return presentReplication(record)
     },
     async openReplication(id) {
       const found = replications.find((item) => item.id === id)
       if (!found) throw new LibraryError('not_found')
-      return structuredClone(found)
+      return presentReplication(found)
+    },
+    async startExecution(id) {
+      const index = replications.findIndex((item) => item.id === id)
+      if (index < 0) throw new LibraryError('not_found')
+      const next = beginExecution(replications[index], now())
+      replications[index] = next
+      return presentReplication(next)
+    },
+    async appendEvent(id, input) {
+      const index = replications.findIndex((item) => item.id === id)
+      if (index < 0) throw new LibraryError('not_found')
+      const result = appendExecutionEvent(replications[index], input, now())
+      replications[index] = result.record
+      return { created: result.created, replication: presentReplication(result.record) }
+    },
+    async finishExecution(id) {
+      const index = replications.findIndex((item) => item.id === id)
+      if (index < 0) throw new LibraryError('not_found')
+      const next = finishExecution(replications[index], now())
+      replications[index] = next
+      return presentReplication(next)
     },
   }
 }
@@ -64,6 +94,15 @@ export function createUnavailableStore() {
       throw new LibraryError('unavailable')
     },
     async openReplication() {
+      throw new LibraryError('unavailable')
+    },
+    async startExecution() {
+      throw new LibraryError('unavailable')
+    },
+    async appendEvent() {
+      throw new LibraryError('unavailable')
+    },
+    async finishExecution() {
       throw new LibraryError('unavailable')
     },
   }
@@ -146,7 +185,7 @@ export function createMongoStore({ client, dbName }) {
         if (!experiment) throw new LibraryError('not_found')
         const record = replicationRecord(experiment, { id: randomUUID(), createdAt: new Date().toISOString() })
         await replications().insertOne({ ...record, _id: record.id })
-        return record
+        return presentReplication(record)
       } catch (error) {
         if (error instanceof LibraryError) throw error
         throw new LibraryError('unavailable')
@@ -157,11 +196,85 @@ export function createMongoStore({ client, dbName }) {
       try {
         const doc = await replications().findOne({ _id: id }, { projection: { _id: 0 } })
         if (!doc) throw new LibraryError('not_found')
-        return doc
+        return presentReplication(doc)
+      } catch (error) {
+        if (error instanceof LibraryError) throw error
+        throw new LibraryError('unavailable')
+      }
+    },
+    async startExecution(id) {
+      await requireDatabase()
+      const startedAt = new Date().toISOString()
+      try {
+        const updated = await replications().findOneAndUpdate(
+          { _id: id, status: 'planned' },
+          { $set: { status: 'in_progress', startedAt } },
+          { returnDocument: 'after', projection: { _id: 0 } },
+        )
+        const doc = updatedDocument(updated)
+        if (doc) return presentReplication(doc)
+        const existing = await replications().findOne({ _id: id }, { projection: { _id: 0 } })
+        if (!existing) throw new LibraryError('not_found')
+        throw new LibraryError('invalid_state')
+      } catch (error) {
+        if (error instanceof LibraryError) throw error
+        throw new LibraryError('unavailable')
+      }
+    },
+    async appendEvent(id, input) {
+      await requireDatabase()
+      try {
+        const current = await replications().findOne({ _id: id }, { projection: { _id: 0 } })
+        if (!current) throw new LibraryError('not_found')
+        const recordedAt = new Date().toISOString()
+        const decision = appendExecutionEvent(current, input, recordedAt)
+        if (!decision.created) return { created: false, replication: presentReplication(decision.record) }
+        const event = decision.record.events[decision.record.events.length - 1]
+        const updated = await replications().findOneAndUpdate(
+          {
+            _id: id,
+            status: 'in_progress',
+            events: { $not: { $elemMatch: { id: event.id } } },
+          },
+          { $push: { events: event } },
+          { returnDocument: 'after', projection: { _id: 0 } },
+        )
+        const doc = updatedDocument(updated)
+        if (doc) return { created: true, replication: presentReplication(doc) }
+        const again = await replications().findOne({ _id: id }, { projection: { _id: 0 } })
+        if (!again) throw new LibraryError('not_found')
+        const retry = appendExecutionEvent(again, input, recordedAt)
+        if (!retry.created) return { created: false, replication: presentReplication(retry.record) }
+        throw new LibraryError('invalid_state')
+      } catch (error) {
+        if (error instanceof LibraryError) throw error
+        throw new LibraryError('unavailable')
+      }
+    },
+    async finishExecution(id) {
+      await requireDatabase()
+      const finishedAt = new Date().toISOString()
+      try {
+        const updated = await replications().findOneAndUpdate(
+          { _id: id, status: 'in_progress' },
+          { $set: { status: 'completed', finishedAt, completionNote: COMPLETION_NOTE } },
+          { returnDocument: 'after', projection: { _id: 0 } },
+        )
+        const doc = updatedDocument(updated)
+        if (doc) return presentReplication(doc)
+        const existing = await replications().findOne({ _id: id }, { projection: { _id: 0 } })
+        if (!existing) throw new LibraryError('not_found')
+        throw new LibraryError('invalid_state')
       } catch (error) {
         if (error instanceof LibraryError) throw error
         throw new LibraryError('unavailable')
       }
     },
   }
+}
+
+function updatedDocument(result) {
+  if (!result) return null
+  if (Object.hasOwn(result, 'value')) return result.value ?? null
+  return result
 }

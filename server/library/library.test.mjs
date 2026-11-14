@@ -284,6 +284,169 @@ test('an unreachable MongoDB server is unavailable and does not save', async () 
   }
 })
 
+const executionSnapshot = {
+  version: 1,
+  steps: [
+    { id: 'add-dye', instruction: 'Add dye' },
+    { instruction: 'Mix thoroughly.' },
+    { instruction: 'Wait 5 minutes.', duration: '5 minutes' },
+    { instruction: 'Observe the dye color in a still frame.' },
+  ],
+}
+const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xd9]).toString('base64')
+const completionId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1'
+const ownImageId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3'
+const referenceImageId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4'
+const correctionId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa5'
+const secondCompletionId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa6'
+
+function humanCompletion(id, stepIndex, note = 'Done by hand') {
+  return { id, type: 'human_completion', stepIndex, note }
+}
+
+function imageObservation(id, provenance) {
+  return {
+    id,
+    type: 'image_observation',
+    stepIndex: 3,
+    capturedAt: '2026-11-14T22:16:14.748Z',
+    provenance,
+    imageBase64: jpeg,
+    measurement: { dispersion: 0.05 },
+  }
+}
+
+test('records append-only execution without changing the frozen snapshot', async () => {
+  const store = createMemoryStore()
+  const server = await listen(store)
+  try {
+    const published = await ask(server, 'POST', '/experiments', publishBody({ protocolSnapshot: executionSnapshot }))
+    const experimentId = published.body.id
+    const planned = await ask(server, 'POST', '/replications', { experimentId })
+    const replicationId = planned.body.id
+    assert.equal(planned.body.execution.sessionEnded, false)
+    assert.deepEqual(planned.body.execution.unfinishedStepIndexes, [0, 1, 2, 3])
+
+    const early = await ask(server, 'POST', `/replications/${replicationId}/events`, humanCompletion(completionId, 0))
+    assert.equal(early.status, 409)
+    assert.equal(early.body.error, 'invalid_state')
+
+    const smuggled = await ask(server, 'POST', `/replications/${replicationId}/start`, { status: 'completed' })
+    assert.equal(smuggled.status, 400)
+    assert.equal((await ask(server, 'GET', `/replications/${replicationId}`)).body.status, 'planned')
+
+    const started = await ask(server, 'POST', `/replications/${replicationId}/start`, {})
+    assert.equal(started.status, 201)
+    assert.equal(started.body.status, 'in_progress')
+    assert.equal(typeof started.body.startedAt, 'string')
+    assert.deepEqual(started.body.protocolSnapshot, executionSnapshot)
+    assert.equal((await ask(server, 'POST', `/replications/${replicationId}/start`, {})).status, 409)
+
+    const badStep = await ask(server, 'POST', `/replications/${replicationId}/events`, humanCompletion(secondCompletionId, 4))
+    assert.equal(badStep.status, 400)
+    assert.equal(badStep.body.field, 'stepIndex')
+    assert.equal((await ask(server, 'GET', `/replications/${replicationId}`)).body.events.length, 0)
+
+    const completed = await ask(server, 'POST', `/replications/${replicationId}/events`, humanCompletion(completionId, 0))
+    assert.equal(completed.status, 201)
+    assert.equal(completed.body.events[0].stepId, 'add-dye')
+    assert.equal(completed.body.execution.steps[0].humanCompleted, true)
+    const replay = await ask(server, 'POST', `/replications/${replicationId}/events`, humanCompletion(completionId, 0))
+    assert.equal(replay.status, 200)
+    assert.equal(replay.body.events.length, 1)
+    const conflict = await ask(server, 'POST', `/replications/${replicationId}/events`, humanCompletion(completionId, 0, 'A different note'))
+    assert.equal(conflict.status, 409)
+    assert.equal(conflict.body.error, 'duplicate_event')
+    assert.equal((await ask(server, 'GET', `/replications/${replicationId}`)).body.events.length, 1)
+
+    const own = await ask(server, 'POST', `/replications/${replicationId}/events`, imageObservation(ownImageId, 'own_recording'))
+    assert.equal(own.status, 201)
+    assert.equal(own.body.execution.steps[3].humanCompleted, false)
+    assert.equal(own.body.execution.steps[3].ownObservationCount, 1)
+    assert.equal(own.body.events.at(-1).image.mediaType, 'image/jpeg')
+    assert.equal(own.body.events.at(-1).image.byteLength, 4)
+
+    const reference = await ask(server, 'POST', `/replications/${replicationId}/events`, imageObservation(referenceImageId, 'imported_reference'))
+    assert.equal(reference.status, 201)
+    assert.equal(reference.body.execution.steps[3].humanCompleted, false)
+    assert.equal(reference.body.execution.steps[3].referenceObservationCount, 1)
+    assert.equal(reference.body.events.at(-1).provenance, 'imported_reference')
+
+    const corrected = await ask(server, 'POST', `/replications/${replicationId}/events`, {
+      id: correctionId,
+      type: 'correction',
+      stepIndex: 0,
+      correctsEventId: completionId,
+      note: 'That completion was reported on the wrong step.',
+    })
+    assert.equal(corrected.status, 201)
+    assert.equal(corrected.body.events[0].type, 'human_completion')
+    assert.equal(corrected.body.events[0].id, completionId)
+    assert.equal(corrected.body.events.some((event) => event.id === correctionId), true)
+    assert.equal(corrected.body.execution.steps[0].humanCompleted, false)
+
+    const later = await ask(server, 'POST', `/replications/${replicationId}/events`, humanCompletion(secondCompletionId, 1, 'Mixed'))
+    assert.equal(later.status, 201)
+    assert.equal(later.body.execution.steps[1].stepId, null)
+    assert.equal(later.body.execution.steps[1].humanCompleted, true)
+
+    const notJpeg = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0xff, 0xd9]).toString('base64')
+    const rejectedImage = await ask(server, 'POST', `/replications/${replicationId}/events`, {
+      ...imageObservation('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa7', 'own_recording'),
+      imageBase64: notJpeg,
+    })
+    assert.equal(rejectedImage.status, 400)
+    assert.equal(rejectedImage.body.field, 'imageBase64')
+
+    const oversized = Buffer.alloc(262145, 0)
+    oversized[0] = 0xff
+    oversized[1] = 0xd8
+    oversized[2] = 0xff
+    oversized[oversized.length - 2] = 0xff
+    oversized[oversized.length - 1] = 0xd9
+    const rejectedSize = await ask(server, 'POST', `/replications/${replicationId}/events`, {
+      ...imageObservation('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa8', 'own_recording'),
+      imageBase64: oversized.toString('base64'),
+    })
+    assert.equal(rejectedSize.status, 400)
+    assert.equal(rejectedSize.body.field, 'imageBase64')
+    assert.equal((await ask(server, 'GET', `/replications/${replicationId}`)).body.events.length, 5)
+
+    const finished = await ask(server, 'POST', `/replications/${replicationId}/finish`, {})
+    assert.equal(finished.status, 200)
+    assert.equal(finished.body.status, 'completed')
+    assert.equal(finished.body.execution.sessionEnded, true)
+    assert.deepEqual(finished.body.execution.unfinishedStepIndexes, [0, 2, 3])
+    assert.match(finished.body.completionNote, /not that the experiment succeeded/)
+    assert.deepEqual(finished.body.protocolSnapshot, executionSnapshot)
+    assert.equal((await ask(server, 'POST', `/replications/${replicationId}/events`, humanCompletion('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa9', 2))).status, 409)
+    assert.equal((await ask(server, 'POST', `/replications/${replicationId}/events`, humanCompletion(completionId, 0))).status, 200)
+
+    const saved = await ask(server, 'GET', `/replications/${replicationId}`)
+    assert.equal(saved.body.events.length, 5)
+    assert.deepEqual(saved.body.events.map((event) => event.id), [completionId, ownImageId, referenceImageId, correctionId, secondCompletionId])
+    assert.deepEqual(saved.body.protocolSnapshot, executionSnapshot)
+    const experiment = await ask(server, 'GET', `/experiments/${experimentId}`)
+    assert.deepEqual(experiment.body.protocolSnapshot, executionSnapshot)
+    saved.body.protocolSnapshot.steps.push({ instruction: 'tamper' })
+    assert.deepEqual((await ask(server, 'GET', `/replications/${replicationId}`)).body.protocolSnapshot, executionSnapshot)
+  } finally {
+    server.close()
+  }
+})
+
+test('an unavailable database does not start a replication session', async () => {
+  const server = await listen(createUnavailableStore())
+  try {
+    const started = await ask(server, 'POST', `/replications/${MISSING}/start`, {})
+    assert.equal(started.status, 503)
+    assert.equal(started.body.error, 'database_unavailable')
+    assert.equal(started.body.id, undefined)
+  } finally {
+    server.close()
+  }
+})
+
 test('real MongoDB publish, list, open, and planned replication', {
   skip: realDatabaseConfigured()
     ? false
@@ -318,6 +481,86 @@ test('real MongoDB publish, list, open, and planned replication', {
     const dbName = process.env.MONGODB_DB
     if (experimentId) await store.client.db(dbName).collection('experiments').deleteOne({ _id: experimentId })
     if (replicationId) await store.client.db(dbName).collection('replications').deleteOne({ _id: replicationId })
+    await store.client.close()
+  }
+})
+
+test('real MongoDB execution persists and leaves existing demo records unchanged', {
+  skip: realDatabaseConfigured()
+    ? false
+    : 'MONGODB_URI or MONGODB_DB is not set to a real database. This check was not run against Atlas.',
+}, async () => {
+  const store = createStoreFromEnv(process.env)
+  const dbName = process.env.MONGODB_DB
+  const protectedRecords = [
+    ['experiments', 'bc946568-26e7-4585-82a2-8949e7164200'],
+    ['replications', 'e847960c-13c0-42b3-b585-df6d4e95208d'],
+    ['replications', 'c72934c1-506b-4f01-aac1-865498e859b6'],
+  ]
+  const before = []
+  let experimentId
+  let replicationId
+  try {
+    for (const [collection, id] of protectedRecords) {
+      before.push(await store.client.db(dbName).collection(collection).findOne({ _id: id }))
+    }
+    const published = await store.publish({
+      ...publishBody({ title: `execution-test-${randomUUID()}` }),
+      protocolSnapshot: executionSnapshot,
+    })
+    experimentId = published.id
+    const planned = await store.replicate(experimentId)
+    replicationId = planned.id
+    const started = await store.startExecution(replicationId)
+    assert.equal(started.status, 'in_progress')
+    const saved = await store.appendEvent(replicationId, {
+      id: completionId,
+      type: 'human_completion',
+      stepIndex: 0,
+      note: 'Persisted completion',
+    })
+    assert.equal(saved.created, true)
+    const replay = await store.appendEvent(replicationId, {
+      id: completionId,
+      type: 'human_completion',
+      stepIndex: 0,
+      note: 'Persisted completion',
+    })
+    assert.equal(replay.created, false)
+    assert.equal(replay.replication.events.length, 1)
+    await assert.rejects(
+      store.appendEvent(replicationId, humanCompletion('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1', 9)),
+      (error) => error.code === 'invalid' && error.field === 'stepIndex',
+    )
+    const corrected = await store.appendEvent(replicationId, {
+      id: correctionId,
+      type: 'correction',
+      stepIndex: 0,
+      correctsEventId: completionId,
+      note: 'Retract the persisted completion.',
+    })
+    assert.equal(corrected.replication.events.length, 2)
+    assert.equal(corrected.replication.execution.steps[0].humanCompleted, false)
+    const finished = await store.finishExecution(replicationId)
+    assert.equal(finished.status, 'completed')
+    assert.deepEqual(finished.execution.unfinishedStepIndexes, [0, 1, 2, 3])
+    const reread = await store.openReplication(replicationId)
+    assert.equal(reread.status, 'completed')
+    assert.deepEqual(reread.events.map((event) => event.id), [completionId, correctionId])
+    assert.deepEqual(reread.protocolSnapshot, executionSnapshot)
+    assert.deepEqual((await store.open(experimentId)).protocolSnapshot, executionSnapshot)
+  } finally {
+    if (experimentId) await store.client.db(dbName).collection('experiments').deleteOne({ _id: experimentId })
+    if (replicationId) await store.client.db(dbName).collection('replications').deleteOne({ _id: replicationId })
+    for (let index = 0; index < protectedRecords.length; index += 1) {
+      const [collection, id] = protectedRecords[index]
+      const after = await store.client.db(dbName).collection(collection).findOne({ _id: id })
+      assert.deepEqual(after, before[index])
+    }
+    if (replicationId) {
+      const removed = await store.client.db(dbName).collection('replications').findOne({ _id: replicationId })
+      assert.equal(removed, null)
+    }
     await store.client.close()
   }
 })

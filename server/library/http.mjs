@@ -1,7 +1,16 @@
 import { LibraryError } from './errors.mjs'
-import { validateExperimentId, validateListQuery, validatePublish, validateReplication } from './validate.mjs'
+import {
+  validateExecutionEvent,
+  validateExecutionFinish,
+  validateExecutionStart,
+  validateExperimentId,
+  validateListQuery,
+  validatePublish,
+  validateReplication,
+} from './validate.mjs'
 
 const MAX_BODY_BYTES = 48 * 1024
+const MAX_EVENT_BYTES = 400_000
 
 export function createLibraryServer({ store }) {
   return async function handle(req, res) {
@@ -62,6 +71,25 @@ async function route(req, res, store) {
     return
   }
 
+  const replicationAction = /^\/replications\/([^/]+)\/(start|events|finish)$/.exec(url.pathname)
+  if (req.method === 'POST' && replicationAction) {
+    const id = validateExperimentId(decodeURIComponent(replicationAction[1]))
+    const action = replicationAction[2]
+    if (action === 'events') {
+      const input = validateExecutionEvent(await readJson(req, MAX_EVENT_BYTES))
+      await assertDatabase(store)
+      const result = await store.appendEvent(id, input)
+      send(res, result.created ? 201 : 200, result.replication)
+      return
+    }
+    const read = action === 'start' ? validateExecutionStart : validateExecutionFinish
+    read(await readJson(req))
+    await assertDatabase(store)
+    const replication = action === 'start' ? await store.startExecution(id) : await store.finishExecution(id)
+    send(res, action === 'start' ? 201 : 200, replication)
+    return
+  }
+
   const replicationPath = /^\/replications\/([^/]+)$/.exec(url.pathname)
   if (req.method === 'GET' && replicationPath) {
     const id = validateExperimentId(decodeURIComponent(replicationPath[1]))
@@ -78,10 +106,10 @@ async function assertDatabase(store) {
   if (health.database !== 'available') throw new LibraryError('unavailable')
 }
 
-async function readJson(req) {
+async function readJson(req, max = MAX_BODY_BYTES) {
   const declared = Number(req.headers['content-length'] ?? 0)
-  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) throw new LibraryError('too_large')
-  const text = await readBody(req, MAX_BODY_BYTES)
+  if (Number.isFinite(declared) && declared > max) throw new LibraryError('too_large')
+  const text = await readBody(req, max)
   if (!text) throw new LibraryError('invalid', 'body')
   try {
     return JSON.parse(text)
@@ -120,6 +148,8 @@ function publicError(error) {
     if (error.code === 'invalid') return { status: 400, body: { error: 'invalid_input', field: error.field ?? 'body' } }
     if (error.code === 'not_found') return { status: 404, body: { error: 'not_found' } }
     if (error.code === 'too_large') return { status: 413, body: { error: 'payload_too_large' } }
+    if (error.code === 'invalid_state') return { status: 409, body: { error: 'invalid_state' } }
+    if (error.code === 'duplicate') return { status: 409, body: { error: 'duplicate_event', field: error.field ?? 'id' } }
     if (error.code === 'unavailable') return { status: 503, body: { error: 'database_unavailable' } }
   }
   return { status: 500, body: { error: 'request_failed' } }
