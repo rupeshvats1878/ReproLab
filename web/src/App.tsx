@@ -3,11 +3,13 @@ import { Monitor } from './components/Monitor.tsx'
 import { Review } from './components/Review.tsx'
 import { useReviewController } from './review/useReviewController.ts'
 import './App.css'
+import { Prepare } from './prepare/Prepare.tsx'
 import { ReferenceLab } from './reference/ReferenceLab.tsx'
 
-type TabId = 'monitor' | 'review' | 'reference'
+type TabId = 'prepare' | 'monitor' | 'review' | 'reference'
 
 const TABS: readonly { id: TabId; label: string }[] = [
+  { id: 'prepare', label: 'Prepare' },
   { id: 'monitor', label: 'Monitor' },
   { id: 'review', label: 'Review' },
   { id: 'reference', label: 'Reference lab' },
@@ -60,6 +62,7 @@ export default function App() {
           />
         </div>
         <div hidden={tab !== 'reference'}><ReferenceLab /></div>
+        <div hidden={tab !== 'prepare'}><Prepare /></div>
       </main>
     </div>
   )

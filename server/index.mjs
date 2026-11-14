@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { extractionPrompt, validateDraft } from './protocols/validateDraft.mjs'
 import { validateExplanation } from './validateExplanation.mjs'
 
 loadEnv(join(dirname(fileURLToPath(import.meta.url)), '.env'))
@@ -19,16 +20,19 @@ const server = createServer((req, res) => {
     res.end()
     return
   }
-  if (req.method !== 'POST' || req.url !== '/explain') {
+  if (req.method !== 'POST' || (req.url !== '/explain' && req.url !== '/protocols/extract')) {
     send(res, 404, { error: 'not_found' })
     return
   }
+  const handle = req.url === '/explain' ? explain : extractProtocol
   readBody(req)
-    .then((body) => explain(body))
+    .then((body) => handle(body))
     .then((result) => send(res, result.status, result.body))
     .catch((error) => {
       const status = error instanceof HttpError ? error.status : 500
-      send(res, status, { error: error instanceof Error ? error.message : 'explain_failed' })
+      const message = error instanceof Error ? error.message : 'request_failed'
+      const details = error instanceof HttpError ? error.details : []
+      send(res, status, details.length > 0 ? { error: message, details } : { error: message })
     })
 })
 
@@ -42,6 +46,37 @@ server.listen(port, '127.0.0.1', () => {
 async function explain(raw) {
   const request = JSON.parse(raw)
   if (containsMedia(request)) throw new HttpError(400, 'media_not_accepted')
+  const explanation = await generateJson([
+    'Explain this colored-water six-well demo.',
+    'Use only the JSON. Do not invent run or event ids.',
+    'Do not claim the runs prove a cause, that no alerts means no mistakes, or that a final image is a biological assay.',
+    'Return JSON with summary, uncertainty, and citations. Each citation has runId, eventId, and claim.',
+    'Copy runId and eventId from the input. Say what is uncertain.',
+    JSON.stringify(request),
+  ].join('\n'))
+  const errors = validateExplanation(request, explanation)
+  if (errors.length > 0) throw new HttpError(502, 'model_response_rejected')
+  return { status: 200, body: explanation }
+}
+
+async function extractProtocol(raw) {
+  const request = JSON.parse(raw)
+  if (containsMedia(request)) throw new HttpError(400, 'media_not_accepted')
+  const title = request?.title
+  const sourceText = request?.sourceText
+  if (typeof title !== 'string' || title.trim() === '' || title.length > 200) {
+    throw new HttpError(400, 'title_required')
+  }
+  if (typeof sourceText !== 'string' || sourceText.trim() === '' || sourceText.length > 20000) {
+    throw new HttpError(400, 'protocol_text_required')
+  }
+  const draft = await generateJson(extractionPrompt(title.trim(), sourceText))
+  const errors = validateDraft(sourceText, draft)
+  if (errors.length > 0) throw new HttpError(502, 'model_response_rejected', errors)
+  return { status: 200, body: { steps: draft.steps } }
+}
+
+async function generateJson(prompt) {
   if (!process.env.GEMINI_API_KEY) throw new HttpError(503, 'missing_credentials')
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
@@ -52,23 +87,7 @@ async function explain(raw) {
         'x-goog-api-key': process.env.GEMINI_API_KEY,
       },
       body: JSON.stringify({
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              {
-                text: [
-                  'Explain this colored-water six-well demo.',
-                  'Use only the JSON. Do not invent run or event ids.',
-                  'Do not claim the runs prove a cause, that no alerts means no mistakes, or that a final image is a biological assay.',
-                  'Return JSON with summary, uncertainty, and citations. Each citation has runId, eventId, and claim.',
-                  'Copy runId and eventId from the input. Say what is uncertain.',
-                  JSON.stringify(request),
-                ].join('\n'),
-              },
-            ],
-          },
-        ],
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
         generationConfig: { responseMimeType: 'application/json', temperature: 0.2 },
       }),
       signal: AbortSignal.timeout(15000),
@@ -77,10 +96,11 @@ async function explain(raw) {
   if (!response.ok) throw new HttpError(502, 'model_request_failed')
   const payload = await response.json()
   const text = payload?.candidates?.[0]?.content?.parts?.map((part) => part.text ?? '').join('') ?? ''
-  const explanation = JSON.parse(text)
-  const errors = validateExplanation(request, explanation)
-  if (errors.length > 0) throw new HttpError(502, 'model_response_rejected')
-  return { status: 200, body: explanation }
+  try {
+    return JSON.parse(text)
+  } catch {
+    throw new HttpError(502, 'model_response_rejected', ['The model response was not JSON.'])
+  }
 }
 
 function containsMedia(value) {
@@ -137,8 +157,9 @@ function localDevOrigin(origin) {
 }
 
 class HttpError extends Error {
-  constructor(status, message) {
+  constructor(status, message, details = []) {
     super(message)
     this.status = status
+    this.details = details
   }
 }

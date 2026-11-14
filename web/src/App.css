@@ -38,6 +38,7 @@
 
 .app-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.4rem;
   padding: 0.25rem;
   background: var(--panel);

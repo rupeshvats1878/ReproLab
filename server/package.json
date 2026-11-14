@@ -4,6 +4,6 @@
   "type": "module",
   "scripts": {
     "start": "node index.mjs",
-    "test": "node --test validateExplanation.test.mjs"
+    "test": "node --test"
   }
 }
