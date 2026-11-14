@@ -1,4 +1,5 @@
-export const DEFAULT_MODEL = 'gemini-3.8-flash'
+export const DEFAULT_MODEL = 'gemini-4-hydrogen'
+export const EXPLAIN_MODEL = 'gemini-3.8-flash'
 export const EXTRACTION_BUDGET_MS = 60_000
 export const MAX_RETRIES = 2
 export const DEFAULT_ATTEMPT_TIMEOUT_MS = 20_000
@@ -54,7 +55,53 @@ export class GeminiError extends Error {
   }
 }
 
+export function interactionText(payload) {
+  const steps = Array.isArray(payload?.steps) ? payload.steps : []
+  return steps.flatMap((step) => Array.isArray(step.content) ? step.content : [])
+    .filter((block) => block?.type === 'text' && typeof block.text === 'string')
+    .map((block) => block.text)
+    .join('')
+}
+
+export function parseCompletedInteraction(payload) {
+  if (!payload || payload.status !== 'completed') {
+    const status = typeof payload?.status === 'string' ? payload.status : 'missing'
+    return { error: `The Gemini interaction did not complete (${status}).` }
+  }
+  const text = interactionText(payload).trim()
+  if (text === '') return { error: 'The Gemini interaction returned no text.' }
+  try {
+    const draft = JSON.parse(text)
+    if (!draft || typeof draft !== 'object' || Array.isArray(draft) || !Array.isArray(draft.steps) || draft.steps.length === 0) {
+      return { error: 'The model response did not contain a completed steps array.' }
+    }
+    return { draft }
+  } catch {
+    return { error: 'The model response was not JSON.' }
+  }
+}
+
 export async function generateJson(prompt, options) {
+  return runAttempts(options, (timeoutMs, fetchImpl) => oneAttempt({
+    prompt,
+    model: options.model,
+    apiKey: options.apiKey,
+    timeoutMs,
+    fetchImpl,
+  }))
+}
+
+export async function generateInteractionJson(prompt, options) {
+  return runAttempts(options, (timeoutMs, fetchImpl) => oneInteraction({
+    prompt,
+    model: options.model,
+    apiKey: options.apiKey,
+    timeoutMs,
+    fetchImpl,
+  }))
+}
+
+async function runAttempts(options, perform) {
   const apiKey = options.apiKey
   if (!apiKey) throw new GeminiError(503, 'missing_credentials')
   const fetchImpl = options.fetchImpl ?? fetch
@@ -69,13 +116,7 @@ export async function generateJson(prompt, options) {
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
     const remainingMs = budgetMs - (now() - started)
     if (remainingMs < 250) throw lastError
-    const outcome = await oneAttempt({
-      prompt,
-      model: options.model,
-      apiKey,
-      timeoutMs: Math.min(options.attemptTimeoutMs, remainingMs),
-      fetchImpl,
-    })
+    const outcome = await perform(Math.min(options.attemptTimeoutMs, remainingMs), fetchImpl)
     if (outcome.ok) return outcome.value
     lastError = outcome.error
     const retriesLeft = attempt < maxRetries && outcome.retry
@@ -133,6 +174,57 @@ async function oneAttempt({ prompt, model, apiKey, timeoutMs, fetchImpl }) {
         error: new GeminiError(502, 'model_response_rejected', ['The model response was not JSON.']),
       }
     }
+  } catch (error) {
+    if (error instanceof GeminiError) throw error
+    if (error?.name === 'AbortError' || error?.name === 'TimeoutError') {
+      return { ok: false, retry: true, retryAfter: null, error: new GeminiError(504, 'timeout') }
+    }
+    return { ok: false, retry: true, retryAfter: null, error: new GeminiError(503, 'model_unavailable') }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function oneInteraction({ prompt, model, apiKey, timeoutMs, fetchImpl }) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const response = await fetchImpl(
+      'https://generativelanguage.googleapis.com/v1beta/interactions',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-goog-api-key': apiKey,
+        },
+        body: JSON.stringify({
+          model,
+          input: prompt,
+          response_format: { type: 'text', mime_type: 'application/json' },
+        }),
+        signal: controller.signal,
+      },
+    )
+    if (!response.ok) {
+      const failure = classifyStatus(response.status)
+      return {
+        ok: false,
+        retry: failure.retry,
+        retryAfter: retryAfterMs(response.headers?.get?.('retry-after') ?? null, Date.now()),
+        error: new GeminiError(clientStatus(failure.category), failure.category),
+      }
+    }
+    const payload = await response.json()
+    const parsed = parseCompletedInteraction(payload)
+    if (parsed.error) {
+      return {
+        ok: false,
+        retry: false,
+        retryAfter: null,
+        error: new GeminiError(502, 'model_response_rejected', [parsed.error]),
+      }
+    }
+    return { ok: true, value: parsed.draft }
   } catch (error) {
     if (error instanceof GeminiError) throw error
     if (error?.name === 'AbortError' || error?.name === 'TimeoutError') {

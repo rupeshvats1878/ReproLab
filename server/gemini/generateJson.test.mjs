@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { classifyStatus, generateJson, retryWaitMs } from './generateJson.mjs'
+import { classifyStatus, generateInteractionJson, generateJson, parseCompletedInteraction, retryWaitMs } from './generateJson.mjs'
 
 const draft = {
   candidates: [{ content: { parts: [{ text: '{"steps":[]}' }] } }],
@@ -140,6 +140,47 @@ test('retries an aborted attempt as a timeout', async () => {
   )
   assert.equal(calls, 1)
 })
+
+test('reads a completed interaction and rejects unfinished output', async () => {
+  const completed = interactionPayload('completed', '{"steps":[{"instruction":"Stir","quote":"Stir cup A for 10 seconds.","duration":"10 seconds","observationMethod":"timer","questions":[]}]}')
+  assert.equal(parseCompletedInteraction(completed).draft.steps[0].duration, '10 seconds')
+  for (const status of ['failed', 'incomplete', 'in_progress', 'cancelled']) {
+    const parsed = parseCompletedInteraction(interactionPayload(status, '{"steps":[{"instruction":"x"}]}'))
+    assert.equal(parsed.draft, undefined)
+    assert.match(parsed.error, /did not complete/)
+  }
+  assert.match(parseCompletedInteraction(interactionPayload('completed', '')).error, /no text/)
+  assert.match(parseCompletedInteraction(interactionPayload('completed', 'not-json')).error, /not JSON/)
+  assert.match(parseCompletedInteraction(interactionPayload('completed', '{"steps":[]}')).error, /steps array/)
+
+  let body = null
+  const value = await generateInteractionJson('prompt', {
+    model: 'gemini-4-hydrogen',
+    apiKey: 'test-key',
+    attemptTimeoutMs: 1000,
+    fetchImpl: async (url, request) => {
+      body = JSON.parse(request.body)
+      assert.equal(url, 'https://generativelanguage.googleapis.com/v1beta/interactions')
+      return fakeResponse(200, completed)
+    },
+    sleep: async () => {},
+    now: () => 0,
+    random: () => 0,
+  })
+  assert.equal(body.model, 'gemini-4-hydrogen')
+  assert.equal(body.input, 'prompt')
+  assert.deepEqual(body.response_format, { type: 'text', mime_type: 'application/json' })
+  assert.equal(body.tools, undefined)
+  assert.equal(body.generation_config, undefined)
+  assert.equal(value.steps.length, 1)
+})
+
+function interactionPayload(status, text) {
+  return {
+    status,
+    steps: text === '' ? [] : [{ type: 'model_output', content: [{ type: 'text', text }] }],
+  }
+}
 
 function fakeResponse(status, body, headers = {}) {
   return {

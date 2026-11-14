@@ -2,14 +2,14 @@ import { existsSync, readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { DEFAULT_MODEL, EXTRACTION_BUDGET_MS, attemptTimeoutMs, generateJson } from './gemini/generateJson.mjs'
+import { DEFAULT_MODEL, EXPLAIN_MODEL, EXTRACTION_BUDGET_MS, attemptTimeoutMs, generateInteractionJson, generateJson } from './gemini/generateJson.mjs'
 import { extractionPrompt, validateDraft } from './protocols/validateDraft.mjs'
 import { validateExplanation } from './validateExplanation.mjs'
 
 loadEnv(join(dirname(fileURLToPath(import.meta.url)), '.env'))
 
 const port = Number(process.env.PORT || 8787)
-const model = process.env.GEMINI_MODEL || DEFAULT_MODEL
+const extractionModel = process.env.GEMINI_MODEL || DEFAULT_MODEL
 const configuredTimeoutMs = attemptTimeoutMs(process.env.GEMINI_TIMEOUT_MS)
 
 const server = createServer((req, res) => {
@@ -41,14 +41,14 @@ const server = createServer((req, res) => {
 server.listen(port, '127.0.0.1', () => {
   const key = process.env.GEMINI_API_KEY
   console.log(
-    `LabBench explain server on http://127.0.0.1:${port} (${key ? 'key present' : 'live AI unavailable'}, model ${model})`,
+    `LabBench explain server on http://127.0.0.1:${port} (${key ? 'key present' : 'live AI unavailable'}, extract ${extractionModel}, explain ${EXPLAIN_MODEL})`,
   )
 })
 
 async function explain(raw) {
   const request = JSON.parse(raw)
   if (containsMedia(request)) throw new HttpError(400, 'media_not_accepted')
-  const explanation = await requestJson([
+  const explanation = await explainJson([
     'Explain this colored-water six-well demo.',
     'Use only the JSON. Do not invent run or event ids.',
     'Do not claim the runs prove a cause, that no alerts means no mistakes, or that a final image is a biological assay.',
@@ -72,15 +72,24 @@ async function extractProtocol(raw) {
   if (typeof sourceText !== 'string' || sourceText.trim() === '' || sourceText.length > 20000) {
     throw new HttpError(400, 'protocol_text_required')
   }
-  const draft = await requestJson(extractionPrompt(title.trim(), sourceText))
+  const draft = await extractJson(extractionPrompt(title.trim(), sourceText))
   const errors = validateDraft(sourceText, draft)
   if (errors.length > 0) throw new HttpError(502, 'model_response_rejected', errors)
   return { status: 200, body: { steps: draft.steps } }
 }
 
-function requestJson(prompt) {
+function extractJson(prompt) {
+  return generateInteractionJson(prompt, {
+    model: extractionModel,
+    apiKey: process.env.GEMINI_API_KEY,
+    attemptTimeoutMs: configuredTimeoutMs,
+    budgetMs: EXTRACTION_BUDGET_MS,
+  })
+}
+
+function explainJson(prompt) {
   return generateJson(prompt, {
-    model,
+    model: EXPLAIN_MODEL,
     apiKey: process.env.GEMINI_API_KEY,
     attemptTimeoutMs: configuredTimeoutMs,
     budgetMs: EXTRACTION_BUDGET_MS,

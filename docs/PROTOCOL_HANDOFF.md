@@ -79,7 +79,11 @@ const selected = approved.find((protocol) => protocol.id === id && protocol.vers
 
 `POST http://127.0.0.1:8787/protocols/extract` accepts `{ "title", "sourceText" }` and, when Gemini is configured with `GEMINI_API_KEY` on the server, returns `{ "steps" }`. Without a key it returns `503` and `{ "error": "missing_credentials" }`. The browser does not invent steps. The key stays in `server/.env` and is not part of this JSON.
 
-The default model is `gemini-3.8-flash`. `GEMINI_TIMEOUT_MS` sets the per-attempt limit and defaults to 20000. One extraction, including at most two retries, stops within 60 seconds. Transient failures wait with exponential backoff and jitter, or for `Retry-After` when Gemini sends it. Invalid credentials, invalid requests, and missing models are not retried. The client receives only a category: `model_unavailable`, `rate_limited`, `invalid_credentials`, `timeout`, `invalid_request`, or `model_response_rejected`. Validator details may be included for a rejected draft. Raw upstream bodies are not returned.
+Protocol extraction calls `POST /v1beta/interactions` with `model`, `input`, and `response_format` `{ "type": "text", "mime_type": "application/json" }`. It does not send tools, a thinking level, or an output-token cap. `GEMINI_MODEL` defaults to `gemini-4-hydrogen`. A response is used only when its status is `completed`, it contains text, and that text parses as a non-empty steps array. Failed, incomplete, empty, or malformed interactions are rejected and are not returned as partial steps. `validateDraft` still checks quotes, durations, and observation methods.
+
+`GEMINI_TIMEOUT_MS` sets the per-attempt limit and defaults to 20000. One extraction, including at most two retries, stops within 60 seconds. Transient failures wait with exponential backoff and jitter, or for `Retry-After` when Gemini sends it. Invalid credentials, invalid requests, and missing models are not retried. The client receives only a category: `model_unavailable`, `rate_limited`, `invalid_credentials`, `timeout`, `invalid_request`, or `model_response_rejected`. Validator details may be included for a rejected draft. Raw upstream bodies are not returned.
+
+Review explanations still use `generateContent` with `gemini-3.8-flash`. `GEMINI_MODEL` does not change that path.
 
 ## Ownership for this milestone
 
@@ -99,4 +103,4 @@ Browser on `http://localhost:5173/`: Gemini extraction with no key shows that li
 
 `POST /protocols/extract` without a key returns `503` and `{ "error": "missing_credentials" }`. A rejected model body is shown with the validator details and is not applied.
 
-Live extraction on 14 Nov 2026 used the saved key and did not return steps. `gemini-3.8-flash` supports `generateContent`, and so do `gemini-3.7-flash` and `gemini-3.6-flash`. Each of those three calls ended as `{ "error": "timeout" }` inside the 60-second budget. No further models were tried, and no draft was substituted. The cup-text duration check is still unconfirmed.
+Prepare on 14 Nov 2026 extracted through the Interactions API with `gemini-4-hydrogen`. "Stir cup A for 10 seconds. Mix cup B thoroughly." produced a timer step whose duration is "10 seconds" and a manual step whose duration is null. The saved dye text produced four steps: add dye with a null duration, "Mix thoroughly." with a null duration, "Wait 5 minutes." with duration "5 minutes", and the still-frame color step as supported vision. That draft was approved as version 1 and was still listed after reload. Earlier `generateContent` calls to `gemini-3.8-flash`, `gemini-3.7-flash`, and `gemini-3.6-flash` timed out and are not the extraction path.
