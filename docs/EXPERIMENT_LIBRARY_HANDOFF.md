@@ -23,7 +23,7 @@ Edit `.env` locally. It is gitignored. The example file contains placeholders on
 
 The service listens on `127.0.0.1` only. Do not deploy this process publicly. A public deployment still needs authentication, authorization, TLS, and network controls. This version has no edit or delete API and no arbitrary query API.
 
-`npm test` covers invalid input, a missing parent experiment, snapshot immutability, pagination, and database-unavailable behavior with an in-memory store and an unreachable local MongoDB port. The real publish/list/open/replication test runs only when both environment variables are set, and it deletes only the documents that test created. A skipped real-database test is not a successful Atlas check.
+`npm test` covers invalid input, a missing parent experiment, snapshot immutability, pagination, and database-unavailable behavior with an in-memory store and an unreachable local MongoDB port. When `MONGODB_URI` and `MONGODB_DB` are set, it also runs one real Atlas cycle and deletes only the documents that cycle created. A skipped real-database test is not a successful Atlas check.
 
 ## Endpoints
 
@@ -55,6 +55,14 @@ curl -s -X POST http://127.0.0.1:8788/replications \
 `201` returns a new `id`, `experimentId`, a copy of that publication's `protocolSnapshot`, `status` `planned`, `createdAt`, and a note that the record does not mean the experiment was performed or reproduced. A missing parent returns `404`. The client cannot choose the status or send its own snapshot.
 
 Stable errors are `invalid_input`, `approval_required`, `not_found`, `payload_too_large`, `database_unavailable`, and `request_failed`. Response bodies do not include driver messages.
+
+## Atlas check, 2026-11-14
+
+With this machine's IP allowed in Atlas Network Access, `cluster0.kmmcmhm.mongodb.net` accepted TLS and the real test passed. Node.js `v24.21.0` and MongoDB driver `6.22.0` were used. TLS verification stayed enabled. Credentials stay in the gitignored `.env`.
+
+All 10 library tests passed, including publish, list, retrieve, and a planned replication. A separate read-back found both documents in `reprolab` before that test deleted only those two documents.
+
+A second check used the running service on `127.0.0.1:8788`. `GET /health` reported the database available. `POST /experiments` stored an approved snapshot. `POST /replications` linked a `planned` replication to that experiment id and copied the snapshot. After the process was stopped and started again, `GET /experiments/:id` returned the same experiment id, `approvalAcknowledged: true`, and the same snapshot. The replication was still in Atlas with that experiment id, status `planned`, and the same snapshot. The service has no replication read or delete route, so that confirmation and the cleanup used a one-off driver query for those two ids only. After cleanup, the experiment route returned `404` and neither document remained. Earlier TLS alert 80 failures were from Atlas Network Access, before this IP was allowlisted.
 
 ## How to connect this later
 
