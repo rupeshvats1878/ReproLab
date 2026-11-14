@@ -1,0 +1,34 @@
+:root {
+  color: var(--ink);
+  background: var(--bg);
+  font-family: 'Segoe UI', sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --bg: #efe8dc;
+  --panel: #fffdf8;
+  --ink: #1d2430;
+  --muted: #5d6673;
+  --line: #d9d0c3;
+  --teal: #0e6b66;
+  --teal-bg: #e5f3f1;
+  --filled: #1f7a4d;
+  --filled-bg: #d7efe4;
+  --unknown-bg: #efe6d6;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+h1,
+h2,
+h3,
+p {
+  letter-spacing: 0;
+}

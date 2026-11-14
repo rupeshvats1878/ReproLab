@@ -1,0 +1,99 @@
+.monitor {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.monitor-heading h2,
+.monitor-alerts h3 {
+  margin: 0 0 0.35rem;
+}
+
+.monitor-heading p,
+.monitor-alerts p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.monitor-status {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.monitor-status div {
+  padding: 0.75rem 0.9rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+}
+
+.monitor-status dt {
+  color: var(--muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.monitor-status dd {
+  margin: 0.2rem 0 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.well-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.8rem;
+  max-width: 28rem;
+}
+
+.well {
+  display: grid;
+  place-items: center;
+  gap: 0.2rem;
+  aspect-ratio: 1;
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+}
+
+.well[data-state='filled'] {
+  background: var(--filled-bg);
+  border-color: var(--filled);
+}
+
+.well[data-state='empty'] {
+  background: var(--panel);
+}
+
+.well[data-state='unknown'] {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--panel),
+    var(--panel) 8px,
+    var(--unknown-bg) 8px,
+    var(--unknown-bg) 16px
+  );
+}
+
+.well-id {
+  font-size: 1.15rem;
+  font-weight: 650;
+}
+
+.well-state {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.monitor-alerts {
+  padding: 0.9rem 1rem;
+  border-left: 4px solid var(--line);
+  background: var(--panel);
+}
+
+@media (max-width: 640px) {
+  .monitor-status {
+    grid-template-columns: 1fr;
+  }
+}
