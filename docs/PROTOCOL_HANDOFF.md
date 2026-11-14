@@ -83,7 +83,7 @@ Protocol extraction calls `POST /v1beta/interactions` with `model`, `input`, and
 
 `GEMINI_TIMEOUT_MS` sets the per-attempt limit and defaults to 20000. One extraction, including at most two retries, stops within 60 seconds. Transient failures wait with exponential backoff and jitter, or for `Retry-After` when Gemini sends it. Invalid credentials, invalid requests, and missing models are not retried. The client receives only a category: `model_unavailable`, `rate_limited`, `invalid_credentials`, `timeout`, `invalid_request`, or `model_response_rejected`. Validator details may be included for a rejected draft. Raw upstream bodies are not returned.
 
-Review explanations still use `generateContent` with `gemini-3.8-flash`. `GEMINI_MODEL` does not change that path.
+`POST /explain` uses the same Interactions request and the same `GEMINI_MODEL` default, `gemini-4-hydrogen`. It still returns `{ summary, uncertainty, citations }`. Each citation must copy a run id and an alert, event, or observation id from the supplied JSON. Incomplete interactions are rejected. The deterministic comparison stays separate from the model explanation.
 
 ## Ownership for this milestone
 
@@ -104,3 +104,5 @@ Browser on `http://localhost:5173/`: Gemini extraction with no key shows that li
 `POST /protocols/extract` without a key returns `503` and `{ "error": "missing_credentials" }`. A rejected model body is shown with the validator details and is not applied.
 
 Prepare on 14 Nov 2026 extracted through the Interactions API with `gemini-4-hydrogen`. "Stir cup A for 10 seconds. Mix cup B thoroughly." produced a timer step whose duration is "10 seconds" and a manual step whose duration is null. The saved dye text produced four steps: add dye with a null duration, "Mix thoroughly." with a null duration, "Wait 5 minutes." with duration "5 minutes", and the still-frame color step as supported vision. That draft was approved as version 1 and was still listed after reload. Earlier `generateContent` calls to `gemini-3.8-flash`, `gemini-3.7-flash`, and `gemini-3.6-flash` timed out and are not the extraction path.
+
+Review on 14 Nov 2026 explained the three labeled synthetic demos through the same Interactions API. The explanation separated observed well differences, the two human notes on Demo 1, and an unverified hypothesis. Its citations were `evt_synthetic_skip_then_fill_ack` and `evt_synthetic_skip_then_fill_resolve` on `run_synthetic_skip_then_fill`. It did not claim that a difference caused an outcome. The deterministic summary stayed under its own heading. A later cup extraction still kept "10 seconds" for cup A and a null duration for cup B.

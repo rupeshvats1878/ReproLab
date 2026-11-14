@@ -1,5 +1,4 @@
 export const DEFAULT_MODEL = 'gemini-4-hydrogen'
-export const EXPLAIN_MODEL = 'gemini-3.8-flash'
 export const EXTRACTION_BUDGET_MS = 60_000
 export const MAX_RETRIES = 2
 export const DEFAULT_ATTEMPT_TIMEOUT_MS = 20_000
@@ -63,7 +62,7 @@ export function interactionText(payload) {
     .join('')
 }
 
-export function parseCompletedInteraction(payload) {
+export function parseCompletedInteraction(payload, shape = 'steps') {
   if (!payload || payload.status !== 'completed') {
     const status = typeof payload?.status === 'string' ? payload.status : 'missing'
     return { error: `The Gemini interaction did not complete (${status}).` }
@@ -72,7 +71,10 @@ export function parseCompletedInteraction(payload) {
   if (text === '') return { error: 'The Gemini interaction returned no text.' }
   try {
     const draft = JSON.parse(text)
-    if (!draft || typeof draft !== 'object' || Array.isArray(draft) || !Array.isArray(draft.steps) || draft.steps.length === 0) {
+    if (!draft || typeof draft !== 'object' || Array.isArray(draft)) {
+      return { error: 'The model response was not a JSON object.' }
+    }
+    if (shape === 'steps' && (!Array.isArray(draft.steps) || draft.steps.length === 0)) {
       return { error: 'The model response did not contain a completed steps array.' }
     }
     return { draft }
@@ -98,6 +100,7 @@ export async function generateInteractionJson(prompt, options) {
     apiKey: options.apiKey,
     timeoutMs,
     fetchImpl,
+    shape: options.shape ?? 'steps',
   }))
 }
 
@@ -185,7 +188,7 @@ async function oneAttempt({ prompt, model, apiKey, timeoutMs, fetchImpl }) {
   }
 }
 
-async function oneInteraction({ prompt, model, apiKey, timeoutMs, fetchImpl }) {
+async function oneInteraction({ prompt, model, apiKey, timeoutMs, fetchImpl, shape }) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
@@ -215,7 +218,7 @@ async function oneInteraction({ prompt, model, apiKey, timeoutMs, fetchImpl }) {
       }
     }
     const payload = await response.json()
-    const parsed = parseCompletedInteraction(payload)
+    const parsed = parseCompletedInteraction(payload, shape)
     if (parsed.error) {
       return {
         ok: false,

@@ -2,14 +2,14 @@ import { existsSync, readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { DEFAULT_MODEL, EXPLAIN_MODEL, EXTRACTION_BUDGET_MS, attemptTimeoutMs, generateInteractionJson, generateJson } from './gemini/generateJson.mjs'
+import { DEFAULT_MODEL, EXTRACTION_BUDGET_MS, attemptTimeoutMs, generateInteractionJson } from './gemini/generateJson.mjs'
 import { extractionPrompt, validateDraft } from './protocols/validateDraft.mjs'
 import { validateExplanation } from './validateExplanation.mjs'
 
 loadEnv(join(dirname(fileURLToPath(import.meta.url)), '.env'))
 
 const port = Number(process.env.PORT || 8787)
-const extractionModel = process.env.GEMINI_MODEL || DEFAULT_MODEL
+const model = process.env.GEMINI_MODEL || DEFAULT_MODEL
 const configuredTimeoutMs = attemptTimeoutMs(process.env.GEMINI_TIMEOUT_MS)
 
 const server = createServer((req, res) => {
@@ -41,7 +41,7 @@ const server = createServer((req, res) => {
 server.listen(port, '127.0.0.1', () => {
   const key = process.env.GEMINI_API_KEY
   console.log(
-    `LabBench explain server on http://127.0.0.1:${port} (${key ? 'key present' : 'live AI unavailable'}, extract ${extractionModel}, explain ${EXPLAIN_MODEL})`,
+    `LabBench explain server on http://127.0.0.1:${port} (${key ? 'key present' : 'live AI unavailable'}, extract ${model}, explain ${model})`,
   )
 })
 
@@ -51,7 +51,8 @@ async function explain(raw) {
   const explanation = await explainJson([
     'Explain this colored-water six-well demo.',
     'Use only the JSON. Do not invent run or event ids.',
-    'Do not claim the runs prove a cause, that no alerts means no mistakes, or that a final image is a biological assay.',
+    'Separate observed differences, human reports, and hypotheses.',
+    'Do not claim that a difference caused an outcome, that the runs prove a cause, that no alerts means no mistakes, or that a final image is a biological assay.',
     'Return JSON with summary, uncertainty, and citations. Each citation has runId, eventId, and claim.',
     'Copy runId and eventId from the input. Say what is uncertain.',
     JSON.stringify(request),
@@ -80,7 +81,7 @@ async function extractProtocol(raw) {
 
 function extractJson(prompt) {
   return generateInteractionJson(prompt, {
-    model: extractionModel,
+    model,
     apiKey: process.env.GEMINI_API_KEY,
     attemptTimeoutMs: configuredTimeoutMs,
     budgetMs: EXTRACTION_BUDGET_MS,
@@ -88,11 +89,12 @@ function extractJson(prompt) {
 }
 
 function explainJson(prompt) {
-  return generateJson(prompt, {
-    model: EXPLAIN_MODEL,
+  return generateInteractionJson(prompt, {
+    model,
     apiKey: process.env.GEMINI_API_KEY,
     attemptTimeoutMs: configuredTimeoutMs,
     budgetMs: EXTRACTION_BUDGET_MS,
+    shape: 'object',
   })
 }
 

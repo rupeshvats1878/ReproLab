@@ -173,6 +173,28 @@ test('reads a completed interaction and rejects unfinished output', async () => 
   assert.equal(body.tools, undefined)
   assert.equal(body.generation_config, undefined)
   assert.equal(value.steps.length, 1)
+
+  const explanation = interactionPayload('completed', '{"summary":"B2 stayed open.","uncertainty":"The snapshot does not say why.","citations":[{"runId":"run_demo","eventId":"alert_b2","claim":"B2 was flagged."}]}')
+  assert.equal(parseCompletedInteraction(explanation, 'object').draft.summary, 'B2 stayed open.')
+  assert.match(parseCompletedInteraction(interactionPayload('incomplete', '{"summary":"partial"}'), 'object').error, /did not complete/)
+  assert.match(parseCompletedInteraction(interactionPayload('completed', '[]'), 'object').error, /JSON object/)
+  const explained = await generateInteractionJson('prompt', {
+    model: 'gemini-4-hydrogen',
+    apiKey: 'test-key',
+    attemptTimeoutMs: 1000,
+    shape: 'object',
+    fetchImpl: async (url, request) => {
+      const sent = JSON.parse(request.body)
+      assert.equal(url, 'https://generativelanguage.googleapis.com/v1beta/interactions')
+      assert.equal(sent.tools, undefined)
+      assert.equal(sent.generation_config, undefined)
+      return fakeResponse(200, explanation)
+    },
+    sleep: async () => {},
+    now: () => 0,
+    random: () => 0,
+  })
+  assert.equal(explained.citations[0].eventId, 'alert_b2')
 })
 
 function interactionPayload(status, text) {
