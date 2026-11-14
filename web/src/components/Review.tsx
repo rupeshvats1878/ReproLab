@@ -102,7 +102,7 @@ export function Review(props: ReviewProps) {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(request),
-        signal: AbortSignal.timeout(20000),
+        signal: AbortSignal.timeout(70000),
       })
       if (!isCurrentExplanation(requestSeq.current, requestId)) return
       if (!response.ok) {

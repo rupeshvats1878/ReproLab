@@ -2,13 +2,15 @@ import { existsSync, readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { DEFAULT_MODEL, EXTRACTION_BUDGET_MS, attemptTimeoutMs, generateJson } from './gemini/generateJson.mjs'
 import { extractionPrompt, validateDraft } from './protocols/validateDraft.mjs'
 import { validateExplanation } from './validateExplanation.mjs'
 
 loadEnv(join(dirname(fileURLToPath(import.meta.url)), '.env'))
 
 const port = Number(process.env.PORT || 8787)
-const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash'
+const model = process.env.GEMINI_MODEL || DEFAULT_MODEL
+const configuredTimeoutMs = attemptTimeoutMs(process.env.GEMINI_TIMEOUT_MS)
 
 const server = createServer((req, res) => {
   const origin = req.headers.origin
@@ -29,9 +31,9 @@ const server = createServer((req, res) => {
     .then((body) => handle(body))
     .then((result) => send(res, result.status, result.body))
     .catch((error) => {
-      const status = error instanceof HttpError ? error.status : 500
+      const status = typeof error?.status === 'number' ? error.status : 500
       const message = error instanceof Error ? error.message : 'request_failed'
-      const details = error instanceof HttpError ? error.details : []
+      const details = Array.isArray(error?.details) ? error.details : []
       send(res, status, details.length > 0 ? { error: message, details } : { error: message })
     })
 })
@@ -39,14 +41,14 @@ const server = createServer((req, res) => {
 server.listen(port, '127.0.0.1', () => {
   const key = process.env.GEMINI_API_KEY
   console.log(
-    `LabBench explain server on http://127.0.0.1:${port} (${key ? 'key present' : 'live AI unavailable'})`,
+    `LabBench explain server on http://127.0.0.1:${port} (${key ? 'key present' : 'live AI unavailable'}, model ${model})`,
   )
 })
 
 async function explain(raw) {
   const request = JSON.parse(raw)
   if (containsMedia(request)) throw new HttpError(400, 'media_not_accepted')
-  const explanation = await generateJson([
+  const explanation = await requestJson([
     'Explain this colored-water six-well demo.',
     'Use only the JSON. Do not invent run or event ids.',
     'Do not claim the runs prove a cause, that no alerts means no mistakes, or that a final image is a biological assay.',
@@ -70,37 +72,19 @@ async function extractProtocol(raw) {
   if (typeof sourceText !== 'string' || sourceText.trim() === '' || sourceText.length > 20000) {
     throw new HttpError(400, 'protocol_text_required')
   }
-  const draft = await generateJson(extractionPrompt(title.trim(), sourceText))
+  const draft = await requestJson(extractionPrompt(title.trim(), sourceText))
   const errors = validateDraft(sourceText, draft)
   if (errors.length > 0) throw new HttpError(502, 'model_response_rejected', errors)
   return { status: 200, body: { steps: draft.steps } }
 }
 
-async function generateJson(prompt) {
-  if (!process.env.GEMINI_API_KEY) throw new HttpError(503, 'missing_credentials')
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-    {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-goog-api-key': process.env.GEMINI_API_KEY,
-      },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: { responseMimeType: 'application/json', temperature: 0.2 },
-      }),
-      signal: AbortSignal.timeout(15000),
-    },
-  )
-  if (!response.ok) throw new HttpError(502, 'model_request_failed')
-  const payload = await response.json()
-  const text = payload?.candidates?.[0]?.content?.parts?.map((part) => part.text ?? '').join('') ?? ''
-  try {
-    return JSON.parse(text)
-  } catch {
-    throw new HttpError(502, 'model_response_rejected', ['The model response was not JSON.'])
-  }
+function requestJson(prompt) {
+  return generateJson(prompt, {
+    model,
+    apiKey: process.env.GEMINI_API_KEY,
+    attemptTimeoutMs: configuredTimeoutMs,
+    budgetMs: EXTRACTION_BUDGET_MS,
+  })
 }
 
 function containsMedia(value) {

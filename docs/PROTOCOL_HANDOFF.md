@@ -79,9 +79,11 @@ const selected = approved.find((protocol) => protocol.id === id && protocol.vers
 
 `POST http://127.0.0.1:8787/protocols/extract` accepts `{ "title", "sourceText" }` and, when Gemini is configured with `GEMINI_API_KEY` on the server, returns `{ "steps" }`. Without a key it returns `503` and `{ "error": "missing_credentials" }`. The browser does not invent steps. The key stays in `server/.env` and is not part of this JSON.
 
+The default model is `gemini-3.8-flash`. `GEMINI_TIMEOUT_MS` sets the per-attempt limit and defaults to 20000. One extraction, including at most two retries, stops within 60 seconds. Transient failures wait with exponential backoff and jitter, or for `Retry-After` when Gemini sends it. Invalid credentials, invalid requests, and missing models are not retried. The client receives only a category: `model_unavailable`, `rate_limited`, `invalid_credentials`, `timeout`, `invalid_request`, or `model_response_rejected`. Validator details may be included for a rejected draft. Raw upstream bodies are not returned.
+
 ## Ownership for this milestone
 
-- Protocol preparation: `web/src/prepare/`, `server/protocols/`, `server/index.mjs`, `web/src/App.tsx`, and this document. The approved-protocol types live in `web/src/prepare/library.ts` and `web/src/prepare/validate.ts`.
+- Protocol preparation: `web/src/prepare/`, `server/protocols/`, `server/gemini/`, `server/index.mjs`, `web/src/App.tsx`, and this document. The approved-protocol types live in `web/src/prepare/library.ts` and `web/src/prepare/validate.ts`.
 - Experiment library: `server/library/` and `docs/EXPERIMENT_LIBRARY_HANDOFF.md`.
 - Leave `web/src/shared/types.ts` as the six-well run contract.
 
@@ -95,4 +97,6 @@ Web `npm test`: 66 passed. `readApprovedProtocols` returns the approved version 
 
 Browser on `http://localhost:5173/`: Gemini extraction with no key shows that live extraction is unavailable and adds no steps. A manual `"Mix thoroughly."` step approves with a blank duration. Revising it saves version 2 as a draft and leaves version 1 approved with title `"Finish check"` and `duration: null`. Both versions are still listed after reload. Monitor plays a synthetic sequence and labels it as not a camera. Review still lists three saved runs. Reference lab still shows two stored captures.
 
-`POST /protocols/extract` without a key returns `503` and `{ "error": "missing_credentials" }`. A failed Gemini HTTP request is shown as "The Gemini request failed" and does not substitute a draft. A rejected model body is shown with the validator details and is not applied. No live Gemini extraction was run: `server/.env` is absent and `GEMINI_API_KEY` is not set.
+`POST /protocols/extract` without a key returns `503` and `{ "error": "missing_credentials" }`. A rejected model body is shown with the validator details and is not applied.
+
+Live extraction on 14 Nov 2026 used the saved key and did not return steps. `gemini-3.8-flash` supports `generateContent`, and so do `gemini-3.7-flash` and `gemini-3.6-flash`. Each of those three calls ended as `{ "error": "timeout" }` inside the 60-second budget. No further models were tried, and no draft was substituted. The cup-text duration check is still unconfirmed.

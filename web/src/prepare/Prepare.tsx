@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { commitVersion, readLibrary, writeLibrary } from './library.ts'
 import type { ProtocolVersion } from './library.ts'
 import { OBSERVATION_METHODS, readExtractedSteps, validateDraft } from './validate.ts'
@@ -6,6 +6,8 @@ import type { ObservationMethod, ProtocolStep } from './validate.ts'
 import './prepare.css'
 
 const EXTRACT_URL = 'http://127.0.0.1:8787/protocols/extract'
+const EXTRACT_TIMEOUT_MS = 70_000
+const EXTRACTING_NOTICE = 'Asking Gemini for a draft. This can take up to a minute.'
 
 export function Prepare() {
   const [library, setLibrary] = useState(() => readLibrary(localStorage))
@@ -19,6 +21,7 @@ export function Prepare() {
   const [notice, setNotice] = useState('Paste a protocol, extract a draft, or write the steps yourself.')
   const [error, setError] = useState('')
   const [extracting, setExtracting] = useState(false)
+  const extractingRef = useRef(false)
   const locked = originStatus === 'approved' && !revising
   const problems = editorProblems(title, sourceText, normalizeSteps(steps))
 
@@ -28,41 +31,52 @@ export function Prepare() {
   }
 
   async function extract() {
+    if (extractingRef.current) return
+    extractingRef.current = true
     setExtracting(true)
     setError('')
+    setNotice(EXTRACTING_NOTICE)
     try {
       const response = await fetch(EXTRACT_URL, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ title, sourceText }),
-        signal: AbortSignal.timeout(20000),
+        signal: AbortSignal.timeout(EXTRACT_TIMEOUT_MS),
       })
       const body: unknown = await response.json().catch(() => null)
-      if (response.status === 503 || (isRecord(body) && body.error === 'missing_credentials')) {
-        setError('Live Gemini extraction is unavailable. No API key is configured on the local server. Add the steps manually. No generated protocol was substituted.')
-        return
-      }
-      if (isRecord(body) && body.error === 'model_request_failed') {
-        setError('The Gemini request failed. Add the steps manually. No generated protocol was substituted.')
+      const category = isRecord(body) && typeof body.error === 'string' ? body.error : ''
+      const categoryMessage = extractionMessage(category)
+      if (categoryMessage) {
+        setNotice('Paste a protocol, extract a draft, or write the steps yourself.')
+        setError(categoryMessage)
         return
       }
       if (!response.ok) {
         const details = isRecord(body) && Array.isArray(body.details)
           ? body.details.filter((item): item is string => typeof item === 'string').join(' ')
           : ''
+        setNotice('Paste a protocol, extract a draft, or write the steps yourself.')
         setError(`Gemini extraction was rejected. ${details || 'The server did not return a usable draft.'} Add the steps manually. No generated protocol was substituted.`)
         return
       }
       const extracted = readExtractedSteps(sourceText, body)
       if (!extracted || extracted.length === 0) {
+        setNotice('Paste a protocol, extract a draft, or write the steps yourself.')
         setError('The extraction did not match the supplied text. No draft was applied.')
         return
       }
       setSteps(extracted)
       setNotice(`Extracted ${extracted.length} steps. Check every quote before saving. This draft is not saved yet.`)
-    } catch {
-      setError('The protocol server is not reachable at 127.0.0.1:8787. Start it from server/ with npm start, or add the steps manually. No generated protocol was substituted.')
+    } catch (error) {
+      const timedOut = error instanceof DOMException && (error.name === 'TimeoutError' || error.name === 'AbortError')
+      setNotice('Paste a protocol, extract a draft, or write the steps yourself.')
+      setError(
+        timedOut
+          ? 'Gemini extraction timed out. Add the steps manually. No generated protocol was substituted.'
+          : 'The protocol server is not reachable at 127.0.0.1:8787. Start it from server/ with npm start, or add the steps manually. No generated protocol was substituted.',
+      )
     } finally {
+      extractingRef.current = false
       setExtracting(false)
     }
   }
@@ -139,7 +153,12 @@ export function Prepare() {
             <textarea value={sourceText} disabled={locked} rows={8} onChange={(event) => setSourceText(event.target.value)} />
           </label>
           <div className="prepare-actions">
-            <button type="button" onClick={() => void extract()} disabled={locked || extracting || title.trim() === '' || sourceText.trim() === ''}>
+            <button
+              type="button"
+              aria-busy={extracting}
+              onClick={() => void extract()}
+              disabled={locked || extracting || title.trim() === '' || sourceText.trim() === ''}
+            >
               {extracting ? 'Asking Gemini…' : 'Extract steps with Gemini'}
             </button>
             <button type="button" disabled={locked} onClick={() => updateSteps([...steps, blankStep()])}>
@@ -272,6 +291,28 @@ function methodLabel(method: ObservationMethod): string {
   if (method === 'manual') return 'Manual confirmation'
   if (method === 'timer') return 'Timer'
   return 'Supported vision: color dispersion in a frame'
+}
+
+function extractionMessage(category: string): string | null {
+  if (category === 'missing_credentials') {
+    return 'Live Gemini extraction is unavailable. No API key is configured on the local server. Add the steps manually. No generated protocol was substituted.'
+  }
+  if (category === 'invalid_credentials') {
+    return 'Gemini rejected the API key on the local server. Add the steps manually. No generated protocol was substituted.'
+  }
+  if (category === 'model_unavailable') {
+    return 'The Gemini model is unavailable right now. Add the steps manually. No generated protocol was substituted.'
+  }
+  if (category === 'rate_limited') {
+    return 'Gemini rate or quota limit was reached. Add the steps manually. No generated protocol was substituted.'
+  }
+  if (category === 'timeout') {
+    return 'Gemini extraction timed out. Add the steps manually. No generated protocol was substituted.'
+  }
+  if (category === 'invalid_request') {
+    return 'Gemini rejected the extraction request. Add the steps manually. No generated protocol was substituted.'
+  }
+  return null
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
