@@ -3,12 +3,14 @@ import { Monitor } from './components/Monitor.tsx'
 import { Review } from './components/Review.tsx'
 import { useReviewController } from './review/useReviewController.ts'
 import './App.css'
+import { ReferenceLab } from './reference/ReferenceLab.tsx'
 
-type TabId = 'monitor' | 'review'
+type TabId = 'monitor' | 'review' | 'reference'
 
 const TABS: readonly { id: TabId; label: string }[] = [
   { id: 'monitor', label: 'Monitor' },
   { id: 'review', label: 'Review' },
+  { id: 'reference', label: 'Reference lab' },
 ]
 
 export default function App() {
@@ -20,8 +22,8 @@ export default function App() {
       <header className="app-header">
         <div>
           <p className="app-kicker">Prototype</p>
-          <h1>LabBench</h1>
-          <p className="app-subtitle">Colored-water bench observations for a six-well demo.</p>
+          <h1>ReproLab</h1>
+          <p className="app-subtitle">Prepare, observe, and compare experiments with traceable evidence.</p>
         </div>
         <nav className="app-tabs" aria-label="Primary">
           {TABS.map((item) => (
@@ -57,6 +59,7 @@ export default function App() {
             onLoadRun={review.loadRun}
           />
         </div>
+        <div hidden={tab !== 'reference'}><ReferenceLab /></div>
       </main>
     </div>
   )

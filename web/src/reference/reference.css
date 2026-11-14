@@ -1,0 +1,18 @@
+.reference-lab h2 { font-size:1.6rem; margin-bottom:.5rem }
+.reference-lab p { line-height:1.5 }
+.reference-tools { display:flex; flex-wrap:wrap; gap:1rem; align-items:center; margin:1rem 0 }
+.reference-tools label, .reference-crop label { display:grid; gap:.35rem }
+.reference-lab select, .reference-lab input, .reference-lab button { font:inherit; padding:.55rem; border:1px solid var(--line); border-radius:.4rem; background:var(--panel); color:var(--ink) }
+.reference-lab button { cursor:pointer; margin:.25rem }
+.reference-lab button:disabled { opacity:.5; cursor:default }
+.reference-lab :focus-visible { outline:3px solid var(--teal); outline-offset:3px }
+.reference-layout { display:grid; grid-template-columns:1.6fr 1fr; gap:1.25rem }
+.reference-layout aside { background:var(--teal-bg); padding:1rem; border-radius:.75rem }
+.reference-player video { width:100%; background:#111; display:block }
+.reference-crop { display:grid; grid-template-columns:repeat(4,1fr); gap:.5rem; margin:1rem 0 }
+.reference-crop input { width:100% }
+.reference-warning { color:#942c20; font-weight:600 }
+.reference-evidence { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:1rem }
+.reference-evidence article { padding:.75rem; border:1px solid var(--line); border-radius:.6rem }
+.reference-evidence img { width:100%; max-width:240px }
+@media(max-width:700px) { .reference-layout { grid-template-columns:1fr } .app-tabs { flex-wrap:wrap } }
