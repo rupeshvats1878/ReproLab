@@ -6,8 +6,9 @@ import './App.css'
 import { Library } from './library/Library.tsx'
 import { Prepare } from './prepare/Prepare.tsx'
 import { ReferenceLab } from './reference/ReferenceLab.tsx'
+import { Run } from './run/Run.tsx'
 
-type TabId = 'prepare' | 'monitor' | 'review' | 'reference' | 'library'
+type TabId = 'prepare' | 'monitor' | 'review' | 'reference' | 'library' | 'run'
 
 const TABS: readonly { id: TabId; label: string }[] = [
   { id: 'prepare', label: 'Prepare' },
@@ -15,11 +16,14 @@ const TABS: readonly { id: TabId; label: string }[] = [
   { id: 'review', label: 'Review' },
   { id: 'reference', label: 'Reference lab' },
   { id: 'library', label: 'Library' },
+  { id: 'run', label: 'Run' },
 ]
+const OPEN_REPLICATION_KEY = 'reprolab-open-replication-id'
 
 export default function App() {
   const review = useReviewController()
   const [tab, setTab] = useState<TabId>('monitor')
+  const [runId, setRunId] = useState<string | null>(() => sessionStorage.getItem(OPEN_REPLICATION_KEY))
 
   return (
     <div className="app-shell">
@@ -65,7 +69,12 @@ export default function App() {
         </div>
         <div hidden={tab !== 'reference'}><ReferenceLab /></div>
         <div hidden={tab !== 'prepare'}><Prepare /></div>
-        <div hidden={tab !== 'library'}><Library /></div>
+        <div hidden={tab !== 'library'}><Library onOpenRun={(id) => {
+          sessionStorage.setItem(OPEN_REPLICATION_KEY, id)
+          setRunId(id)
+          setTab('run')
+        }} /></div>
+        <div hidden={tab !== 'run'}><Run replicationId={runId} /></div>
       </main>
     </div>
   )

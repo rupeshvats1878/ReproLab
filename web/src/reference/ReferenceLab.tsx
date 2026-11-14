@@ -1,28 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
-import { DEFAULT_REGION, measure, validRegion } from './measure.ts'
-import type { Measurement, Region } from './measure.ts'
+import { capturePausedFrame } from './captureFrame.ts'
+import { REFERENCE_CLIPS, REFERENCE_SOURCE } from './clips.ts'
+import { methodVersionLabel, readEvidenceList, type Evidence } from './evidence.ts'
+import { DEFAULT_REGION, validRegion, type Region } from './measure.ts'
 import './reference.css'
 
-const SOURCE = 'https://weathertank.mit.edu/links/projects/dye-stirring-an-introduction/dye-stirring-tank-examples'
-const CLIPS = [
-  { id: 'nonrotating', name: 'MIT • Non-rotating tank', src: '/reference/mit-nonrotating.mp4' },
-  { id: 'rotating', name: 'MIT • Rotating tank', src: '/reference/mit-rotating.mp4' },
-]
+const SOURCE = REFERENCE_SOURCE
+const CLIPS = REFERENCE_CLIPS
 const KEY = 'reprolab-reference-evidence-v1'
-interface Evidence {
-  id: string; clipId: string; title: string; source: string; time: number
-  region: Region; result: Measurement; image: string; capturedAt: string
-}
 function readSaved(): Evidence[] {
   try {
-    const value: unknown = JSON.parse(localStorage.getItem(KEY) ?? '[]')
-    if (!Array.isArray(value)) return []
-    return value.filter((v): v is Evidence => v && typeof v.id === 'string' &&
-      typeof v.clipId === 'string' && typeof v.title === 'string' && typeof v.source === 'string' &&
-      Number.isFinite(v.time) && v.region && validRegion(v.region) && v.result &&
-      ['accepted', 'rejected'].includes(v.result.quality) &&
-      (v.result.dispersion === null || Number.isFinite(v.result.dispersion)) &&
-      typeof v.image === 'string' && v.image.startsWith('data:image/jpeg;base64,')).slice(-24)
+    return readEvidenceList(JSON.parse(localStorage.getItem(KEY) ?? '[]') as unknown)
   } catch { return [] }
 }
 export function ReferenceLab() {
@@ -48,18 +36,13 @@ export function ReferenceLab() {
       setError('Pause the video, wait for seeking to finish, and choose a crop inside the image.'); return
     }
     try {
-      const canvas = document.createElement('canvas')
-      canvas.width = 240; canvas.height = 180
-      const context = canvas.getContext('2d', { willReadFrequently: true })!
-      context.drawImage(player, player.videoWidth * region.x / 100, player.videoHeight * region.y / 100,
-        player.videoWidth * region.width / 100, player.videoHeight * region.height / 100, 0, 0, 240, 180)
-      const result = measure(context.getImageData(0, 0, 240, 180).data, 240, 180)
+      const frozen = capturePausedFrame(player, region)
       setError('')
       saveEvidence([...evidence, { id: crypto.randomUUID(), clipId, title,
-        source: clip ? SOURCE : 'Local import; provenance not independently verified', time: player.currentTime,
-        region: { ...region }, result, image: canvas.toDataURL('image/jpeg', 0.75), capturedAt: new Date().toISOString() }].slice(-24))
-      setNotice(`Captured ${title} at ${player.currentTime.toFixed(2)} seconds. Last 24 captures are saved in this browser.`)
-    } catch { setError('Unable to read the frame. Import a local video file or use the bundled reference clips.') }
+        source: clip ? SOURCE : 'Local import; provenance not independently verified', time: frozen.videoTimeSec,
+        region: frozen.crop, result: frozen.localResult, image: frozen.imageDataUrl, capturedAt: new Date().toISOString() }].slice(-24))
+      setNotice(`Captured ${title} at ${frozen.videoTimeSec.toFixed(2)} seconds. Last 24 captures are saved in this browser.`)
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Unable to read the frame. Import a local video file or use the bundled reference clips.') }
   }
   function exportEvidence() {
     const url = URL.createObjectURL(new Blob([JSON.stringify({ schema: 1, kind: 'reference-observations',
@@ -114,6 +97,7 @@ export function ReferenceLab() {
     <div className="reference-evidence">{[...evidence].reverse().map(item => <article key={item.id}>
       <img src={item.image} alt={`Measured crop from ${item.title} at ${item.time.toFixed(2)} seconds`} />
       <h4>{item.title}</h4><p>{item.time.toFixed(2)}s · {item.result.quality}</p>
+      <p>Method: {methodVersionLabel(item.result)}</p>
       <p>Dispersion: <strong>{item.result.dispersion?.toFixed(4) ?? 'Not assessed'}</strong></p>
       <p>{item.result.reason}</p>
       <button disabled={!CLIPS.some(c => c.id === item.clipId) && item.clipId !== local?.id} onClick={() => {

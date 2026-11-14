@@ -1,0 +1,20 @@
+.run-lab h2 { font-size: 1.6rem; margin-bottom: .5rem }
+.run-lab p, .run-lab li { line-height: 1.5 }
+.run-layout { display: grid; grid-template-columns: 1.4fr .8fr; gap: 1.25rem; margin-top: 1rem }
+.run-layout aside, .run-finish, .run-events article, .run-preview { background: var(--teal-bg); padding: 1rem; border-radius: .75rem }
+.run-lab button, .run-lab select, .run-lab input, .run-lab textarea {
+  font: inherit; padding: .55rem; border: 1px solid var(--line); border-radius: .4rem; background: var(--panel); color: var(--ink)
+}
+.run-lab button { cursor: pointer; margin: .25rem .25rem .25rem 0 }
+.run-lab button:disabled { opacity: .5; cursor: default }
+.run-lab textarea { width: 100%; min-height: 4.5rem }
+.run-lab :focus-visible { outline: 3px solid var(--teal); outline-offset: 3px }
+.run-player video { width: 100%; background: #111; display: block }
+.run-crop { display: grid; grid-template-columns: repeat(4, 1fr); gap: .5rem; margin: 1rem 0 }
+.run-steps { list-style: none; padding: 0 }
+.run-steps button[aria-pressed="true"] { border-color: var(--teal) }
+.run-events { display: grid; gap: .75rem }
+.run-events img, .run-preview img { width: 100%; max-width: 240px }
+.run-warning { color: #942c20; font-weight: 600 }
+.run-finish { margin: 1rem 0 }
+@media (max-width: 800px) { .run-layout, .run-crop { grid-template-columns: 1fr } }

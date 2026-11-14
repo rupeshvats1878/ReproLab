@@ -1,9 +1,12 @@
+export const ANALYSIS_METHOD = 'rgb-chromaticity-6x6-v1'
+
 export interface Region { x: number; y: number; width: number; height: number }
 export interface Measurement {
   quality: 'accepted' | 'rejected'
   reason: string
   dispersion: number | null
   clippedFraction: number
+  analysisVersion?: string
 }
 export const DEFAULT_REGION: Region = { x: 32, y: 25, width: 36, height: 50 }
 

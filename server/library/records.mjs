@@ -103,6 +103,9 @@ function buildEvent(record, events, input, recordedAt) {
     capturedAt: input.capturedAt ?? null,
     provenance: input.provenance ?? null,
     image: input.image ? structuredClone(input.image) : null,
+    source: input.source ? structuredClone(input.source) : null,
+    videoTimeSec: input.videoTimeSec ?? null,
+    crop: input.crop ? structuredClone(input.crop) : null,
     measurement: input.measurement ? structuredClone(input.measurement) : null,
     correctsEventId: input.correctsEventId ?? null,
   }
@@ -129,6 +132,9 @@ function clientCanonical(value) {
     capturedAt: value.capturedAt ?? null,
     provenance: value.provenance ?? null,
     imageBase64: value.image?.data ?? value.imageBase64 ?? null,
+    source: value.source ?? null,
+    videoTimeSec: value.videoTimeSec ?? null,
+    crop: value.crop ?? null,
     measurement: value.measurement ?? null,
     correctsEventId: value.correctsEventId ?? null,
   })

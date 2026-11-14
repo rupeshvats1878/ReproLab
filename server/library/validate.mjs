@@ -89,7 +89,7 @@ export function validateExecutionEvent(body) {
     }
   }
   if (body.type === 'image_observation') {
-    exactKeys(body, optionalKeys(body, ['id', 'type', 'stepIndex', 'capturedAt', 'provenance', 'imageBase64'], ['measurement']), 'body')
+    exactKeys(body, ['id', 'type', 'stepIndex', 'capturedAt', 'provenance', 'imageBase64', 'source', 'videoTimeSec', 'crop', 'measurement'], 'body')
     if (!PROVENANCE.includes(body.provenance)) throw new LibraryError('invalid', 'provenance')
     return {
       id: uuid(body.id, 'id'),
@@ -98,6 +98,9 @@ export function validateExecutionEvent(body) {
       capturedAt: capturedAt(body.capturedAt),
       provenance: body.provenance,
       image: jpegImage(body.imageBase64),
+      source: observationSource(body.source),
+      videoTimeSec: videoTimeSec(body.videoTimeSec),
+      crop: cropPercentages(body.crop),
       measurement: measurement(body.measurement),
     }
   }
@@ -160,45 +163,90 @@ function jpegImage(value) {
   return { mediaType: 'image/jpeg', byteLength: bytes.length, data: value }
 }
 
-function measurement(value) {
-  if (value === undefined) return null
-  plainObject(value, 'measurement')
-  walkMeasurement(value, 0, 'measurement')
-  let encoded
-  try {
-    encoded = JSON.stringify(value)
-  } catch {
-    throw new LibraryError('invalid', 'measurement')
+function observationSource(value) {
+  plainObject(value, 'source')
+  exactKeys(value, ['clipId', 'title', 'locator'], 'source')
+  return {
+    clipId: token(value.clipId, 'source', 80),
+    title: boundedText(value.title, 'source', 120),
+    locator: boundedText(value.locator, 'source', 500),
   }
-  if (encoded.length > MAX_MEASUREMENT) throw new LibraryError('invalid', 'measurement')
-  return JSON.parse(encoded)
 }
 
-function walkMeasurement(value, depth, field) {
-  if (depth > 4) throw new LibraryError('invalid', field)
-  if (value === null || typeof value === 'boolean') return
-  if (typeof value === 'number') {
-    if (!Number.isFinite(value)) throw new LibraryError('invalid', field)
-    return
+function videoTimeSec(value) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 86_400) {
+    throw new LibraryError('invalid', 'videoTimeSec')
   }
-  if (typeof value === 'string') {
-    if (value.length > 500 || value.startsWith('data:')) throw new LibraryError('invalid', field)
-    return
+  return value
+}
+
+function cropPercentages(value) {
+  plainObject(value, 'crop')
+  exactKeys(value, ['x', 'y', 'width', 'height'], 'crop')
+  const crop = {
+    x: percent(value.x, 'crop'),
+    y: percent(value.y, 'crop'),
+    width: percent(value.width, 'crop'),
+    height: percent(value.height, 'crop'),
   }
-  if (Array.isArray(value)) {
-    if (value.length > 40) throw new LibraryError('invalid', field)
-    for (const item of value) walkMeasurement(item, depth + 1, field)
-    return
+  if (crop.width < 5 || crop.height < 5 || crop.x + crop.width > 100 || crop.y + crop.height > 100) {
+    throw new LibraryError('invalid', 'crop')
   }
-  plainObject(value, field)
-  const keys = Object.keys(value)
-  if (keys.length > 40) throw new LibraryError('invalid', field)
-  for (const key of keys) {
-    if (key.length > 40 || key === '__proto__' || key === 'constructor' || key === 'prototype') {
-      throw new LibraryError('invalid', field)
+  return crop
+}
+
+function percent(value, field) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 100) {
+    throw new LibraryError('invalid', field)
+  }
+  return value
+}
+
+function measurement(value) {
+  plainObject(value, 'measurement')
+  exactKeys(value, ['metric', 'value', 'quality', 'reason', 'analysisVersion'], 'measurement')
+  if (value.metric !== 'spatial_color_dispersion') throw new LibraryError('invalid', 'measurement')
+  if (value.quality !== 'accepted' && value.quality !== 'rejected') throw new LibraryError('invalid', 'measurement')
+  if (typeof value.analysisVersion !== 'string' || !/^[a-z0-9][a-z0-9-]{0,40}$/.test(value.analysisVersion)) {
+    throw new LibraryError('invalid', 'measurement')
+  }
+  if (value.quality === 'rejected') {
+    if (value.value !== null) throw new LibraryError('invalid', 'measurement')
+    return {
+      metric: value.metric,
+      value: null,
+      quality: 'rejected',
+      reason: boundedText(value.reason, 'measurement', 500),
+      analysisVersion: value.analysisVersion,
     }
-    walkMeasurement(value[key], depth + 1, field)
   }
+  if (typeof value.value !== 'number' || !Number.isFinite(value.value)) throw new LibraryError('invalid', 'measurement')
+  if (value.reason !== null) throw new LibraryError('invalid', 'measurement')
+  const stored = {
+    metric: value.metric,
+    value: value.value,
+    quality: 'accepted',
+    reason: null,
+    analysisVersion: value.analysisVersion,
+  }
+  if (JSON.stringify(stored).length > MAX_MEASUREMENT) throw new LibraryError('invalid', 'measurement')
+  return stored
+}
+
+function token(value, field, max) {
+  if (typeof value !== 'string' || !new RegExp(`^[A-Za-z0-9_-]{1,${max}}$`).test(value)) {
+    throw new LibraryError('invalid', field)
+  }
+  return value
+}
+
+function boundedText(value, field, max) {
+  if (typeof value !== 'string') throw new LibraryError('invalid', field)
+  const text = value.trim()
+  if (!text || text.length > max || /[\u0000-\u001F]/.test(text) || text.startsWith('data:')) {
+    throw new LibraryError('invalid', field)
+  }
+  return text
 }
 
 function displayText(value, field) {

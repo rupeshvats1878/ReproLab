@@ -48,13 +48,28 @@ Events are not edited or deleted. A correction is a new event. An identical retr
   "type": "image_observation",
   "stepIndex": 3,
   "capturedAt": "2026-11-14T22:16:14.748Z",
-  "provenance": "own_recording",
+  "provenance": "imported_reference",
   "imageBase64": "BASE64_JPEG",
-  "measurement": {"dispersion": 0.05}
+  "source": {
+    "clipId": "nonrotating",
+    "title": "MIT • Non-rotating tank",
+    "locator": "https://weathertank.mit.edu/links/projects/dye-stirring-an-introduction/dye-stirring-tank-examples"
+  },
+  "videoTimeSec": 20,
+  "crop": {"x": 32, "y": 25, "width": 36, "height": 50},
+  "measurement": {
+    "metric": "spatial_color_dispersion",
+    "value": 0.05,
+    "quality": "accepted",
+    "reason": null,
+    "analysisVersion": "rgb-chromaticity-6x6-v1"
+  }
 }
 ```
 
-`provenance` is `own_recording` or `imported_reference`. Imported reference footage is evidence only. `capturedAt` is UTC, `YYYY-MM-DDTHH:MM:SS.sssZ` or without milliseconds, from 2020 through 2100. The server adds `recordedAt`. `measurement` is optional, at most 4,096 JSON characters, and cannot contain another image.
+`provenance` is `own_recording` or `imported_reference`. Imported reference footage is evidence only. `capturedAt` is the wall-clock UTC time the capture was saved, `YYYY-MM-DDTHH:MM:SS.sssZ` or without milliseconds, from 2020 through 2100. It is not the position in the video. `videoTimeSec` is that position: a finite number of seconds from 0 through 86400. `source` is the clip id, display title, and locator. `crop` is percentages of the decoded frame, each finite and from 0 through 100, with width and height at least 5 and the rectangle inside the frame. The current analysis method is `rgb-chromaticity-6x6-v1`. `measurement.metric` is `spatial_color_dispersion`. An accepted measurement has a finite `value` and `reason: null`. A rejected measurement has `value: null` and a rejection `reason`; a rejected value is never stored as zero. These image fields are required on new observations. A field outside this object, including a top-level `analysisVersion` or a legacy `measurement.dispersion` number, is `400`. The server adds `recordedAt`.
+
+Records saved before this shape are returned as stored. Reading them does not add a clip, video time, crop, or analysis version.
 
 The JPEG is `image/jpeg`, at most 256 KiB decoded, and must start with the JPEG start-of-image marker and end with the end-of-image marker. The event request body is at most 400,000 bytes. Other routes stay at 48 KiB.
 
@@ -100,7 +115,7 @@ The JPEG is `image/jpeg`, at most 256 KiB decoded, and must start with the JPEG 
 
 `startedAt`, `finishedAt`, and `completionNote` are `null` until those actions happen. Older planned records gain `events: []` on read. `humanCompleted` is true only when a `human_completion` for that step has no later correction. Image counts include every stored observation. `unfinishedStepIndexes` lists steps that are not actively human-completed, including after the session is completed.
 
-Each event has `id`, `type`, `stepIndex`, `stepId`, `recordedAt`, `note`, `capturedAt`, `provenance`, `image`, `measurement`, and `correctsEventId`. Unused fields are `null`. `image` is `{"mediaType":"image/jpeg","byteLength":123,"data":"BASE64"}` or `null`.
+Each new event has `id`, `type`, `stepIndex`, `stepId`, `recordedAt`, `note`, `capturedAt`, `provenance`, `image`, `source`, `videoTimeSec`, `crop`, `measurement`, and `correctsEventId`. Unused fields on a new event are `null`. `image` is `{"mediaType":"image/jpeg","byteLength":123,"data":"BASE64"}` or `null`. Older stored events keep only the fields they were saved with.
 
 Start returns `201` and finish returns `200`, both with this same replication object. A new event returns `201`. An identical retry returns `200`.
 

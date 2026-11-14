@@ -6,17 +6,17 @@ import {
   openReplication,
   startReplication,
   type ExperimentSummary,
-  type PlannedReplication,
+  type ReplicationRecord,
   type StoredExperiment,
 } from './client.ts'
 import './Library.css'
 
 const OPEN_REPLICATION_KEY = 'reprolab-open-replication-id'
 
-export function Library() {
+export function Library(props: { onOpenRun: (id: string) => void }) {
   const [experiments, setExperiments] = useState<ExperimentSummary[]>([])
   const [opened, setOpened] = useState<StoredExperiment | null>(null)
-  const [replication, setReplication] = useState<PlannedReplication | null>(null)
+  const [replication, setReplication] = useState<ReplicationRecord | null>(null)
   const [notice, setNotice] = useState('Published experiments are loaded from the local library service.')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -117,11 +117,12 @@ export function Library() {
           ) : <p>Open a published experiment to see its saved protocol.</p>}
           {replication ? (
             <div>
-              <h3>Planned replication</h3>
+              <h3>Replication</h3>
               <p>Replication id {replication.id}</p>
               <p>Parent experiment {replication.experimentId}</p>
               <p>Status {replication.status}</p>
               <p>{replication.note}</p>
+              <button type="button" onClick={() => props.onOpenRun(replication.id)}>Open run</button>
             </div>
           ) : null}
         </aside>

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { createServer, request as httpRequest } from 'node:http'
 import test from 'node:test'
 import { LISTEN_HOST, start } from './index.mjs'
+import { presentReplication } from './records.mjs'
 import { createLibraryServer } from './http.mjs'
 import { createMemoryStore, createMongoStore, createStoreFromEnv, createUnavailableStore } from './store.mjs'
 import { MongoClient } from 'mongodb'
@@ -304,7 +305,7 @@ function humanCompletion(id, stepIndex, note = 'Done by hand') {
   return { id, type: 'human_completion', stepIndex, note }
 }
 
-function imageObservation(id, provenance) {
+function imageObservation(id, provenance, measurement = acceptedMeasurement()) {
   return {
     id,
     type: 'image_observation',
@@ -312,8 +313,15 @@ function imageObservation(id, provenance) {
     capturedAt: '2026-11-14T22:16:14.748Z',
     provenance,
     imageBase64: jpeg,
-    measurement: { dispersion: 0.05 },
+    source: { clipId: 'nonrotating', title: 'MIT • Non-rotating tank', locator: 'https://weathertank.mit.edu/links/projects/dye-stirring-an-introduction/dye-stirring-tank-examples' },
+    videoTimeSec: 20,
+    crop: { x: 32, y: 25, width: 36, height: 50 },
+    measurement,
   }
+}
+
+function acceptedMeasurement() {
+  return { metric: 'spatial_color_dispersion', value: 0.05, quality: 'accepted', reason: null, analysisVersion: 'rgb-chromaticity-6x6-v1' }
 }
 
 test('records append-only execution without changing the frozen snapshot', async () => {
@@ -365,6 +373,9 @@ test('records append-only execution without changing the frozen snapshot', async
     assert.equal(own.body.execution.steps[3].ownObservationCount, 1)
     assert.equal(own.body.events.at(-1).image.mediaType, 'image/jpeg')
     assert.equal(own.body.events.at(-1).image.byteLength, 4)
+    assert.equal(own.body.events.at(-1).videoTimeSec, 20)
+    assert.equal(own.body.events.at(-1).capturedAt, '2026-11-14T22:16:14.748Z')
+    assert.deepEqual(own.body.events.at(-1).measurement, acceptedMeasurement())
 
     const reference = await ask(server, 'POST', `/replications/${replicationId}/events`, imageObservation(referenceImageId, 'imported_reference'))
     assert.equal(reference.status, 201)
@@ -433,6 +444,68 @@ test('records append-only execution without changing the frozen snapshot', async
   } finally {
     server.close()
   }
+})
+
+test('image observations keep video time, crop, and a rejected measurement', async () => {
+  const store = createMemoryStore()
+  const server = await listen(store)
+  try {
+    const published = await ask(server, 'POST', '/experiments', publishBody({ protocolSnapshot: executionSnapshot }))
+    const planned = await ask(server, 'POST', '/replications', { experimentId: published.body.id })
+    const replicationId = planned.body.id
+    await ask(server, 'POST', `/replications/${replicationId}/start`, {})
+    const rejected = {
+      metric: 'spatial_color_dispersion',
+      value: null,
+      quality: 'rejected',
+      reason: 'Too much dark/clipped area; choose a clear liquid region',
+      analysisVersion: 'rgb-chromaticity-6x6-v1',
+    }
+    const saved = await ask(server, 'POST', `/replications/${replicationId}/events`, imageObservation('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa10', 'imported_reference', rejected))
+    assert.equal(saved.status, 201)
+    assert.equal(saved.body.events[0].measurement.value, null)
+    assert.equal(saved.body.events[0].measurement.reason, rejected.reason)
+    assert.notEqual(saved.body.events[0].measurement.value, 0)
+    const zero = await ask(server, 'POST', `/replications/${replicationId}/events`, imageObservation('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa11', 'imported_reference', { ...rejected, value: 0 }))
+    assert.equal(zero.status, 400)
+    assert.equal(zero.body.field, 'measurement')
+    const negative = await ask(server, 'POST', `/replications/${replicationId}/events`, { ...imageObservation('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa12', 'imported_reference'), videoTimeSec: -0.01 })
+    assert.equal(negative.status, 400)
+    assert.equal(negative.body.field, 'videoTimeSec')
+    const crop = await ask(server, 'POST', `/replications/${replicationId}/events`, { ...imageObservation('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa13', 'imported_reference'), crop: { x: 98, y: 0, width: 5, height: 20 } })
+    assert.equal(crop.status, 400)
+    assert.equal(crop.body.field, 'crop')
+    const extra = await ask(server, 'POST', `/replications/${replicationId}/events`, { ...imageObservation('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa14', 'imported_reference'), analysisVersion: 'rgb-chromaticity-6x6-v1' })
+    assert.equal(extra.status, 400)
+    assert.equal((await ask(server, 'GET', `/replications/${replicationId}`)).body.events.length, 1)
+  } finally {
+    server.close()
+  }
+})
+
+test('older image events stay readable without invented method metadata', () => {
+  const presented = presentReplication({
+    id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa20',
+    experimentId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa21',
+    protocolSnapshot: executionSnapshot,
+    status: 'in_progress',
+    note: 'Planned replication. This record does not mean the experiment was performed or reproduced.',
+    createdAt: '2026-11-14T22:11:30.873Z',
+    startedAt: '2026-11-14T22:20:00.000Z',
+    finishedAt: null,
+    completionNote: null,
+    events: [{
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa22',
+      type: 'image_observation',
+      stepIndex: 3,
+      measurement: { dispersion: 0.05 },
+    }],
+  })
+  assert.deepEqual(presented.events[0].measurement, { dispersion: 0.05 })
+  assert.equal(Object.hasOwn(presented.events[0], 'source'), false)
+  assert.equal(Object.hasOwn(presented.events[0], 'videoTimeSec'), false)
+  assert.equal(Object.hasOwn(presented.events[0], 'crop'), false)
+  assert.equal(Object.hasOwn(presented.events[0].measurement, 'analysisVersion'), false)
 })
 
 test('an unavailable database does not start a replication session', async () => {
