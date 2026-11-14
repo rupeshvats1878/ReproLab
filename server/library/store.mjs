@@ -38,6 +38,11 @@ export function createMemoryStore({ now = () => new Date().toISOString(), ids = 
       replications.push(record)
       return structuredClone(record)
     },
+    async openReplication(id) {
+      const found = replications.find((item) => item.id === id)
+      if (!found) throw new LibraryError('not_found')
+      return structuredClone(found)
+    },
   }
 }
 
@@ -56,6 +61,9 @@ export function createUnavailableStore() {
       throw new LibraryError('unavailable')
     },
     async replicate() {
+      throw new LibraryError('unavailable')
+    },
+    async openReplication() {
       throw new LibraryError('unavailable')
     },
   }
@@ -139,6 +147,17 @@ export function createMongoStore({ client, dbName }) {
         const record = replicationRecord(experiment, { id: randomUUID(), createdAt: new Date().toISOString() })
         await replications().insertOne({ ...record, _id: record.id })
         return record
+      } catch (error) {
+        if (error instanceof LibraryError) throw error
+        throw new LibraryError('unavailable')
+      }
+    },
+    async openReplication(id) {
+      await requireDatabase()
+      try {
+        const doc = await replications().findOne({ _id: id }, { projection: { _id: 0 } })
+        if (!doc) throw new LibraryError('not_found')
+        return doc
       } catch (error) {
         if (error instanceof LibraryError) throw error
         throw new LibraryError('unavailable')

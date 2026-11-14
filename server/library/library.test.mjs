@@ -9,6 +9,13 @@ import { MongoClient } from 'mongodb'
 
 const MISSING = '00000000-0000-4000-8000-000000000000'
 
+function realDatabaseConfigured() {
+  const uri = process.env.MONGODB_URI ?? ''
+  const dbName = process.env.MONGODB_DB ?? ''
+  if (!uri || !dbName) return false
+  return !uri.includes('USER:PASSWORD') && !uri.includes('CLUSTER.example.net')
+}
+
 function publishBody(overrides = {}) {
   return {
     title: 'Dye dispersion',
@@ -160,6 +167,21 @@ test('keeps the published snapshot immutable and links a planned replication to 
     assert.deepEqual(replication.body.protocolSnapshot, again.body.protocolSnapshot)
     assert.match(replication.body.note, /does not mean the experiment was performed or reproduced/)
 
+    const savedReplication = await ask(server, 'GET', `/replications/${replication.body.id}`)
+    assert.equal(savedReplication.status, 200)
+    assert.equal(savedReplication.body.id, replication.body.id)
+    assert.equal(savedReplication.body.experimentId, created.body.id)
+    assert.equal(savedReplication.body.status, 'planned')
+    assert.deepEqual(savedReplication.body.protocolSnapshot, again.body.protocolSnapshot)
+
+    const missingReplication = await ask(server, 'GET', `/replications/${MISSING}`)
+    assert.equal(missingReplication.status, 404)
+    assert.equal(missingReplication.body.error, 'not_found')
+
+    const badReplication = await ask(server, 'GET', '/replications/not-an-id')
+    assert.equal(badReplication.status, 400)
+    assert.equal(badReplication.body.error, 'invalid_input')
+
     const removed = await ask(server, 'DELETE', `/experiments/${created.body.id}`)
     assert.equal(removed.status, 404)
     const stillThere = await ask(server, 'GET', `/experiments/${created.body.id}`)
@@ -263,9 +285,9 @@ test('an unreachable MongoDB server is unavailable and does not save', async () 
 })
 
 test('real MongoDB publish, list, open, and planned replication', {
-  skip: process.env.MONGODB_URI && process.env.MONGODB_DB
+  skip: realDatabaseConfigured()
     ? false
-    : 'MONGODB_URI or MONGODB_DB is not set. This check was not run against a real database.',
+    : 'MONGODB_URI or MONGODB_DB is not set to a real database. This check was not run against Atlas.',
 }, async () => {
   const store = createStoreFromEnv(process.env)
   const marker = `library-test-${randomUUID()}`
@@ -287,6 +309,11 @@ test('real MongoDB publish, list, open, and planned replication', {
     replicationId = replication.id
     assert.equal(replication.status, 'planned')
     assert.deepEqual(replication.protocolSnapshot, opened.protocolSnapshot)
+    const reread = await store.openReplication(replicationId)
+    assert.equal(reread.id, replicationId)
+    assert.equal(reread.experimentId, experimentId)
+    assert.equal(reread.status, 'planned')
+    assert.deepEqual(reread.protocolSnapshot, opened.protocolSnapshot)
   } finally {
     const dbName = process.env.MONGODB_DB
     if (experimentId) await store.client.db(dbName).collection('experiments').deleteOne({ _id: experimentId })

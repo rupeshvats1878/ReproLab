@@ -1,0 +1,11 @@
+.library-lab h2 { font-size: 1.6rem; margin-bottom: .5rem }
+.library-lab p, .library-lab li { line-height: 1.5 }
+.library-layout { display: grid; grid-template-columns: 1.1fr .9fr; gap: 1.25rem }
+.library-layout aside { background: var(--teal-bg); padding: 1rem; border-radius: .75rem }
+.library-lab button {
+  font: inherit; padding: .55rem; border: 1px solid var(--line); border-radius: .4rem; background: var(--panel); color: var(--ink); cursor: pointer
+}
+.library-lab button:disabled { opacity: .5; cursor: default }
+.library-lab :focus-visible { outline: 3px solid var(--teal); outline-offset: 3px }
+.library-warning { color: #942c20 }
+@media (max-width: 700px) { .library-layout { grid-template-columns: 1fr } }

@@ -91,7 +91,21 @@ Protocol extraction calls `POST /v1beta/interactions` with `model`, `input`, and
 - Experiment library: `server/library/` and `docs/EXPERIMENT_LIBRARY_HANDOFF.md`.
 - Leave `web/src/shared/types.ts` as the six-well run contract.
 
-Publishing an approved protocol into the experiment database is the next joint step. It is not implemented here.
+Publishing uses the experiment library on port 8788. Prepare sends one record from `readApprovedProtocols` as `protocolSnapshot` only after an explicit Publish click. The Library tab lists those publications, opens the stored snapshot, and creates a replication with status `planned`.
+
+## Integrated startup
+
+On each laptop, from this repo:
+
+```bash
+cd server && npm start
+cd server/library && npm install && npm start
+cd web && npm run dev
+```
+
+The Gemini server stays on `127.0.0.1:8787`. The library server stays on `127.0.0.1:8788`. Vite proxies `/library` to that library server and leaves the Gemini calls on 8787. Copy `server/library/.env.example` to `server/library/.env` and fill `MONGODB_URI` and `MONGODB_DB` locally. Both laptops use the same Atlas database and run their own local processes. Do not expose either server publicly.
+
+The in-memory library tests are not an Atlas check. The real MongoDB test runs only when `MONGODB_URI` is a real connection string rather than the example placeholder. A second laptop still needs to publish or open an experiment and confirm the other laptop sees the same Atlas record after reload. That two-laptop check has not been run from this machine.
 
 ## Checks
 

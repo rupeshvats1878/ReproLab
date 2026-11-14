@@ -1,5 +1,7 @@
 import { useRef, useState } from 'react'
-import { commitVersion, readLibrary, writeLibrary } from './library.ts'
+import { LibraryClientError, publishExperiment } from '../library/client.ts'
+import { publishRequest } from '../library/publish.ts'
+import { commitVersion, readApprovedProtocols, readLibrary, writeLibrary } from './library.ts'
 import type { ProtocolVersion } from './library.ts'
 import { OBSERVATION_METHODS, readExtractedSteps, validateDraft } from './validate.ts'
 import type { ObservationMethod, ProtocolStep } from './validate.ts'
@@ -21,7 +23,13 @@ export function Prepare() {
   const [notice, setNotice] = useState('Paste a protocol, extract a draft, or write the steps yourself.')
   const [error, setError] = useState('')
   const [extracting, setExtracting] = useState(false)
+  const [publishTitle, setPublishTitle] = useState('')
+  const [publishDescription, setPublishDescription] = useState('')
+  const [authorDisplayName, setAuthorDisplayName] = useState('')
+  const [publishing, setPublishing] = useState(false)
+  const [publishedId, setPublishedId] = useState<string | null>(null)
   const extractingRef = useRef(false)
+  const publishingRef = useRef(false)
   const locked = originStatus === 'approved' && !revising
   const problems = editorProblems(title, sourceText, normalizeSteps(steps))
 
@@ -125,12 +133,50 @@ export function Prepare() {
     setTitle(version.title)
     setSourceText(version.sourceText)
     setSteps(version.steps.map((step) => ({ ...step, questions: [...step.questions] })))
+    setPublishedId(null)
+    setPublishTitle(version.title)
     setError('')
     setNotice(
       version.status === 'approved'
         ? `Opened approved version ${version.version}. Revise it to create a new draft.`
         : `Opened draft version ${version.version}.`,
     )
+  }
+
+  async function publishApproved() {
+    if (publishingRef.current || protocolId == null || originVersion == null) return
+    const selected = readApprovedProtocols(localStorage).find((item) => item.id === protocolId && item.version === originVersion)
+    if (!selected) {
+      setError('Only an approved version can be published. Drafts stay in this browser.')
+      return
+    }
+    const request = publishRequest(selected, {
+      title: publishTitle,
+      description: publishDescription,
+      authorDisplayName,
+    })
+    if (request.title.length === 0 || request.title.length > 120 || request.description.length === 0 || request.description.length > 500 || request.authorDisplayName.length === 0 || request.authorDisplayName.length > 80) {
+      setError('Enter a display title up to 120 characters, a description up to 500, and an author name up to 80.')
+      return
+    }
+    publishingRef.current = true
+    setPublishing(true)
+    setError('')
+    setPublishedId(null)
+    try {
+      const saved = await publishExperiment(request)
+      if (typeof saved.id !== 'string' || saved.id === '') {
+        throw new LibraryClientError('The library did not confirm a saved experiment.')
+      }
+      setPublishedId(saved.id)
+      setNotice(`Published approved version ${selected.version}. Library id ${saved.id}. The local protocol was not changed.`)
+    } catch (reason) {
+      setPublishedId(null)
+      setError(reason instanceof LibraryClientError ? reason.message : 'Publishing failed. Nothing was saved.')
+    } finally {
+      publishingRef.current = false
+      setPublishing(false)
+    }
   }
 
   return (
@@ -231,7 +277,7 @@ export function Prepare() {
           ) : null}
           <div className="prepare-actions">
             {locked ? (
-              <button type="button" onClick={() => { setRevising(true); setNotice('Editing creates a new draft. The approved version stays unchanged.') }}>
+              <button type="button" onClick={() => { setRevising(true); setPublishedId(null); setNotice('Editing creates a new draft. The approved version stays unchanged.') }}>
                 Revise as a new draft
               </button>
             ) : (
@@ -241,6 +287,28 @@ export function Prepare() {
               </>
             )}
           </div>
+          {locked ? (
+            <form onSubmit={(event) => { event.preventDefault(); void publishApproved() }}>
+              <h3>Publish this approved version</h3>
+              <p>Publishing sends this approved version only. A draft is not published, and later local edits do not change the saved snapshot.</p>
+              <label>
+                Display title
+                <input value={publishTitle} onChange={(event) => setPublishTitle(event.target.value)} maxLength={120} />
+              </label>
+              <label>
+                Description
+                <textarea value={publishDescription} rows={3} maxLength={500} onChange={(event) => setPublishDescription(event.target.value)} />
+              </label>
+              <label>
+                Author name
+                <input value={authorDisplayName} onChange={(event) => setAuthorDisplayName(event.target.value)} maxLength={80} />
+              </label>
+              <button type="submit" disabled={publishing}>
+                {publishing ? 'Publishing…' : 'Publish'}
+              </button>
+              {publishedId ? <p role="status">Atlas saved this experiment as {publishedId}.</p> : null}
+            </form>
+          ) : null}
         </div>
         <aside>
           <h3>Saved in this browser</h3>

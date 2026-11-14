@@ -54,6 +54,12 @@ curl -s -X POST http://127.0.0.1:8788/replications \
 
 `201` returns a new `id`, `experimentId`, a copy of that publication's `protocolSnapshot`, `status` `planned`, `createdAt`, and a note that the record does not mean the experiment was performed or reproduced. A missing parent returns `404`. The client cannot choose the status or send its own snapshot.
 
+```bash
+curl -s http://127.0.0.1:8788/replications/REPLICATION_ID
+```
+
+`GET /replications/:id` returns that stored plan. An unknown id returns `404`. An id that is not a UUID returns `400`.
+
 Stable errors are `invalid_input`, `approval_required`, `not_found`, `payload_too_large`, `database_unavailable`, and `request_failed`. Response bodies do not include driver messages.
 
 ## Atlas check, 2026-11-14

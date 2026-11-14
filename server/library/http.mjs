@@ -62,6 +62,14 @@ async function route(req, res, store) {
     return
   }
 
+  const replicationPath = /^\/replications\/([^/]+)$/.exec(url.pathname)
+  if (req.method === 'GET' && replicationPath) {
+    const id = validateExperimentId(decodeURIComponent(replicationPath[1]))
+    await assertDatabase(store)
+    send(res, 200, await store.openReplication(id))
+    return
+  }
+
   send(res, 404, { error: 'not_found' })
 }
 
