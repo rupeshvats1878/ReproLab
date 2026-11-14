@@ -29,7 +29,18 @@ export interface CommitInput {
   replaceVersion?: number
 }
 
-const STORAGE_KEY = 'reprolab-protocol-library-v1'
+export const PROTOCOL_LIBRARY_KEY = 'reprolab-protocol-library-v1'
+
+export interface ApprovedProtocol {
+  id: string
+  version: number
+  status: 'approved'
+  title: string
+  sourceText: string
+  steps: ProtocolStep[]
+  createdAt: string
+  approvedAt: string
+}
 
 export function emptyLibrary(): ProtocolLibrary {
   return { protocols: [] }
@@ -38,14 +49,36 @@ export function emptyLibrary(): ProtocolLibrary {
 export function readLibrary(storage: Pick<Storage, 'getItem'> | null): ProtocolLibrary {
   if (!storage) return emptyLibrary()
   try {
-    return parseLibrary(JSON.parse(storage.getItem(STORAGE_KEY) ?? '{"protocols":[]}'))
+    return parseLibrary(JSON.parse(storage.getItem(PROTOCOL_LIBRARY_KEY) ?? '{"protocols":[]}'))
   } catch {
     return emptyLibrary()
   }
 }
 
 export function writeLibrary(storage: Pick<Storage, 'setItem'>, library: ProtocolLibrary): void {
-  storage.setItem(STORAGE_KEY, JSON.stringify(library))
+  storage.setItem(PROTOCOL_LIBRARY_KEY, JSON.stringify(library))
+}
+
+export function listApprovedProtocols(library: ProtocolLibrary): ApprovedProtocol[] {
+  return library.protocols.flatMap((protocol) =>
+    protocol.versions.flatMap((version) => {
+      if (version.status !== 'approved' || typeof version.approvedAt !== 'string') return []
+      return [{
+        id: protocol.id,
+        version: version.version,
+        status: 'approved' as const,
+        title: version.title,
+        sourceText: version.sourceText,
+        steps: version.steps.map((step) => ({ ...step, questions: [...step.questions] })),
+        createdAt: version.createdAt,
+        approvedAt: version.approvedAt,
+      }]
+    }),
+  )
+}
+
+export function readApprovedProtocols(storage: Pick<Storage, 'getItem'> | null): ApprovedProtocol[] {
+  return listApprovedProtocols(readLibrary(storage))
 }
 
 export function commitVersion(

@@ -38,8 +38,12 @@ export function Prepare() {
         signal: AbortSignal.timeout(20000),
       })
       const body: unknown = await response.json().catch(() => null)
-      if (response.status === 503) {
+      if (response.status === 503 || (isRecord(body) && body.error === 'missing_credentials')) {
         setError('Live Gemini extraction is unavailable. No API key is configured on the local server. Add the steps manually. No generated protocol was substituted.')
+        return
+      }
+      if (isRecord(body) && body.error === 'model_request_failed') {
+        setError('The Gemini request failed. Add the steps manually. No generated protocol was substituted.')
         return
       }
       if (!response.ok) {
