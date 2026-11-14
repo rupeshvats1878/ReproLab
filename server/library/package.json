@@ -1,0 +1,12 @@
+{
+  "name": "reprolab-experiment-library",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node index.mjs",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "mongodb": "^6.20.0"
+  }
+}
