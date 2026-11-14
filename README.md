@@ -1,3 +1,7 @@
+# Integrated build
+
+Read **docs/INTEGRATION_HANDOFF.md first** for the current installation, fixes, verification and remaining checks. Earlier branch handoffs describe the original implementations.
+
 # LabBench
 
 LabBench is a hackathon prototype. It will watch a six-well colored-water procedure, flag possible skipped wells, keep human corrections with video evidence, and compare a run with a final plate image.

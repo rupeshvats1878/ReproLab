@@ -127,6 +127,8 @@ export interface OmissionAlert {
   sourceObservationId: ObservationId
   acknowledgedEventId?: EventId
   resolvedEventId?: EventId
+  resolvedObservationId?: ObservationId
+  reason?: 'sequence' | 'end_run'
 }
 
 /**

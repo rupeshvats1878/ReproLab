@@ -373,6 +373,10 @@ function checkAlert(
   const source = record.observations.find((observation) => observation.id === alert.sourceObservationId)
   if (!source) {
     errors.push(`${label} source observation is missing`)
+  } else if (alert.reason === 'end_run') {
+    if (source.elapsedMs > alert.raisedAtElapsedMs || source.wells.find(w => w.wellId === alert.wellId)?.state !== 'empty') {
+      errors.push(`${label} end-run alert needs a preceding empty observation`)
+    }
   } else if (source.elapsedMs !== alert.raisedAtElapsedMs) {
     errors.push(`${label} raisedAtElapsedMs must match the source observation`)
   } else if (!listPossibleOmissions(record.metadata.protocolOrder, source.wells).includes(alert.wellId)) {
@@ -393,7 +397,9 @@ function checkAlert(
     if (alert.resolvedEventId) errors.push(`${label} acknowledged alerts are not resolved`)
   }
   if (alert.status === 'resolved') {
-    if (!resolved || resolved.kind !== 'omission_resolved') {
+    const observed = record.observations.find(o => o.id === alert.resolvedObservationId)
+    const validObserved = observed && observed.elapsedMs > alert.raisedAtElapsedMs && observed.wells.some(w => w.wellId === alert.wellId && w.state === 'filled')
+    if ((!resolved || resolved.kind !== 'omission_resolved') && !validObserved) {
       errors.push(`${label} resolved status requires a resolution event`)
     }
   }

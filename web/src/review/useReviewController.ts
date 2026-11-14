@@ -1,39 +1,43 @@
-import { useMemo } from 'react'
-import { IDLE_PROTOCOL } from '../shared/protocol.ts'
-import type { ReviewController } from '../shared/types.ts'
+import { useMemo, useRef, useState } from 'react'
+import type {
+  ElapsedMs,
+  HumanEventDraft,
+  MediaDraft,
+  ObservationDraft,
+  ReviewController,
+  RunCompletion,
+  RunRecord,
+  RunStartDraft,
+} from '../shared/types.ts'
+import { createReviewState, reduceReview, type ReviewAction, type ReviewState } from './engine.ts'
 
 /**
- * REVIEW CONTROLLER STUB
- *
- * Frozen export (do not rename):
- *   export function useReviewController(): ReviewController
- *
- * App.tsx imports it from:
- *   ./review/useReviewController.ts
- *
- * The review developer replaces the function body. Keep this export name and
- * return ReviewController from ../shared/types.ts.
- *
- * This stub returns an idle protocol and ignores every action so the app
- * builds before review logic exists. It does not persist, derive alerts,
- * or load the synthetic fixtures.
- *
- * Required behavior is specified in docs/INTERFACE.md.
+ * Frozen export. App.tsx imports useReviewController from this file.
+ * Protocol rules stay in the pure reducer and the shared protocol helpers.
  */
 export function useReviewController(): ReviewController {
-  return useMemo<ReviewController>(
-    () => ({
-      protocol: IDLE_PROTOCOL,
-      startRun: () => {},
-      updateElapsedMs: () => {},
-      recordObservation: () => {},
-      registerMedia: () => {},
-      completeRun: () => {},
-      acknowledgeOmission: () => {},
-      resolveOmission: () => {},
-      addHumanEvent: () => {},
-      loadRun: () => {},
-    }),
-    [],
-  )
+  const [state, setState] = useState<ReviewState>(createReviewState)
+  const stateRef = useRef(state)
+
+  const actions = useMemo(() => {
+    const dispatch = (action: ReviewAction) => {
+      const next = reduceReview(stateRef.current, action)
+      stateRef.current = next
+      setState(next)
+    }
+    return {
+      startRun: (draft: RunStartDraft) => dispatch({ type: 'startRun', draft }),
+      updateElapsedMs: (elapsedMs: ElapsedMs) => dispatch({ type: 'updateElapsedMs', elapsedMs }),
+      recordObservation: (draft: ObservationDraft) => dispatch({ type: 'recordObservation', draft }),
+      registerMedia: (media: MediaDraft) => dispatch({ type: 'registerMedia', media }),
+      completeRun: (completion: RunCompletion) => dispatch({ type: 'completeRun', completion }),
+      acknowledgeOmission: (alertId: string) => dispatch({ type: 'acknowledgeOmission', alertId }),
+      resolveOmission: (alertId: string, note?: string) =>
+        dispatch({ type: 'resolveOmission', alertId, note }),
+      addHumanEvent: (draft: HumanEventDraft) => dispatch({ type: 'addHumanEvent', draft }),
+      loadRun: (record: RunRecord) => dispatch({ type: 'loadRun', record }),
+    }
+  }, [])
+
+  return { protocol: state.protocol, ...actions }
 }

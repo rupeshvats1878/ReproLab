@@ -16,6 +16,8 @@ export function rememberVisionBlob(mediaId: string, blob: Blob): void {
   visionBlobs.set(mediaId, blob)
 }
 
+export function forgetVisionBlob(mediaId: string): void { visionBlobs.delete(mediaId) }
+
 export function getVisionBlob(mediaId: string): Blob | undefined {
   return visionBlobs.get(mediaId)
 }

@@ -38,7 +38,7 @@ export default function App() {
       </header>
 
       <main className="app-main">
-        {tab === 'monitor' ? (
+        <div hidden={tab !== 'monitor'}>
           <Monitor
             protocol={review.protocol}
             onRunStart={review.startRun}
@@ -47,7 +47,8 @@ export default function App() {
             onMediaAvailable={review.registerMedia}
             onRunComplete={review.completeRun}
           />
-        ) : (
+        </div>
+        <div hidden={tab !== 'review'}>
           <Review
             protocol={review.protocol}
             onAcknowledgeOmission={review.acknowledgeOmission}
@@ -55,7 +56,7 @@ export default function App() {
             onAddHumanEvent={review.addHumanEvent}
             onLoadRun={review.loadRun}
           />
-        )}
+        </div>
       </main>
     </div>
   )

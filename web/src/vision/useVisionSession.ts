@@ -172,6 +172,7 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
   const syntheticIndex = useRef(0)
   const inputKindRef = useRef<VisionSession['inputKind']>('none')
   const pausedRef = useRef(false)
+  const lastAnalyzedTime = useRef(-1)
   const runningRef = useRef(false)
   const holdRef = useRef(false)
   const seekBlockedRef = useRef(false)
@@ -332,7 +333,9 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
     loopRef.current = () => {
       if (inputKindRef.current === 'synthetic' || inputKindRef.current === 'none') return
       const video = videoRef.current
-      if (!video || video.readyState < 2) return
+      if (!video || video.readyState < 2 || video.seeking || video.paused || video.ended || pausedRef.current) return
+      if (video.currentTime === lastAnalyzedTime.current) return
+      lastAnalyzedTime.current = video.currentTime
       const data = grabVideoFrame(video, scratchCanvas())
       if (!data) return
       ingest(data, video.videoWidth, video.videoHeight, 'video')
@@ -923,6 +926,8 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
     if (kind === 'live' && !streamRef.current) return
     if (kind === 'prerecorded' && !fileBlobRef.current) return
     resetDetector()
+    clearAssessment()
+    lastAnalyzedTime.current = -1
     runningRef.current = true
     originRef.current = performance.now()
     setLocalPhase('running')
@@ -1183,6 +1188,9 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
     assessmentRef.current = draft
     setFinalMeasurements(measured)
     setAssessment(draft)
+    if (localPhase === 'completed') {
+      callbacksRef.current.onRunComplete({ elapsedMs: lastElapsedRef.current, finalAssessment: draft })
+    }
     const unknown = draft.wells.filter((well) => well.state === 'unknown').map((well) => well.wellId)
     setFinalMessage(
       unknown.length > 0
