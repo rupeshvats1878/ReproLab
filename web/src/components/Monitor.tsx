@@ -380,12 +380,12 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
         </aside>
       </div>
 
-      <details
+      {session.procedureMode === 'six-well' ? <details
         className="fold"
-        open={session.procedureMode === 'six-well' ? setupOpen : undefined}
+        open={setupOpen}
         onToggle={(event) => { if (session.procedureMode === 'six-well') setSetupOpen(event.currentTarget.open) }}
       >
-        <summary>{session.procedureMode === 'three-cup' ? 'Recording tools' : 'Camera setup · six-well detector'}</summary>
+        <summary>Camera setup · six-well detector</summary>
         <CameraSetup
           session={session}
           wellSize={wellSize}
@@ -479,7 +479,7 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
         </div>
         </details>
         ) : null}
-      </details>
+      </details> : null}
 
       {session.procedureMode === 'six-well' ? <details className="fold monitor-advanced">
         <summary>Advanced details <span>Measurements, history and diagnostics</span></summary>
