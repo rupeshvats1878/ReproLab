@@ -37,69 +37,29 @@ export function Monitor(props: MonitorProps) {
   const selected = session.live.alerts.find((alert) => alert.id === chosenId) ?? priority
   const otherAlerts = unresolved.filter((alert) => alert.id !== selected?.id)
   const guide = guideCopy(session, expected, selected)
+  const issueActive = selected != null && selected.status !== 'corrected'
+  const highlightedWell = issueActive ? selected.wellId : expected
+
+  function startSkipDemo(): void {
+    session.useSynthetic('skip-a2-then-fill')
+    session.startRun()
+  }
 
   return (
-    <section className="monitor" aria-labelledby="monitor-title">
+    <section className="monitor" aria-labelledby="monitor-title" data-debug={session.debugOverlay ? 'true' : 'false'}>
       <div className="monitor-heading">
         <h2 id="monitor-title">Monitor</h2>
         <p>Six locations, in order. This screen does not run a Prepare protocol.</p>
       </div>
 
-      <div className="monitor-toolbar">
-        {session.inputKind === 'synthetic' ? (
-          <p className="synthetic-flag" role="status">
-            Synthetic demonstration
-          </p>
-        ) : null}
-        <p className="input-banner" data-kind={session.inputKind} role="status">
-          {session.inputLabel}
-        </p>
-        <div className="button-row">
-          <button type="button" onClick={session.startCamera} disabled={session.cameraPhase === 'starting' || session.cameraPhase === 'live'}>
-            Start Camera
-          </button>
-          <button type="button" onClick={session.stopCamera} disabled={session.cameraPhase !== 'live' && session.cameraPhase !== 'starting'}>
-            Stop Camera
-          </button>
-          <button type="button" onClick={session.togglePlayback} disabled={session.inputKind !== 'prerecorded'}>
-            Play or pause video
-          </button>
-          <button type="button" onClick={session.startRun} disabled={!session.canStartRun}>
-            Start run
-          </button>
-          <button type="button" onClick={session.completeRun} disabled={session.localPhase !== 'running'}>
-            Complete run
-          </button>
-        </div>
-        <label className="file-field">
-          Prerecorded video file
-          <input
-            type="file"
-            accept="video/*"
-            onChange={(event) => {
-              const file = event.target.files?.[0]
-              if (file) session.useVideoFile(file)
-              event.target.value = ''
-            }}
-          />
-        </label>
-        <div className="button-row" role="group" aria-label="Synthetic sequences">
-          {SYNTHETIC_SEQUENCES.map((sequence) => (
-            <button
-              key={sequence.id}
-              type="button"
-              aria-pressed={session.syntheticId === sequence.id}
-              onClick={() => session.useSynthetic(sequence.id)}
-            >
-              Synthetic: {sequence.title}
-            </button>
-          ))}
-        </div>
-      </div>
-
       <div className="live-split">
         <div className="live-stage">
           <div className="stage" ref={session.bindStage} onPointerDown={session.onStagePointerDown}>
+            {session.inputKind === 'synthetic' ? (
+              <p className="synthetic-flag" role="status">
+                Synthetic demonstration
+              </p>
+            ) : null}
         <video
           ref={session.bindVideo}
           className="stage-media"
@@ -121,8 +81,8 @@ export function Monitor(props: MonitorProps) {
           content={session.contentRect}
           stable={session.stableStates}
           measurements={session.measurements}
-          selectedWell={selected?.wellId ?? null}
-          attention={selected?.status === 'open'}
+          selectedWell={highlightedWell}
+          attention={issueActive}
           debug={session.debugOverlay}
           editable
           onKey={(wellId, dx, dy) => session.nudge('video', wellId, dx, dy)}
@@ -142,18 +102,16 @@ export function Monitor(props: MonitorProps) {
         </div>
 
         <aside className="live-decisions" aria-label="Protocol decisions">
-          <section className="guide" data-attention={selected?.status === 'open' ? 'true' : 'false'} aria-live="polite">
-            <p className="monitor-note" data-save-status={session.saveStatus.phase}>
+          <section className="guide" data-attention={issueActive ? 'true' : 'false'} aria-live="polite">
+            <p className="save-status" data-save-status={session.saveStatus.phase}>
               {session.saveStatus.detail}
             </p>
             <h3>Now</h3>
             <p className="guide-line">{guide.action}</p>
-            {selected && selected.status !== 'corrected' ? (
+            {issueActive ? (
               <>
                 <h3>Issue</h3>
                 <p className="guide-line">{guide.issue}</p>
-                <h3>Why</h3>
-                <p className="guide-line">{guide.explanation}</p>
               </>
             ) : null}
             {guide.next ? (
@@ -162,6 +120,9 @@ export function Monitor(props: MonitorProps) {
                 <p className="guide-line">{guide.next}</p>
               </>
             ) : null}
+            <button type="button" className="demo-start" onClick={startSkipDemo}>
+              Start demo
+            </button>
             {selected && selected.status !== 'corrected' ? (
               <>
                 <div className="button-row">
@@ -242,76 +203,56 @@ export function Monitor(props: MonitorProps) {
               </details>
             ) : null}
           </section>
-          <StoredSession sessionId={session.live.sessionId} phase={session.saveStatus.phase} />
-          <details className="fold">
-            <summary>Decisions ({session.live.timeline.length})</summary>
-            {session.live.timeline.length === 0 ? (
-              <p className="monitor-note">None yet.</p>
-            ) : (
-              <ol className="decision-list">
-                {session.live.timeline.map((entry) => (
-                  <DecisionRow key={entry.id} entry={entry} />
-                ))}
-              </ol>
-            )}
-          </details>
         </aside>
       </div>
 
       <details className="fold">
-        <summary>Measurements</summary>
-        <dl className="monitor-status">
-          <div>
-            <dt>Observation</dt>
-            <dd>{session.observationStatus}</dd>
-          </div>
-          <div>
-            <dt>Vision clock</dt>
-            <dd>{session.localElapsedMs} ms</dd>
-          </div>
-          <div>
-            <dt>Last observation</dt>
-            <dd>{lastTrace ? `${lastTrace.draft.elapsedMs} ms` : 'None yet'}</dd>
-          </div>
-          <div>
-            <dt>Frame analysis</dt>
-            <dd>
-              {session.measurements.length === 0
-                ? 'No frame timed yet'
-                : `${session.lastProcessingMs.toFixed(1)} ms`}
-            </dd>
-          </div>
-          <div>
-            <dt>Sample interval</dt>
-            <dd>about {session.sampleMs} ms</dd>
-          </div>
-          <div>
-            <dt>Recording</dt>
-            <dd>{session.recording.phase}</dd>
-          </div>
-        </dl>
+        <summary>Setup</summary>
+        <p className="input-banner" data-kind={session.inputKind} role="status">
+          {session.inputLabel}
+        </p>
+        <div className="button-row">
+          <button type="button" onClick={session.startCamera} disabled={session.cameraPhase === 'starting' || session.cameraPhase === 'live'}>
+            Start Camera
+          </button>
+          <button type="button" onClick={session.stopCamera} disabled={session.cameraPhase !== 'live' && session.cameraPhase !== 'starting'}>
+            Stop Camera
+          </button>
+          <button type="button" onClick={session.togglePlayback} disabled={session.inputKind !== 'prerecorded'}>
+            Play or pause video
+          </button>
+          <button type="button" onClick={session.startRun} disabled={!session.canStartRun}>
+            Start run
+          </button>
+          <button type="button" onClick={session.completeRun} disabled={session.localPhase !== 'running'}>
+            Complete run
+          </button>
+        </div>
+        <label className="file-field">
+          Prerecorded video file
+          <input
+            type="file"
+            accept="video/*"
+            onChange={(event) => {
+              const file = event.target.files?.[0]
+              if (file) session.useVideoFile(file)
+              event.target.value = ''
+            }}
+          />
+        </label>
+        <div className="button-row" role="group" aria-label="Synthetic sequences">
+          {SYNTHETIC_SEQUENCES.map((sequence) => (
+            <button
+              key={sequence.id}
+              type="button"
+              aria-pressed={session.syntheticId === sequence.id}
+              onClick={() => session.useSynthetic(sequence.id)}
+            >
+              Synthetic: {sequence.title}
+            </button>
+          ))}
+        </div>
         <p className="monitor-note">{session.cameraMessage}</p>
-        {session.playbackNote ? <p className="monitor-note">{session.playbackNote}</p> : null}
-        <p className="monitor-note">{session.recording.detail}</p>
-        <p className="monitor-note">{session.evidenceNote}</p>
-        <p className="monitor-note">
-          Session {session.live.sessionId} · {session.live.sourceKind} · generation {session.monitorGeneration}
-        </p>
-        {session.localPhase === 'running' && protocol.phase === 'idle' ? (
-          <p className="monitor-note">Review has not stored this run yet.</p>
-        ) : null}
-      </details>
-
-      <details className="fold">
-        <summary>Observation history ({session.traces.length + session.live.timeline.filter((entry) => entry.source === 'human').length})</summary>
-        <p className="monitor-note">
-          Camera rows are stable readings. Human rows are reports. Review has stored {storedObservations}.
-        </p>
-        <HistoryList session={session} />
-      </details>
-
-      <details className="fold">
-        <summary>Calibration</summary>
         <div className="monitor-controls">
           <fieldset>
             <legend>Registration and detector</legend>
@@ -395,12 +336,79 @@ export function Monitor(props: MonitorProps) {
             <p className="monitor-note">
               {session.inputKind === 'synthetic'
                 ? 'On a synthetic sequence, pause holds the next drawn frame and the run clock.'
-                : 'Pause stops new observations. A live run clock still advances. A prerecorded clock follows the file.'}
-              {' '}Scores are heuristic, not calibrated probabilities. A hand or pipette crossing a well is not treated as a dispense. Mixed regions stay unknown; that is not automatic occlusion detection.
+                : 'Pause stops new observations. A live run clock still advances. A prerecorded clock follows the file.'}{' '}
+              Scores are heuristic, not calibrated probabilities. A hand or pipette crossing a well is not treated as a dispense. Mixed regions stay unknown; that is not automatic occlusion detection.
             </p>
           </fieldset>
         </div>
       </details>
+
+      <details className="fold">
+        <summary>Measurements</summary>
+        <dl className="monitor-status">
+          <div>
+            <dt>Observation</dt>
+            <dd>{session.observationStatus}</dd>
+          </div>
+          <div>
+            <dt>Vision clock</dt>
+            <dd>{session.localElapsedMs} ms</dd>
+          </div>
+          <div>
+            <dt>Last observation</dt>
+            <dd>{lastTrace ? `${lastTrace.draft.elapsedMs} ms` : 'None yet'}</dd>
+          </div>
+          <div>
+            <dt>Frame analysis</dt>
+            <dd>
+              {session.measurements.length === 0
+                ? 'No frame timed yet'
+                : `${session.lastProcessingMs.toFixed(1)} ms`}
+            </dd>
+          </div>
+          <div>
+            <dt>Sample interval</dt>
+            <dd>about {session.sampleMs} ms</dd>
+          </div>
+          <div>
+            <dt>Recording</dt>
+            <dd>{session.recording.phase}</dd>
+          </div>
+        </dl>
+        <p className="monitor-note">{session.cameraMessage}</p>
+        {session.playbackNote ? <p className="monitor-note">{session.playbackNote}</p> : null}
+        <p className="monitor-note">{session.recording.detail}</p>
+        <p className="monitor-note">{session.evidenceNote}</p>
+        <p className="monitor-note">
+          Session {session.live.sessionId} · {session.live.sourceKind} · generation {session.monitorGeneration}
+        </p>
+        {session.localPhase === 'running' && protocol.phase === 'idle' ? (
+          <p className="monitor-note">Review has not stored this run yet.</p>
+        ) : null}
+      </details>
+
+      <details className="fold">
+        <summary>Observation history ({session.traces.length + session.live.timeline.filter((entry) => entry.source === 'human').length})</summary>
+        <p className="monitor-note">
+          Camera rows are stable readings. Human rows are reports. Review has stored {storedObservations}.
+        </p>
+        <HistoryList session={session} />
+      </details>
+
+      <details className="fold">
+        <summary>Decisions ({session.live.timeline.length})</summary>
+        {session.live.timeline.length === 0 ? (
+          <p className="monitor-note">None yet.</p>
+        ) : (
+          <ol className="decision-list">
+            {session.live.timeline.map((entry) => (
+              <DecisionRow key={entry.id} entry={entry} />
+            ))}
+          </ol>
+        )}
+      </details>
+
+      <StoredSession sessionId={session.live.sessionId} phase={session.saveStatus.phase} />
 
       <details className="fold debug-panel">
         <summary>Raw versus stabilized observations</summary>
@@ -804,7 +812,7 @@ function StoredSession({ sessionId, phase }: { sessionId: string; phase: string 
   }, [sessionId, phase])
   return (
     <details className="fold">
-      <summary>Stored session</summary>
+      <summary>Storage</summary>
       <p className="monitor-note" data-retrieved-session>
         {text}
       </p>
