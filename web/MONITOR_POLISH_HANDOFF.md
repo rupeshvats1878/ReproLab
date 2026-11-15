@@ -1,5 +1,36 @@
 # Monitor polish and recording-link verification
 
+## Whole-recording analysis import
+
+The Monitor now accepts three-cup-recording-analysis/v0.1 alongside the existing
+clip envelope. This new path validates and links locally; it does not call the
+adapter or alter the existing clip HTTP contract. The raw combined document is
+retained in memory. Closing/reloading the page loses this review; it is not yet
+saved to Results or published to Library.
+
+Events are sorted by original-recording time. Protocol comparisons use the frozen
+procedure selected in the UI, never the imported protocolReport as authority.
+Non-approved pairs are possible extra transfers requiring review. Repeated pairs,
+unknown identities and order differences remain explicit. Human-confirmation
+flags are presented as supplied assertions separately from model hypotheses.
+No automatic step completion or full-run compliance decision occurs.
+
+File association requires matching byte size and duration within 250 ms, allowing
+container audio/video-tail differences. Any supplied source hash must match.
+Timestamps are never shifted. Invalid event intervals/evidence, duplicate IDs and
+invalid source-window references fail validation. Window coverage gaps/failures
+are warned about rather than accepting a coverageComplete claim as proof.
+Appearance entries remain in the raw document with their count displayed; no
+single pre-transfer appearance conclusion is synthesized from mixed timestamps.
+
+122 frontend tests and production build pass. Six new synthetic tests cover
+validation, comparisons and association. Actual supplied full-recording JSON
+was imported locally and linked by original-file hash; all three events appeared
+chronologically, the middle extra transfer remained review-required, and the
+supplied confirmation on the later event stayed separate. Watch sought the
+original recording near the requested time with no extra offset. No inference
+or external footage upload occurred. Detailed media/results remain Git-ignored.
+
 Three-cup capture is now the initial Monitor mode, with recording enabled for a
 started capture (camera access still requires Start camera). Six-well monitoring
 remains explicitly selectable under Experiment mode. Capture diagnostics start

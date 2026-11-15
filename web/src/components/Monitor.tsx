@@ -15,6 +15,7 @@ import { useVisionSession, type VisionSession } from '../vision/useVisionSession
 import type { WellMeasurement } from '../vision/analyze.ts'
 import type { PixelRect } from '../vision/geometry.ts'
 import './Monitor.css'
+import { parseRecordingAnalysis, recordingComparisons, recordingLinkError, RECORDING_ANALYSIS_SCHEMA, type RecordingAnalysis } from '../capture/recordingAnalysis.ts'
 
 const STATE_LABEL: Record<WellState, string> = {
   empty: 'Empty',
@@ -957,6 +958,8 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
   const [clipEnd, setClipEnd] = useState('10')
   const [clipPhase, setClipPhase] = useState<'idle' | 'processing' | 'done' | 'error'>('idle')
   const [clipResult, setClipResult] = useState<ClipCheckResponse | null>(null)
+  const [wholeAnalysis, setWholeAnalysis] = useState<RecordingAnalysis | null>(null)
+  const [wholeLinked, setWholeLinked] = useState<'hash-verified' | 'user-confirmed' | null>(null)
   const [manifestSha256, setManifestSha256] = useState<string | null>(null)
   const [manifestInvalid, setManifestInvalid] = useState(false)
   const [manifestNote, setManifestNote] = useState('')
@@ -969,6 +972,8 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
     setClipReviewKey(reviewKey)
     setClipPhase('idle')
     setClipResult(null)
+    setWholeAnalysis(null)
+    setWholeLinked(null)
     setManifestSha256(null)
     setManifestInvalid(false)
     setManifestNote('')
@@ -1040,6 +1045,8 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
     }
     setClipPhase('processing')
     setClipResult(null)
+    setWholeAnalysis(null)
+    setWholeLinked(null)
     try {
       const response = await fetch('/library/clip-observations', {
         method: 'POST',
@@ -1069,6 +1076,8 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
     const requestId = `request_${crypto.randomUUID()}`
     setClipPhase('processing')
     setClipResult(null)
+    setWholeAnalysis(null)
+    setWholeLinked(null)
     let parsed: unknown
     try {
       parsed = JSON.parse(await file.text())
@@ -1076,6 +1085,18 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
       if (clipGeneration.current !== generation) return
       setClipPhase('error')
       setClipResult({ status: 'rejected', requestId, message: 'The adapter result was not valid JSON. No video was sent.' })
+      return
+    }
+    if (clipGeneration.current !== generation) return
+    if (parsed && typeof parsed === 'object' && 'schemaVersion' in parsed && parsed.schemaVersion === RECORDING_ANALYSIS_SCHEMA) {
+      try {
+        setWholeAnalysis(parseRecordingAnalysis(parsed))
+        setClipPhase('done')
+        setLinkNotice('Recording analysis loaded locally. Link it to the original recording before showing events.')
+      } catch (error) {
+        setClipPhase('error')
+        setLinkNotice(error instanceof Error ? error.message : 'Invalid recording analysis.')
+      }
       return
     }
     const built = buildAdapterImport({
@@ -1117,6 +1138,7 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
     setClipPhase('processing')
     setManifestInvalid(false)
     setManifestNote('')
+    setWholeLinked(null)
     setClipResult((current) => current ? { ...current, linked: false, association: null } : null)
     let parsed: unknown
     try {
@@ -1147,6 +1169,21 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
       : 'This manifest has no source hash. Linking asks for confirmation.')
   }
   async function linkImportedResult(): Promise<void> {
+    if (wholeAnalysis && session.reviewFile && !manifestInvalid && clipPhase !== 'processing') {
+      const generation = ++clipGeneration.current
+      const recording = session.readReviewRecording()
+      if (!recording.blob || recording.durationMs == null) { setLinkNotice('Wait for recording metadata to load.'); return }
+      setClipPhase('processing')
+      try {
+        const hash = manifestSha256 ? await sha256Hex(recording.blob) : null
+        if (clipGeneration.current !== generation) return
+        const error = recordingLinkError(wholeAnalysis, session.reviewFile.bytes, recording.durationMs, manifestSha256, hash)
+        setWholeLinked(error ? null : manifestSha256 ? 'hash-verified' : 'user-confirmed')
+        setLinkNotice(error ?? 'Linked locally. Original model and human-confirmation records are preserved; steps remain incomplete.')
+      } catch { if (clipGeneration.current === generation) setLinkNotice('Unable to read the selected recording hash.') }
+      if (clipGeneration.current === generation) setClipPhase('done')
+      return
+    }
     if (!session.reviewFile || !clipResult?.raw || !clipResult.requestId || manifestInvalid || clipPhase === 'processing') return
     const generation = clipGeneration.current
     const requestId = clipResult.requestId
@@ -1233,7 +1270,7 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
   return (
     <>
       <section className="decision-now" aria-label="Current observation">
-        <p className="state-badge" data-tone="pending">{clipBadge(clipPhase, clipResult)}</p>
+        <p className="state-badge" data-tone="pending">{wholeAnalysis ? 'Saved recording analysis · needs review' : clipBadge(clipPhase, clipResult)}</p>
         {latest && latestComparison ? (
           <>
             <p className="decision-title">{latestComparison.reported}</p>
@@ -1245,11 +1282,11 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
             ) : null}
           </>
         ) : (
-          <p className="decision-title">{clipPhase === 'idle' ? 'No observation yet.' : clipHeadline(clipResult?.status ?? (clipPhase === 'processing' ? 'processing' : undefined))}</p>
+          <p className="decision-title">{wholeAnalysis ? (wholeLinked ? `${wholeAnalysis.events.length} transfer hypotheses` : 'Link the analysis to your recording.') : clipPhase === 'idle' ? 'No observation yet.' : clipHeadline(clipResult?.status ?? (clipPhase === 'processing' ? 'processing' : undefined))}</p>
         )}
         <details>
           <summary>Status</summary>
-          <p>{clipPhase === 'idle' ? 'The webcam captures video. Automatic three-cup analysis is not connected; import a saved model result to review its evidence. A missing result is not a verdict.' : clipStatusCopy(clipResult?.status ?? (clipPhase === 'processing' ? 'processing' : undefined), clipResult?.message, clipResult?.reason, clipResult?.remoteCallMade)}</p>
+          <p>{wholeAnalysis ? 'Saved recording analysis, reviewed locally. Model hypotheses and supplied human confirmations are separate; this is not a live inference stream.' : clipPhase === 'idle' ? 'The webcam captures video. Automatic three-cup analysis is not connected; import a saved model result to review its evidence. A missing result is not a verdict.' : clipStatusCopy(clipResult?.status ?? (clipPhase === 'processing' ? 'processing' : undefined), clipResult?.message, clipResult?.reason, clipResult?.remoteCallMade)}</p>
           {clipResult ? <p>{clipIdentityCopy(clipResult)}</p> : null}
         </details>
       </section>
@@ -1266,7 +1303,7 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
         {latest && latestComparison ? (
           <p data-relation={latestComparison.relation}>{latestComparison.relation}</p>
         ) : (
-          <p>No report to compare.</p>
+          <p>No person report to compare.</p>
         )}
         {latestComparison ? (
           <details>
@@ -1278,6 +1315,14 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
       <EvidenceStream
         empty="No evidence yet. Person reports and linked model hypotheses will appear here."
         items={[
+          ...(wholeAnalysis && wholeLinked ? wholeAnalysis.events.map((event, index) => ({
+            id: event.id,
+            time: `${(event.startMs / 1000).toFixed(2)}–${(event.endMs / 1000).toFixed(2)} s`,
+            source: 'Model hypothesis',
+            title: `${event.source} → ${event.destination}`,
+            detail: `${recordingComparisons(wholeAnalysis.events, protocol.transfers)[index]}. Human confirmation: ${event.humanConfirmed ? 'supplied with this import; separate from the model' : 'not supplied'}. Evidence: ${event.evidence.map((stamp) => `${stamp / 1000} s`).join(', ')}.`,
+            onWatch: () => watchMedia(event.startMs),
+          })) : []),
           ...session.markers.map((marker) => {
             const comparison = compareHumanMarker(marker.marker, session.captureProtocolId)
             return {
@@ -1299,6 +1344,16 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
           })),
         ]}
       />
+      {wholeAnalysis && wholeLinked ? <section className="whole-analysis-summary">
+        <h3>Protocol review</h3>
+        <p>No automatic completion or whole-experiment compliance verdict.</p>
+        {wholeAnalysis.events.map((event, index) => <p key={event.id}><strong>{event.source} → {event.destination}:</strong> {recordingComparisons(wholeAnalysis.events, protocol.transfers)[index]}<br /><span>Human confirmation: {event.humanConfirmed ? 'supplied in imported record' : 'not supplied'}</span></p>)}
+        <details><summary>Appearance and provenance</summary>
+          <p>{wholeAnalysis.appearanceCount} appearance entries retained in the original document. They refer to different times and are not a single pre-transfer verdict.</p>
+          <p>Session {wholeAnalysis.sessionId} · Video {wholeAnalysis.videoId} · {wholeLinked}</p>
+          {wholeAnalysis.warnings.map((warning) => <p key={warning}>{warning}</p>)}
+        </details>
+      </section> : null}
       <details className="report-controls capture-person-report" aria-label="Person reports">
         <summary>Add a person report</summary>
         <p className="capture-caption">Records what you saw. Does not complete a step.</p>
@@ -1356,16 +1411,16 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
           </label>
           {manifestNote ? <p className="media-notice">Reconstructed provenance: {manifestNote}</p> : null}
           {manifestSha256 || manifestInvalid ? (
-            <button type="button" onClick={() => { clipGeneration.current += 1; setManifestSha256(null); setManifestInvalid(false); setManifestNote(''); setClipPhase('done'); setClipResult((current) => current ? { ...current, linked: false, association: null } : null); setLinkNotice('The manifest was removed. Linking asks for confirmation.') }}>
+            <button type="button" onClick={() => { clipGeneration.current += 1; setWholeLinked(null); setManifestSha256(null); setManifestInvalid(false); setManifestNote(''); setClipPhase('done'); setClipResult((current) => current ? { ...current, linked: false, association: null } : null); setLinkNotice('The manifest was removed. Linking asks for confirmation.') }}>
               Remove manifest
             </button>
           ) : null}
-          {clipResult?.raw && clipResult.status !== 'rejected' && clipResult.linked !== true ? (
+          {(wholeAnalysis && !wholeLinked) || (clipResult?.raw && clipResult.status !== 'rejected' && clipResult.linked !== true) ? (
             <button type="button" onClick={() => void linkImportedResult()} disabled={clipPhase === 'processing' || manifestInvalid}>
               Link this result to this recording
             </button>
           ) : null}
-          <p role="status">{clipPhase === 'idle' ? 'A check sends the clip times only. The recording stays on this computer. Times alone cannot run the adapter.' : clipStatusCopy(clipResult?.status ?? (clipPhase === 'processing' ? 'processing' : undefined), clipResult?.message, clipResult?.reason, clipResult?.remoteCallMade)}</p>
+          <p role="status">{wholeAnalysis ? `Whole-recording analysis · ${wholeAnalysis.sessionId} / ${wholeAnalysis.videoId} · ${wholeLinked ?? 'not linked'}. No inference was requested by this import.` : clipPhase === 'idle' ? 'A check sends the clip times only. The recording stays on this computer. Times alone cannot run the adapter.' : clipStatusCopy(clipResult?.status ?? (clipPhase === 'processing' ? 'processing' : undefined), clipResult?.message, clipResult?.reason, clipResult?.remoteCallMade)}</p>
           {clipResult ? <p>{clipIdentityCopy(clipResult)}</p> : null}
           {linkNotice ? <p role="status">{linkNotice}</p> : null}
           {clipResult?.sessionId && clipResult.videoId ? (
