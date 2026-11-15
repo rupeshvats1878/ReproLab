@@ -5,6 +5,7 @@ import {
   type MonitorProps,
   type ObservationDraft,
   type WellId,
+  type WellReading,
   type WellState,
 } from '../shared/types.ts'
 import {
@@ -46,10 +47,23 @@ import {
   rememberVisionBlob,
   revokeObjectUrl,
 } from './media.ts'
-import { ObservationEmitter, ReadingStabilizer } from './stabilize.ts'
+import {
+  acknowledgeAlert,
+  applyStableObservation,
+  blockLiveMonitor,
+  continueAfterCorrection,
+  createLiveMonitor,
+  reportMissedObservation,
+  type FrameEvidence,
+  type LiveMonitorState,
+  type LiveSourceKind,
+} from '../monitor/liveDecisions.ts'
+import { ObservationEmitter, ReadingStabilizer, readingsOf } from './stabilize.ts'
 import { SYNTHETIC_SEQUENCES, type SyntheticFrame } from './synthetic.ts'
 
 const SAMPLE_MS = 140
+const SOURCE_CHANGE_MESSAGE =
+  'The picture source changed during monitoring. Stale frames cannot become new events. Start a new run to open a monitoring session for this source.'
 const SYNTHETIC_FRAME_MS = 220
 const STABLE_FRAMES = 4
 const SEEK_MESSAGE =
@@ -89,6 +103,11 @@ export interface VisionSession {
   recording: RecordingView
   evidenceNote: string
   emitted: ObservationDraft[]
+  traces: ObservationTrace[]
+  live: LiveMonitorState
+  sampleMs: number
+  lastProcessingMs: number
+  monitorGeneration: number
   observationStatus: string
   canStartRun: boolean
   finalUrl: string | null
@@ -123,6 +142,17 @@ export interface VisionSession {
   moveDrag: (target: 'video' | 'final', event: ReactPointerEvent<HTMLElement>) => void
   endDrag: (event: ReactPointerEvent<HTMLElement>) => void
   nudge: (target: 'video' | 'final', wellId: WellId, dx: number, dy: number) => void
+  acknowledgeOmission: (alertId: string, note: string) => void
+  reportMissedObservation: (alertId: string, note: string, reportedState: WellState) => void
+  continueAfterCorrection: (alertId: string, note: string) => void
+}
+
+export interface ObservationTrace {
+  generation: number
+  draft: ObservationDraft
+  rawWells: WellReading[]
+  evidence: FrameEvidence
+  processingMs: number
 }
 
 type Callbacks = Pick<
@@ -145,6 +175,8 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
   const previousRaw = useRef(initialWellStates())
   const stabilizer = useRef(new ReadingStabilizer(STABLE_FRAMES))
   const emitter = useRef(new ObservationEmitter())
+  const processingMsRef = useRef(0)
+  const monitorGenerationRef = useRef(0)
   const originRef = useRef(0)
   const lastElapsedRef = useRef(0)
   const runOffsetRef = useRef(0)
@@ -223,6 +255,10 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
   })
   const [evidenceNote, setEvidenceNote] = useState('No evidence has been registered in this visit.')
   const [emitted, setEmitted] = useState<ObservationDraft[]>([])
+  const [traces, setTraces] = useState<ObservationTrace[]>([])
+  const [live, setLive] = useState<LiveMonitorState>(() => createLiveMonitor('unspecified', 0))
+  const [lastProcessingMs, setLastProcessingMs] = useState(0)
+  const [monitorGeneration, setMonitorGeneration] = useState(0)
   const [finalUrl, setFinalUrl] = useState<string | null>(null)
   const [finalSeparate, setFinalSeparateState] = useState(false)
   const [finalRegions, setFinalRegions] = useState<WellRegions>(defaultWellRegions)
@@ -242,7 +278,7 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
           : 'Input: none. Start a camera, choose a video file, or play a synthetic sequence.'
 
   const observationStatus = seekMessage
-    ? 'Blocked after seek'
+    ? 'Monitoring session blocked'
     : observationPaused
       ? 'Observations paused'
       : localPhase === 'running'
@@ -252,7 +288,7 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
           : 'Idle'
 
   const canStartRun =
-    localPhase !== 'running' &&
+    (localPhase !== 'running' || seekMessage !== '') &&
     inputKind !== 'none' &&
     (inputKind !== 'live' || cameraPhase === 'live')
 
@@ -285,21 +321,76 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
     }
     if (pausedRef.current || holdRef.current) return
     const draft = emitter.current.consider(next, stabilizer.current.snapshot())
-    if (!draft) return
+    if (!draft) {
+      const reason = emitter.current.blocked
+      if (reason && mounted.current) {
+        setSeekMessage(reason)
+        setLive((current) => blockLiveMonitor(current, reason))
+      }
+      return
+    }
+    const evidence = snapshotEvidence(draft.elapsedMs)
+    const rawWells = readingsOf(previousRaw.current)
     callbacksRef.current.onObservation(draft)
-    if (mounted.current) setEmitted((items) => [...items.slice(-7), draft])
+    if (mounted.current) {
+      setEmitted((items) => [...items.slice(-7), draft])
+      setTraces((items) => [
+        ...items,
+        {
+          generation: monitorGenerationRef.current,
+          draft,
+          rawWells,
+          evidence,
+          processingMs: processingMsRef.current,
+        },
+      ])
+      setLive((current) => applyStableObservation(current, draft, evidence, rawWells))
+    }
   }
 
-  function ingest(data: Uint8ClampedArray, width: number, height: number, label: string): void {
+  function snapshotEvidence(elapsedMs: number): FrameEvidence {
+    const synthetic = inputKindRef.current === 'synthetic'
+    const canvas = synthetic ? canvasRef.current : scratchRef.current
+    let frameDataUrl: string | null = null
+    if (canvas && canvas.width > 0 && canvas.height > 0) {
+      try {
+        frameDataUrl = canvas.toDataURL('image/jpeg', 0.72)
+      } catch {
+        frameDataUrl = null
+      }
+    }
+    return {
+      elapsedMs,
+      frameIndex: synthetic ? Math.max(0, syntheticIndex.current - 1) : null,
+      frameDataUrl,
+      label: frameRef.current?.label ?? (synthetic ? 'Synthetic frame' : 'Video frame'),
+    }
+  }
+
+  function timeAnalyze(
+    data: Uint8ClampedArray,
+    width: number,
+    height: number,
+    label: string,
+    previous: Readonly<Record<WellId, WellState>>,
+  ) {
     frameRef.current = { data, width, height, label }
+    const started = performance.now()
     const measured = analyzeFrame(
       data,
       width,
       height,
       regionsRef.current,
       { expectedColor: expectedRef.current, emptyReference: referenceRef.current },
-      previousRaw.current,
+      previous,
     )
+    processingMsRef.current = performance.now() - started
+    if (mounted.current) setLastProcessingMs(processingMsRef.current)
+    return measured
+  }
+
+  function ingest(data: Uint8ClampedArray, width: number, height: number, label: string): void {
+    const measured = timeAnalyze(data, width, height, label, previousRaw.current)
     previousRaw.current = measurementStates(measured)
     if (!mounted.current) return
     setMeasurements(measured)
@@ -309,15 +400,7 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
   }
 
   function previewMeasurements(data: Uint8ClampedArray, width: number, height: number, label: string): void {
-    frameRef.current = { data, width, height, label }
-    const measured = analyzeFrame(
-      data,
-      width,
-      height,
-      regionsRef.current,
-      { expectedColor: expectedRef.current, emptyReference: referenceRef.current },
-      initialWellStates(),
-    )
+    const measured = timeAnalyze(data, width, height, label, initialWellStates())
     if (mounted.current) setMeasurements(measured)
   }
 
@@ -347,7 +430,28 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
     seekBlockedRef.current = true
     holdRef.current = true
     emitter.current.block(SEEK_MESSAGE)
-    if (mounted.current) setSeekMessage(SEEK_MESSAGE)
+    if (mounted.current) {
+      setSeekMessage(SEEK_MESSAGE)
+      setLive((current) => blockLiveMonitor(current, SEEK_MESSAGE))
+    }
+  }
+
+  function endMonitoringSession(reason: string): void {
+    const active = runningRef.current || seekBlockedRef.current
+    stopSyntheticClock()
+    if (!active) return
+    runningRef.current = false
+    seekBlockedRef.current = true
+    holdRef.current = true
+    emitter.current.block(reason)
+    stabilizer.current.reset()
+    previousRaw.current = initialWellStates()
+    if (mounted.current) {
+      setSeekMessage(reason)
+      setLocalPhase('idle')
+      setStableStates(initialWellStates())
+      setLive((current) => blockLiveMonitor(current, reason))
+    }
   }
 
   function registerEvidence(note: string): void {
@@ -491,11 +595,16 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
     pendingSeek.current = false
     holdRef.current = false
     lastElapsedRef.current = 0
+    monitorGenerationRef.current += 1
+    const generation = monitorGenerationRef.current
     if (mounted.current) {
       setStableStates(initialWellStates())
       setSeekMessage('')
       setEmitted([])
+      setTraces([])
       setLocalElapsedMs(0)
+      setMonitorGeneration(generation)
+      setLive(createLiveMonitor(sourceKindFrom(inputKindRef.current), generation))
     }
   }
 
@@ -718,6 +827,34 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
     if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null
   }
 
+  function acknowledgeOmission(alertId: string, note: string): void {
+    const evidence = snapshotEvidence(Math.max(0, lastElapsedRef.current))
+    setLive((current) =>
+      acknowledgeAlert(current, alertId, Math.max(0, lastElapsedRef.current), evidence, note),
+    )
+  }
+
+  function reportMissed(alertId: string, note: string, reportedState: WellState): void {
+    const evidence = snapshotEvidence(Math.max(0, lastElapsedRef.current))
+    setLive((current) =>
+      reportMissedObservation(
+        current,
+        alertId,
+        Math.max(0, lastElapsedRef.current),
+        evidence,
+        note,
+        reportedState,
+      ),
+    )
+  }
+
+  function continueAfter(alertId: string, note: string): void {
+    const evidence = snapshotEvidence(Math.max(0, lastElapsedRef.current))
+    setLive((current) =>
+      continueAfterCorrection(current, alertId, Math.max(0, lastElapsedRef.current), evidence, note),
+    )
+  }
+
   function nudge(target: 'video' | 'final', wellId: WellId, dx: number, dy: number): void {
     if (target === 'final' && !finalSeparateRef.current) return
     if (target === 'video') applyRegions(nudgeRegion(regionsRef.current, wellId, dx, dy))
@@ -742,6 +879,7 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
   }
 
   function stopCamera(): void {
+    if (inputKindRef.current === 'live') endMonitoringSession(SOURCE_CHANGE_MESSAGE)
     releaseCamera(true)
     stopSyntheticClock()
     void stopRecording()
@@ -756,6 +894,7 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
   }
 
   function startCamera(): void {
+    endMonitoringSession(SOURCE_CHANGE_MESSAGE)
     const token = cameraToken.current + 1
     cameraToken.current = token
     stopSyntheticClock()
@@ -809,6 +948,7 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
   }
 
   function useVideoFile(file: File): void {
+    endMonitoringSession(SOURCE_CHANGE_MESSAGE)
     void stopRecording()
     releaseCamera(true)
     stopSyntheticClock()
@@ -837,6 +977,7 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
   }
 
   function useSynthetic(id: string): void {
+    endMonitoringSession(SOURCE_CHANGE_MESSAGE)
     const sequence = SYNTHETIC_SEQUENCES.find((item) => item.id === id)
     if (!sequence) return
     void stopRecording()
@@ -920,11 +1061,15 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
   }
 
   function startRun(): void {
-    if (runningRef.current) return
     const kind = inputKindRef.current
     if (kind === 'none') return
     if (kind === 'live' && !streamRef.current) return
     if (kind === 'prerecorded' && !fileBlobRef.current) return
+    if (runningRef.current) {
+      if (!seekBlockedRef.current) return
+      runningRef.current = false
+      stopSyntheticClock()
+    }
     resetDetector()
     clearAssessment()
     lastAnalyzedTime.current = -1
@@ -1228,6 +1373,11 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
     recording,
     evidenceNote,
     emitted,
+    traces,
+    live,
+    sampleMs: SAMPLE_MS,
+    lastProcessingMs,
+    monitorGeneration,
     observationStatus,
     canStartRun,
     finalUrl,
@@ -1262,7 +1412,15 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
     moveDrag,
     endDrag,
     nudge,
+    acknowledgeOmission,
+    reportMissedObservation: reportMissed,
+    continueAfterCorrection: continueAfter,
   }
+}
+
+function sourceKindFrom(kind: VisionSession['inputKind']): LiveSourceKind {
+  if (kind === 'live' || kind === 'prerecorded' || kind === 'synthetic') return kind
+  return 'unspecified'
 }
 
 async function openCamera(): Promise<MediaStream> {

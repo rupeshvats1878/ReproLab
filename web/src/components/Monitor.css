@@ -118,6 +118,12 @@
   border-color: #f0d48a;
 }
 
+.region[data-omission='true'] {
+  border-style: solid;
+  border-color: #e15b4a;
+  box-shadow: 0 0 0 3px rgb(225 91 74 / 45%);
+}
+
 .monitor-status {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -146,9 +152,77 @@
   font-variant-numeric: tabular-nums;
 }
 
+.live-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(16rem, 0.85fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.live-stage,
+.live-decisions {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.synthetic-flag {
+  margin: 0;
+  padding: 0.45rem 0.7rem;
+  border: 2px solid var(--ink);
+  border-radius: 0.6rem;
+  background: var(--unknown-bg);
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.step-line {
+  margin: 0;
+  font-weight: 650;
+}
+
+.decision-list {
+  display: grid;
+  gap: 0.7rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 28rem;
+  overflow: auto;
+}
+
+.decision-card {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.7rem;
+  border: 1px solid var(--line);
+  border-left: 4px solid #e15b4a;
+  border-radius: 0.65rem;
+}
+
+.decision-card p,
+.live-decisions p,
+.evidence-figure {
+  margin: 0;
+}
+
+.evidence-figure img {
+  display: block;
+  width: min(100%, 12rem);
+  margin-top: 0.35rem;
+  border-radius: 0.4rem;
+  background: #111820;
+}
+
+.observation-history {
+  display: grid;
+  gap: 0.45rem;
+}
+
 .monitor-columns {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  grid-template-columns: 1fr;
   gap: 1rem;
   align-items: start;
 }
@@ -291,7 +365,8 @@
 
 @media (max-width: 800px) {
   .monitor-status,
-  .monitor-columns {
+  .monitor-columns,
+  .live-split {
     grid-template-columns: 1fr;
   }
 }

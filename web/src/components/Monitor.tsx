@@ -1,6 +1,8 @@
 import { useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { WELL_GRID, type WellId, type WellState } from '../shared/types.ts'
+import { expectedWellId } from '../shared/protocol.ts'
+import { PROTOCOL_ORDER, WELL_GRID, type WellId, type WellState } from '../shared/types.ts'
 import type { MonitorProps } from '../shared/types.ts'
+import { highlightedOmissionWells, type FrameEvidence } from '../monitor/liveDecisions.ts'
 import { formatRgb, rgbToCss, COLOR_PRESETS, type ColorPresetId } from '../vision/color.ts'
 import { normalizedToContent, type WellRegions } from '../vision/geometry.ts'
 import { SYNTHETIC_SEQUENCES } from '../vision/synthetic.ts'
@@ -19,24 +21,36 @@ export function Monitor(props: MonitorProps) {
   const { protocol } = props
   const session = useVisionSession(props)
   const [wellSize, setWellSize] = useState(0.2)
-  const openAlerts = protocol.alerts.filter((alert) => alert.status !== 'resolved')
+  const [humanNote, setHumanNote] = useState('')
+  const [reportedState, setReportedState] = useState<WellState>('filled')
   const storedObservations = protocol.observations.length
+  const highlighted = highlightedOmissionWells(session.live)
+  const reviewOpen = protocol.alerts.filter((alert) => alert.status !== 'resolved')
+  const lastTrace = session.traces.at(-1)
+  const expected = expectedWellId(PROTOCOL_ORDER, session.stableStates)
 
   return (
     <section className="monitor" aria-labelledby="monitor-title">
       <div className="monitor-heading">
         <h2 id="monitor-title">Monitor</h2>
         <p>
-          Colored-water check for six wells. A reading is empty, filled, or unknown. Unknown means the
-          picture is not clear enough. This does not measure volume, concentration, or identity.
+          Colored-water check for six locations, played continuously. A reading is empty, filled, or
+          unknown. Unknown means the picture is not clear enough. This does not measure volume,
+          concentration, or identity, and it does not run protocols drafted in Prepare.
         </p>
       </div>
 
-      <p className="input-banner" data-kind={session.inputKind} role="status">
-        {session.inputLabel}
-      </p>
-
-      <div className="stage" ref={session.bindStage} onPointerDown={session.onStagePointerDown}>
+      <div className="live-split">
+        <div className="live-stage">
+          {session.inputKind === 'synthetic' ? (
+            <p className="synthetic-flag" role="status">
+              Synthetic demonstration
+            </p>
+          ) : null}
+          <p className="input-banner" data-kind={session.inputKind} role="status">
+            {session.inputLabel}
+          </p>
+          <div className="stage" ref={session.bindStage} onPointerDown={session.onStagePointerDown}>
         <video
           ref={session.bindVideo}
           className="stage-media"
@@ -58,6 +72,7 @@ export function Monitor(props: MonitorProps) {
           content={session.contentRect}
           stable={session.stableStates}
           measurements={session.measurements}
+          alerts={highlighted}
           debug={session.debugOverlay}
           editable
           onKey={(wellId, dx, dy) => session.nudge('video', wellId, dx, dy)}
@@ -65,52 +80,192 @@ export function Monitor(props: MonitorProps) {
           onDrag={(event) => session.moveDrag('video', event)}
           onDragEnd={session.endDrag}
         />
+          </div>
+          <p className="monitor-note">
+            Solid border is filled, dashed is empty, dotted is unknown. A red outline is a possible
+            omission: a later location is filled and this one is stably empty.
+          </p>
+          <dl className="monitor-status">
+            <div>
+              <dt>Observation</dt>
+              <dd>{session.observationStatus}</dd>
+            </div>
+            <div>
+              <dt>Vision clock</dt>
+              <dd>{session.localElapsedMs} ms</dd>
+            </div>
+            <div>
+              <dt>Last observation</dt>
+              <dd>{lastTrace ? `${lastTrace.draft.elapsedMs} ms` : 'None yet'}</dd>
+            </div>
+            <div>
+              <dt>Frame analysis</dt>
+              <dd>
+                {session.measurements.length === 0
+                  ? 'No frame timed yet'
+                  : `${session.lastProcessingMs.toFixed(1)} ms`}
+              </dd>
+            </div>
+            <div>
+              <dt>Sample interval</dt>
+              <dd>about {session.sampleMs} ms</dd>
+            </div>
+            <div>
+              <dt>Recording</dt>
+              <dd>{session.recording.phase}</dd>
+            </div>
+          </dl>
+          {session.cameraMessage ? (
+            <p className="monitor-note" role="status">
+              {session.cameraMessage}
+            </p>
+          ) : null}
+          {session.playbackNote ? <p className="monitor-note">{session.playbackNote}</p> : null}
+          {session.seekMessage ? (
+            <p className="monitor-note" role="alert">
+              {session.seekMessage} Start a new run to open another monitoring session.
+            </p>
+          ) : null}
+          {session.localPhase === 'running' && protocol.phase === 'idle' ? (
+            <p className="monitor-note">
+              Vision is in a run. The review controller has not stored it yet, so protocol wells stay at
+              their previous values.
+            </p>
+          ) : null}
+        </div>
+
+        <aside className="live-decisions" aria-label="Protocol decisions">
+          <h3>Active step</h3>
+          <p>
+            This screen watches only {PROTOCOL_ORDER.join(', ')}. A protocol generated in Prepare, including
+            Gemini output, is not executed here.
+          </p>
+          <p className="step-line">
+            {session.live.blockedReason
+              ? 'Monitoring is blocked. New frames will not become events until you start a new run.'
+              : session.localPhase !== 'running'
+                ? 'Start a run to follow the six locations in order.'
+                : expected
+                  ? `Step ${PROTOCOL_ORDER.indexOf(expected) + 1} of 6: fill ${expected}. Stable reading is ${session.stableStates[expected]}.`
+                  : 'Every location in the order is stably filled.'}
+          </p>
+          <p className="monitor-note">
+            Session {session.live.sessionId} · {session.live.sourceKind} · generation {session.monitorGeneration}
+          </p>
+          <div className="monitor-alerts">
+            <h3>Possible omissions</h3>
+            <p>
+              An alert appears only when the earlier location is stably empty. Unknown stays unknown.
+              The analyzer&apos;s mix score marks a mixed region unknown. That is not hand, pipette, or
+              obstruction detection.
+            </p>
+            <p className="monitor-note">
+              Saved review still uses the shared omission list, which can include unknown. Review has{' '}
+              {reviewOpen.length} unresolved alert{reviewOpen.length === 1 ? '' : 's'}.
+            </p>
+            <label className="file-field">
+              Note for a human report
+              <input value={humanNote} onChange={(event) => setHumanNote(event.target.value)} />
+            </label>
+            <label className="file-field">
+              Reported state
+              <select
+                value={reportedState}
+                onChange={(event) => setReportedState(event.target.value as WellState)}
+              >
+                <option value="filled">Filled</option>
+                <option value="empty">Empty</option>
+                <option value="unknown">Unknown</option>
+              </select>
+            </label>
+            {session.live.alerts.length === 0 ? (
+              <p>No live omission alert in this monitoring session.</p>
+            ) : (
+              <ul className="decision-list">
+                {session.live.alerts.map((alert) => (
+                  <li key={alert.id} className="decision-card" data-status={alert.status}>
+                    <strong>
+                      {alert.wellId} · {alert.status}
+                    </strong>
+                    <p>{alert.expectedAction}</p>
+                    <p>Observed: {alert.observedState}</p>
+                    <p>Rule: {alert.rule}</p>
+                    <p>Source time: {alert.raisedAtElapsedMs} ms</p>
+                    {alert.rawState ? <p>Raw state at the alert: {alert.rawState}</p> : null}
+                    <EvidenceFigure evidence={alert.evidence} />
+                    {alert.correction ? (
+                      <div>
+                        <p>
+                          Later camera update at {alert.correction.elapsedMs} ms: the well was observed
+                          filled. The original alert is unchanged.
+                        </p>
+                        <EvidenceFigure evidence={alert.correction.evidence} />
+                      </div>
+                    ) : null}
+                    <div className="button-row">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          session.acknowledgeOmission(alert.id, humanNote || 'Acknowledged by a person.')
+                        }
+                        disabled={alert.status !== 'open'}
+                      >
+                        Acknowledge
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          session.reportMissedObservation(
+                            alert.id,
+                            humanNote || 'Missed observation reported by a person.',
+                            reportedState,
+                          )
+                        }
+                      >
+                        Report missed observation
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          session.continueAfterCorrection(
+                            alert.id,
+                            humanNote || 'Continue after a correction.',
+                          )
+                        }
+                      >
+                        Continue after correction
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div className="monitor-alerts">
+            <h3>Decision timeline</h3>
+            {session.live.timeline.length === 0 ? (
+              <p>No decision yet. A skip is raised from the stable reading, not from a fixed timestamp.</p>
+            ) : (
+              <ol className="decision-list">
+                {session.live.timeline.map((entry) => (
+                  <li key={entry.id}>
+                    <p>
+                      <strong>{entry.source === 'human' ? 'Human' : 'Camera'}</strong> · {entry.kind}
+                    </p>
+                    <p>Expected: {entry.expectedAction}</p>
+                    <p>Observed: {entry.observedState}</p>
+                    <p>Rule: {entry.rule}</p>
+                    <p>Source time: {entry.sourceElapsedMs} ms</p>
+                    {entry.note ? <p>Note: {entry.note}</p> : null}
+                    {entry.reportedState ? <p>Human reported state: {entry.reportedState}</p> : null}
+                    <EvidenceFigure evidence={entry.evidence} />
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
+        </aside>
       </div>
-
-      <dl className="monitor-status">
-        <div>
-          <dt>Observation</dt>
-          <dd>{session.observationStatus}</dd>
-        </div>
-        <div>
-          <dt>Vision clock</dt>
-          <dd>{session.localElapsedMs} ms</dd>
-        </div>
-        <div>
-          <dt>Protocol phase</dt>
-          <dd>{protocol.phase}</dd>
-        </div>
-        <div>
-          <dt>Protocol elapsed</dt>
-          <dd>{protocol.elapsedMs} ms</dd>
-        </div>
-        <div>
-          <dt>Expected well</dt>
-          <dd>{protocol.expectedWellId ?? 'None'}</dd>
-        </div>
-        <div>
-          <dt>Recording</dt>
-          <dd>{session.recording.phase}</dd>
-        </div>
-      </dl>
-
-      {session.cameraMessage ? (
-        <p className="monitor-note" role="status">
-          {session.cameraMessage}
-        </p>
-      ) : null}
-      {session.playbackNote ? <p className="monitor-note">{session.playbackNote}</p> : null}
-      {session.seekMessage ? (
-        <p className="monitor-note" role="alert">
-          {session.seekMessage}
-        </p>
-      ) : null}
-      {session.localPhase === 'running' && protocol.phase === 'idle' ? (
-        <p className="monitor-note">
-          Vision is in a run. The review controller has not stored it yet, so protocol wells stay at
-          their previous values.
-        </p>
-      ) : null}
 
       <div className="monitor-columns">
         <div className="monitor-controls">
@@ -257,87 +412,59 @@ export function Monitor(props: MonitorProps) {
           </fieldset>
         </div>
 
-        <div className="monitor-readout">
-          <h3>Stable vision reading</h3>
-          <div className="well-grid" role="group" aria-label="Stable vision reading">
-            {WELL_GRID.flat().map((wellId) => {
-              const state = session.stableStates[wellId]
-              return (
-                <article key={wellId} className="well" data-state={state}>
-                  <span className="well-id">{wellId}</span>
-                  <span className="well-state">{STATE_LABEL[state]}</span>
-                </article>
-              )
-            })}
-          </div>
-          <p className="monitor-note">
-            The grid follows stable vision readings. A human note on the Review tab does not repaint it.
-          </p>
+      </div>
 
-          <h3>Protocol wells</h3>
+      <section className="observation-history" aria-label="Observation history">
+        <h3>Observation history</h3>
+        <p className="monitor-note">
+          Camera rows come from stable vision readings. Human rows are reports and do not change those
+          readings. Review has stored {storedObservations} observation{storedObservations === 1 ? '' : 's'}.
+        </p>
+        <HistoryList session={session} />
+      </section>
+
+      <details className="debug-panel">
+        <summary>Raw versus stabilized observations</summary>
+        <p>
+          Raw is the latest classifier output. Stabilized is the reading committed after repeated frames.
+          A high mix score forces unknown. It does not detect a hand, pipette, or other obstruction.
+        </p>
+        {session.traces.length === 0 ? (
+          <p>No stable observation yet.</p>
+        ) : (
           <ul className="plain-list">
-            {WELL_GRID.flat().map((wellId) => (
-              <li key={wellId}>
-                {wellId}: {STATE_LABEL[protocol.wellStates[wellId]]}
+            {session.traces.map((trace) => (
+              <li key={`${trace.generation}-${trace.draft.elapsedMs}`}>
+                {trace.draft.elapsedMs} ms, analysis {trace.processingMs.toFixed(1)} ms —{' '}
+                {trace.draft.wells
+                  .map((well) => {
+                    const raw = trace.rawWells.find((item) => item.wellId === well.wellId)?.state
+                    return `${well.wellId} raw ${raw ?? 'unknown'} / stable ${well.state}`
+                  })
+                  .join('; ')}
               </li>
             ))}
           </ul>
-
-          <div className="monitor-alerts">
-            <h3>Possible omissions</h3>
-            <p>From the review controller. This screen does not apply a second skip rule.</p>
-            {openAlerts.length === 0 ? (
-              <p>No unresolved alerts in the current protocol state.</p>
+        )}
+        {session.debugOverlay ? (
+          <ul className="plain-list">
+            {session.measurements.length === 0 ? (
+              <li>No frame measured yet.</li>
             ) : (
-              <ul>
-                {openAlerts.map((alert) => (
-                  <li key={alert.id}>
-                    {alert.wellId} is {alert.status} at {alert.raisedAtElapsedMs} ms
-                  </li>
-                ))}
-              </ul>
-            )}
-            <p>Acknowledge, resolve, or add a note on the Review tab.</p>
-          </div>
-
-          {session.debugOverlay ? (
-            <div className="debug-panel">
-              <h3>Debug measurements</h3>
-              <p>Heuristic fill score, distance from the empty plate, and color spread. Not probabilities.</p>
-              <ul className="plain-list">
-                {session.measurements.length === 0 ? (
-                  <li>No frame measured yet.</li>
-                ) : (
-                  session.measurements.map((item) => (
-                    <li key={item.wellId}>
-                      {item.wellId}: raw {item.state}, stable {session.stableStates[item.wellId]}, score{' '}
-                      {item.fillScore.toFixed(2)}, empty distance{' '}
-                      {item.emptyDistance == null ? 'none' : item.emptyDistance.toFixed(2)}, mix{' '}
-                      {item.mixScore.toFixed(2)}, RGB {formatRgb(item.mean)}
-                    </li>
-                  ))
-                )}
-              </ul>
-            </div>
-          ) : null}
-
-          <h3>Sent to review</h3>
-          {session.emitted.length === 0 ? (
-            <p className="monitor-note">No stable observation has been sent in this visit.</p>
-          ) : (
-            <ol className="plain-list">
-              {session.emitted.map((observation) => (
-                <li key={observation.elapsedMs}>
-                  {observation.elapsedMs} ms — {observation.wells.map((well) => `${well.wellId} ${well.state}`).join(', ')}
+              session.measurements.map((item) => (
+                <li key={item.wellId}>
+                  Latest {item.wellId}: raw {item.state}, stable {session.stableStates[item.wellId]}, score{' '}
+                  {item.fillScore.toFixed(2)}, empty distance{' '}
+                  {item.emptyDistance == null ? 'none' : item.emptyDistance.toFixed(2)}, mix{' '}
+                  {item.mixScore.toFixed(2)}, RGB {formatRgb(item.mean)}
                 </li>
-              ))}
-            </ol>
-          )}
-          <p className="monitor-note">
-            Review has stored {storedObservations} observation{storedObservations === 1 ? '' : 's'}.
-          </p>
-        </div>
-      </div>
+              ))
+            )}
+          </ul>
+        ) : (
+          <p className="monitor-note">Turn on debug measurements to see scores for the current frame.</p>
+        )}
+      </details>
 
       <fieldset>
         <legend>Final image</legend>
@@ -383,6 +510,7 @@ export function Monitor(props: MonitorProps) {
               content={session.finalContentRect}
               stable={statesFromAssessment(session)}
               measurements={session.finalMeasurements}
+              alerts={[]}
               debug={session.debugOverlay}
               editable={session.finalSeparate}
               onKey={(wellId, dx, dy) => session.nudge('final', wellId, dx, dy)}
@@ -423,11 +551,56 @@ function statesFromAssessment(session: VisionSession): Record<WellId, WellState>
   return states
 }
 
+function EvidenceFigure(props: { evidence: FrameEvidence }) {
+  const index =
+    props.evidence.frameIndex == null ? '' : ` Frame index ${props.evidence.frameIndex}.`
+  return (
+    <figure className="evidence-figure">
+      {props.evidence.frameDataUrl ? (
+        <img src={props.evidence.frameDataUrl} alt={`Supporting frame at ${props.evidence.elapsedMs} ms`} />
+      ) : null}
+      <figcaption>
+        {props.evidence.elapsedMs} ms · {props.evidence.label}.{index}
+        {props.evidence.frameDataUrl ? '' : ' No still was stored for this decision.'}
+      </figcaption>
+    </figure>
+  )
+}
+
+function HistoryList(props: { session: VisionSession }) {
+  const camera = props.session.traces.map((trace) => ({
+    key: `camera-${trace.generation}-${trace.draft.elapsedMs}`,
+    at: trace.draft.elapsedMs,
+    source: 'Camera' as const,
+    detail: trace.draft.wells.map((well) => `${well.wellId} ${well.state}`).join(', '),
+  }))
+  const human = props.session.live.timeline
+    .filter((entry) => entry.source === 'human')
+    .map((entry) => ({
+      key: entry.id,
+      at: entry.sourceElapsedMs,
+      source: 'Human' as const,
+      detail: `${entry.kind}${entry.note ? `: ${entry.note}` : ''}`,
+    }))
+  const rows = [...camera, ...human].sort((a, b) => a.at - b.at || a.source.localeCompare(b.source))
+  if (rows.length === 0) return <p className="monitor-note">No observation in this monitoring session.</p>
+  return (
+    <ol className="plain-list">
+      {rows.map((row) => (
+        <li key={row.key}>
+          {row.at} ms — {row.source}: {row.detail}
+        </li>
+      ))}
+    </ol>
+  )
+}
+
 function RegionLayer(props: {
   regions: WellRegions
   content: PixelRect | null
   stable: Record<WellId, WellState>
   measurements: WellMeasurement[]
+  alerts: readonly WellId[]
   debug: boolean
   editable: boolean
   onKey: (wellId: WellId, dx: number, dy: number) => void
@@ -442,15 +615,17 @@ function RegionLayer(props: {
         const box = normalizedToContent(props.regions[wellId], props.content!)
         const measurement = props.measurements.find((item) => item.wellId === wellId)
         const stable = props.stable[wellId]
+        const omission = props.alerts.includes(wellId)
         const detail = measurement
-          ? `${wellId}, stable ${stable}, raw ${measurement.state}, heuristic score ${measurement.fillScore.toFixed(2)}`
-          : `${wellId}, stable ${stable}`
+          ? `${wellId}, stable ${stable}, raw ${measurement.state}, heuristic score ${measurement.fillScore.toFixed(2)}${omission ? ', possible omission' : ''}`
+          : `${wellId}, stable ${stable}${omission ? ', possible omission' : ''}`
         return (
           <button
             key={wellId}
             type="button"
             className="region"
             data-state={stable}
+            data-omission={omission ? 'true' : 'false'}
             style={{ left: box.x, top: box.y, width: box.w, height: box.h }}
             aria-label={`${detail}. ${props.editable ? 'Drag to move, or use arrow keys.' : 'Registration follows the video.'}`}
             onPointerDown={(event) => props.onDragStart(wellId, event)}
