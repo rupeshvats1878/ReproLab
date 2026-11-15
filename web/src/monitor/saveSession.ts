@@ -4,7 +4,7 @@ import type { LiveMonitorState } from './liveDecisions.ts'
 import { eventsFromDecision, evidenceEvent, type StoredObservation } from './persistEvents.ts'
 
 export interface SaveStatus {
-  phase: 'idle' | 'saving' | 'saved' | 'failed'
+  phase: 'idle' | 'saving' | 'saved' | 'failed' | 'finished'
   detail: string
 }
 
@@ -56,6 +56,7 @@ export function createMonitorSaver(notify: (status: SaveStatus) => void, fetchIm
   let tail = Promise.resolve()
   let pending = 0
   let failed = false
+  let closed = false
   let opened: SessionBody | null = null
   const sent = new Set<string>()
   let blockId: string | null = null
@@ -63,6 +64,7 @@ export function createMonitorSaver(notify: (status: SaveStatus) => void, fetchIm
   function report() {
     if (pending > 0) notify({ phase: 'saving', detail: 'Saving. Not stored yet.' })
     else if (failed) notify({ phase: 'failed', detail: 'Save failed. Unsent events are not stored.' })
+    else if (closed) notify({ phase: 'finished', detail: 'Finished. This does not mean the run succeeded.' })
     else if (opened) notify({ phase: 'saved', detail: 'Saved.' })
     else notify({ phase: 'idle', detail: 'Not saved.' })
   }
@@ -154,6 +156,20 @@ export function createMonitorSaver(notify: (status: SaveStatus) => void, fetchIm
       if (bodies.length === 0) return
       enqueue(async () => {
         for (const body of bodies) await postOnce(path, body as { id: string })
+      })
+    },
+    finish() {
+      if (!opened) {
+        enqueue(async () => {
+          throw new Error('The session is not open. It was not finished.')
+        })
+        return
+      }
+      const sessionId = opened.sessionId
+      enqueue(async () => {
+        await send(`/monitor-sessions/${encodeURIComponent(sessionId)}/finish`, {})
+        closed = true
+        failed = false
       })
     },
     saveEvidence(draft: MediaDraft, observationTimestamp: number) {
@@ -263,6 +279,7 @@ export interface RetrievedMonitor {
   sourceKind: string
   startedAtIso?: string | null
   blockedReason?: string | null
+  finishedAt?: string | null
   preparedProtocol?: {
     id: string
     version: number

@@ -24,6 +24,18 @@ export function validatePublish(body) {
   }
 }
 
+export function validateSessionPublish(body) {
+  plainObject(body, 'body')
+  exactKeys(body, optionalKeys(body, [], ['notes']), 'body')
+  if (body.notes == null || body.notes === '') return { notes: null }
+  if (typeof body.notes !== 'string') throw new LibraryError('invalid', 'notes')
+  const notes = body.notes.trim()
+  if (!notes || notes.length > 500 || /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(notes) || notes.startsWith('data:')) {
+    throw new LibraryError('invalid', 'notes')
+  }
+  return { notes }
+}
+
 export function validateReplication(body) {
   plainObject(body, 'body')
   exactKeys(body, ['experimentId'], 'body')

@@ -77,6 +77,9 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
       <div className="monitor-heading">
         <h2 id="monitor-title">Monitor</h2>
         <p>Six-well order: A1, A2, A3, B1, B2, B3.</p>
+        {session.localPhase === 'completed' ? (
+          <p>Stopping the camera does not finish the record. Finish session closes it, and finished does not mean the run succeeded.</p>
+        ) : null}
         {preparedProtocol ? (
           <div>
             <p>
@@ -141,6 +144,11 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
             ) : null}
             {running ? (
               <button type="button" onClick={session.completeRun}>Stop monitoring</button>
+            ) : null}
+            {session.localPhase === 'completed' && session.saveStatus.phase !== 'finished' ? (
+              <button type="button" className="primary-action" onClick={session.finishSession} disabled={session.saveStatus.phase === 'saving'}>
+                Finish session
+              </button>
             ) : null}
           </p>
           {session.seekMessage ? (

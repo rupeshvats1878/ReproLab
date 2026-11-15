@@ -1,7 +1,5 @@
 import { useRef, useState } from 'react'
-import { LibraryClientError, publishExperiment } from '../library/client.ts'
-import { publishRequest } from '../library/publish.ts'
-import { commitVersion, readApprovedProtocols, readLibrary, writeLibrary } from './library.ts'
+import { commitVersion, readLibrary, writeLibrary } from './library.ts'
 import type { ProtocolVersion } from './library.ts'
 import { isSupportedSixWell, preparedMonitorProtocol, sixWellDraft, type PreparedMonitorProtocol } from './sixWell.ts'
 import { OBSERVATION_METHODS, readExtractedSteps, validateDraft } from './validate.ts'
@@ -15,7 +13,6 @@ const EXTRACTING_NOTICE = 'Extracting a draft. This can take up to a minute. Not
 
 export function Prepare(props: {
   onSetupMonitoring: (protocol: PreparedMonitorProtocol) => void
-  onOpenLibrary: (experimentId?: string) => void
 }) {
   const [library, setLibrary] = useState(() => readLibrary(localStorage))
   const [protocolId, setProtocolId] = useState<string | null>(null)
@@ -28,13 +25,7 @@ export function Prepare(props: {
   const [notice, setNotice] = useState('Nothing is saved yet.')
   const [error, setError] = useState('')
   const [extracting, setExtracting] = useState(false)
-  const [publishTitle, setPublishTitle] = useState('')
-  const [publishDescription, setPublishDescription] = useState('')
-  const [authorDisplayName, setAuthorDisplayName] = useState('')
-  const [publishing, setPublishing] = useState(false)
-  const [publishedId, setPublishedId] = useState<string | null>(null)
   const extractingRef = useRef(false)
-  const publishingRef = useRef(false)
   const locked = originStatus === 'approved' && !revising
   const problems = editorProblems(title, sourceText, normalizeSteps(steps))
 
@@ -138,8 +129,6 @@ export function Prepare(props: {
     setTitle(version.title)
     setSourceText(version.sourceText)
     setSteps(version.steps.map((step) => ({ ...step, questions: [...step.questions] })))
-    setPublishedId(null)
-    setPublishTitle(version.title)
     setError('')
     setNotice(
       version.status === 'approved'
@@ -154,7 +143,6 @@ export function Prepare(props: {
     setOriginVersion(null)
     setOriginStatus(null)
     setRevising(false)
-    setPublishedId(null)
     setTitle(draft.title)
     setSourceText(draft.sourceText)
     setSteps(draft.steps)
@@ -185,46 +173,10 @@ export function Prepare(props: {
     })
   }
 
-  async function publishApproved() {
-    if (publishingRef.current || protocolId == null || originVersion == null) return
-    const selected = readApprovedProtocols(localStorage).find((item) => item.id === protocolId && item.version === originVersion)
-    if (!selected) {
-      setError('Only an approved version can be published. Drafts stay in this browser.')
-      return
-    }
-    const request = publishRequest(selected, {
-      title: publishTitle,
-      description: publishDescription,
-      authorDisplayName,
-    })
-    if (request.title.length === 0 || request.title.length > 120 || request.description.length === 0 || request.description.length > 500 || request.authorDisplayName.length === 0 || request.authorDisplayName.length > 80) {
-      setError('Enter a display title up to 120 characters, a description up to 500, and an author name up to 80.')
-      return
-    }
-    publishingRef.current = true
-    setPublishing(true)
-    setError('')
-    setPublishedId(null)
-    try {
-      const saved = await publishExperiment(request)
-      if (typeof saved.id !== 'string' || saved.id === '') {
-        throw new LibraryClientError('The library did not confirm a saved experiment.')
-      }
-      setPublishedId(saved.id)
-      setNotice(`Published approved version ${selected.version}. Library id ${saved.id}. The local protocol was not changed.`)
-    } catch (reason) {
-      setPublishedId(null)
-      setError(reason instanceof LibraryClientError ? reason.message : 'Publishing failed. Nothing was saved.')
-    } finally {
-      publishingRef.current = false
-      setPublishing(false)
-    }
-  }
-
   return (
     <section className="prepare-lab">
       <h2>Prepare a protocol.</h2>
-      <p>Start from the six-well procedure, or write a different one.</p>
+      <p>Draft a procedure and approve it before monitoring.</p>
       <div className="prepare-entries">
         <button type="button" className="prepare-entry primary-action" onClick={useSixWell}>
           Six-well procedure
@@ -343,7 +295,7 @@ export function Prepare(props: {
           ) : null}
           <div className="prepare-actions">
             {locked ? (
-              <button type="button" onClick={() => { setRevising(true); setPublishedId(null); setNotice('Editing creates a new draft. The approved version stays unchanged.') }}>
+              <button type="button" onClick={() => { setRevising(true); setNotice('Editing creates a new draft. The approved version stays unchanged.') }}>
                 Revise
               </button>
             ) : (
@@ -369,39 +321,6 @@ export function Prepare(props: {
               <p>Automatic monitoring is unavailable for this version. The steps are not the supported six-well procedure.</p>
             )
           ) : null}
-          <details className="prepare-extra">
-            <summary>Publishing</summary>
-            <p>The side list is local to this browser. Publishing copies an approved version into the shared library. That library is not a public website and does not sign anyone in.</p>
-            {locked ? (
-              <form onSubmit={(event) => { event.preventDefault(); void publishApproved() }}>
-                <h3>Publish this version</h3>
-                <p>Only this approved version is copied. Later edits do not change it.</p>
-                <label>
-                  Display title
-                  <input value={publishTitle} onChange={(event) => setPublishTitle(event.target.value)} maxLength={120} />
-                </label>
-                <label>
-                  Description
-                  <textarea value={publishDescription} rows={3} maxLength={500} onChange={(event) => setPublishDescription(event.target.value)} />
-                </label>
-                <label>
-                  Author name
-                  <input value={authorDisplayName} onChange={(event) => setAuthorDisplayName(event.target.value)} maxLength={80} />
-                </label>
-                <button type="submit" disabled={publishing}>
-                  {publishing ? 'Publishing…' : 'Publish'}
-                </button>
-                {publishedId ? (
-                  <div role="status">
-                    <p>The shared experiment library saved this publication as {publishedId}.</p>
-                    <button type="button" onClick={() => props.onOpenLibrary(publishedId)}>View in Library</button>
-                  </div>
-                ) : null}
-              </form>
-            ) : (
-              <p>Approve a version before publishing. A published protocol does not configure the six-well detector.</p>
-            )}
-          </details>
         </div>
         <aside>
           <h3>Saved in this browser</h3>

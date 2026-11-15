@@ -376,3 +376,119 @@ test('real MongoDB monitor session persists and leaves existing records unchange
     await store.client.close()
   }
 })
+
+test('finishes a monitor session only on request and publishes one immutable run', async () => {
+  const server = await listen(createMemoryStore())
+  const sessionId = 'session_12121212-1212-4212-8212-121212121212'
+  const preparedProtocol = {
+    id: '12121212-1212-4212-8212-121212121212',
+    version: 3,
+    title: 'Recorded check',
+    steps: ['Fill A1', 'Fill A2', 'Fill A3', 'Fill B1', 'Fill B2', 'Fill B3'],
+  }
+  const alert = {
+    id: ALERT,
+    type: 'alert',
+    observationTimestamp: 900,
+    wellId: 'A2',
+    expectedWell: 'A2',
+    rule: 'A later well was filled while A2 was empty.',
+    observedState: 'A2 empty',
+    rawState: 'empty',
+    stableState: 'empty',
+    evidence: evidence(),
+  }
+  try {
+    await ask(server, 'POST', '/monitor-sessions', { ...sessionBody({ sessionId, sourceKind: 'synthetic' }), preparedProtocol })
+    const early = await ask(server, 'POST', `/monitor-sessions/${sessionId}/publish`, {})
+    assert.equal(early.status, 409)
+    await ask(server, 'POST', `/monitor-sessions/${sessionId}/events`, alert)
+    const unfinished = await ask(server, 'POST', `/monitor-sessions/${sessionId}/publish`, { notes: 'Too soon.' })
+    assert.equal(unfinished.status, 409)
+
+    const finished = await ask(server, 'POST', `/monitor-sessions/${sessionId}/finish`, {})
+    assert.equal(finished.status, 200)
+    assert.equal(typeof finished.body.finishedAt, 'string')
+    const again = await ask(server, 'POST', `/monitor-sessions/${sessionId}/finish`, {})
+    assert.equal(again.body.finishedAt, finished.body.finishedAt)
+    const late = await ask(server, 'POST', `/monitor-sessions/${sessionId}/events`, {
+      id: OBS,
+      type: 'observation',
+      observationTimestamp: 1000,
+      rawState: states(),
+      stableState: states(),
+    })
+    assert.equal(late.status, 409)
+
+    const published = await ask(server, 'POST', `/monitor-sessions/${sessionId}/publish`, { notes: 'The run ended with A2 unresolved.' })
+    assert.equal(published.status, 201)
+    assert.equal(published.body.kind, 'demonstration')
+    assert.equal(published.body.monitorSessionId, sessionId)
+    assert.equal(published.body.protocolSnapshot.version, 3)
+    assert.equal(published.body.protocolSnapshot.steps[1].instruction, 'Fill A2')
+    assert.equal(published.body.runRecord.alerts.length, 1)
+    assert.equal(published.body.runRecord.alerts[0].updates.length, 0)
+    assert.equal(published.body.runRecord.evidence.length, 0)
+    assert.equal(published.body.runRecord.notes, 'The run ended with A2 unresolved.')
+    assert.equal(JSON.stringify(published.body).includes('data:'), false)
+
+    const retry = await ask(server, 'POST', `/monitor-sessions/${sessionId}/publish`, { notes: 'Different notes must not replace the first snapshot.' })
+    assert.equal(retry.status, 200)
+    assert.equal(retry.body.id, published.body.id)
+    assert.equal(retry.body.runRecord.notes, 'The run ended with A2 unresolved.')
+    assert.equal(retry.body.runRecord.alerts[0].wellId, 'A2')
+
+    const opened = await ask(server, 'GET', `/experiments/${published.body.id}`)
+    assert.deepEqual(opened.body.protocolSnapshot, published.body.protocolSnapshot)
+    assert.deepEqual(opened.body.runRecord, published.body.runRecord)
+    const listed = await ask(server, 'GET', '/experiments?q=Recorded%20check')
+    assert.equal(listed.body.experiments[0].kind, 'demonstration')
+    assert.equal('runRecord' in listed.body.experiments[0], false)
+
+    const repeated = await ask(server, 'POST', '/replications', { experimentId: published.body.id })
+    assert.equal(repeated.status, 201)
+    assert.equal(repeated.body.status, 'planned')
+    assert.deepEqual(repeated.body.events, [])
+    assert.deepEqual(repeated.body.protocolSnapshot, published.body.protocolSnapshot)
+
+    const liveId = 'session_13131313-1313-4313-8313-131313131313'
+    await ask(server, 'POST', '/monitor-sessions', { ...sessionBody({ sessionId: liveId, sourceKind: 'live' }), preparedProtocol: { ...preparedProtocol, title: 'Camera check' } })
+    await ask(server, 'POST', `/monitor-sessions/${liveId}/events`, {
+      id: MEDIA,
+      type: 'evidence',
+      kind: 'camera_recording',
+      observationTimestamp: 0,
+      runStartOffsetMs: 0,
+      available: true,
+      label: 'Camera recording registered in this browser.',
+    })
+    await ask(server, 'POST', `/monitor-sessions/${liveId}/finish`, {})
+    const camera = await ask(server, 'POST', `/monitor-sessions/${liveId}/publish`, {})
+    assert.equal(camera.status, 201)
+    assert.equal(camera.body.kind, 'recorded')
+    assert.equal(camera.body.description, '')
+    assert.equal(camera.body.runRecord.evidence[0].available, true)
+    assert.equal(camera.body.runRecord.evidence[0].label, 'Camera recording registered in this browser.')
+    assert.equal(Object.hasOwn(camera.body.runRecord.evidence[0], 'data'), false)
+
+    const bareId = 'session_14141414-1414-4414-8414-141414141414'
+    await ask(server, 'POST', '/monitor-sessions', sessionBody({ sessionId: bareId }))
+    await ask(server, 'POST', `/monitor-sessions/${bareId}/finish`, {})
+    const bare = await ask(server, 'POST', `/monitor-sessions/${bareId}/publish`, {})
+    assert.equal(bare.status, 400)
+
+    const protocolOnly = await ask(server, 'POST', '/experiments', {
+      title: 'Protocol only check',
+      description: 'An approved procedure without a recorded run.',
+      authorDisplayName: 'Check',
+      approvalAcknowledged: true,
+      protocolSnapshot: { version: 1, steps: [{ instruction: 'Stir' }] },
+    })
+    assert.equal(protocolOnly.status, 201)
+    const protocolList = await ask(server, 'GET', '/experiments?q=Protocol%20only%20check')
+    assert.equal(protocolList.body.experiments[0].kind, 'protocol')
+    assert.equal(protocolList.body.experiments[0].runRecord, undefined)
+  } finally {
+    server.close()
+  }
+})

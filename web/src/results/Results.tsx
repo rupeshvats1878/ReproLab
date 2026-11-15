@@ -8,6 +8,7 @@ import {
   type MonitorSessionSummary,
   type RetrievedMonitor,
 } from '../monitor/saveSession.ts'
+import { LibraryClientError, publishRecordedSession } from '../library/client.ts'
 import { ReferenceLab } from '../reference/ReferenceLab.tsx'
 import type { ReviewController } from '../shared/types.ts'
 import { MONITOR_SESSION_ID, chooseSavedSession, sessionChoiceLabel, sourceLabel, statusLabel } from './sessionBrowse.ts'
@@ -16,7 +17,7 @@ import './results.css'
 type ListKind = 'loading' | 'ready' | 'empty' | 'unavailable' | 'unreachable'
 type SessionKind = 'idle' | 'loading' | 'ready' | 'missing' | 'invalid' | 'unavailable' | 'unreachable'
 
-export function Results(props: { review: ReviewController; active: boolean }) {
+export function Results(props: { review: ReviewController; active: boolean; onOpenLibrary: (experimentId: string) => void }) {
   const [trackedActive, setTrackedActive] = useState(props.active)
   const [refresh, setRefresh] = useState(0)
   const [summaries, setSummaries] = useState<MonitorSessionSummary[]>([])
@@ -102,7 +103,7 @@ export function Results(props: { review: ReviewController; active: boolean }) {
   return (
     <section className="results">
       <h2>Results</h2>
-      <p>Saved monitor sessions and review records stay separate.</p>
+      <p>Inspect a saved session, then publish a finished run.</p>
 
       <section className="results-block" aria-labelledby="monitor-results">
         <h3 id="monitor-results">Monitor sessions</h3>
@@ -128,7 +129,7 @@ export function Results(props: { review: ReviewController; active: boolean }) {
         {props.active && (sessionKind === 'loading' || sessionKind === 'missing' || sessionKind === 'invalid' || sessionKind === 'unavailable' || sessionKind === 'unreachable') ? (
           <p role="status">{sessionMessage(sessionKind)}</p>
         ) : null}
-        {props.active && session && sessionKind === 'ready' ? <MonitorResult session={session} /> : null}
+        {props.active && session && sessionKind === 'ready' ? <MonitorResult session={session} onOpenLibrary={props.onOpenLibrary} /> : null}
         <details>
           <summary>About these sessions</summary>
           <p>A published protocol does not configure them. No explanation is requested for a monitor session.</p>
@@ -164,7 +165,7 @@ export function Results(props: { review: ReviewController; active: boolean }) {
   )
 }
 
-function MonitorResult({ session }: { session: RetrievedMonitor }) {
+function MonitorResult({ session, onOpenLibrary }: { session: RetrievedMonitor; onOpenLibrary: (experimentId: string) => void }) {
   const alerts = session.alerts ?? []
   const reports = session.humanReports ?? []
   const evidence = session.evidence ?? []
@@ -177,6 +178,8 @@ function MonitorResult({ session }: { session: RetrievedMonitor }) {
         {session.preparedProtocol ? `${session.preparedProtocol.title}, version ${session.preparedProtocol.version}` : 'Protocol association not recorded'}
         {' · '}
         {sourceLabel(session.sourceKind)}
+        {' · '}
+        {session.finishedAt ? 'Finished' : 'Not finished'}
         {' · '}
         {statusLabel(session.blockedReason)}
       </p>
@@ -222,6 +225,7 @@ function MonitorResult({ session }: { session: RetrievedMonitor }) {
           <p>{evidence.length} evidence record{evidence.length === 1 ? '' : 's'} stored. This screen does not play those bytes.</p>
         )}
       </details>
+      <PublishRun session={session} onOpenLibrary={onOpenLibrary} />
       <details>
         <summary>Details</summary>
         <p className="session-id">{session.id}</p>
@@ -239,6 +243,86 @@ function MonitorResult({ session }: { session: RetrievedMonitor }) {
         {copyNote ? <p>{copyNote}</p> : null}
       </details>
     </div>
+  )
+}
+
+function PublishRun({ session, onOpenLibrary }: { session: RetrievedMonitor; onOpenLibrary: (experimentId: string) => void }) {
+  const [notes, setNotes] = useState('')
+  const [publishing, setPublishing] = useState(false)
+  const [publishedId, setPublishedId] = useState<string | null>(null)
+  const [error, setError] = useState('')
+  const alerts = session.alerts ?? []
+  const unresolved = alerts.filter((alert) => (alert.updates?.length ?? 0) === 0)
+  const corrections = alerts.reduce((count, alert) => count + (alert.updates?.length ?? 0), 0)
+  const reports = session.humanReports ?? []
+  const evidence = session.evidence ?? []
+  if (!session.finishedAt) {
+    return <p>This session is not finished. Finish it in Monitor before publishing. Stopping the camera does not finish it.</p>
+  }
+  if (!session.preparedProtocol) {
+    return <p>No approved procedure is stored with this session, so it cannot be published.</p>
+  }
+  const synthetic = session.sourceKind === 'synthetic'
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault()
+        if (publishing) return
+        setPublishing(true)
+        setError('')
+        void publishRecordedSession(session.id, notes)
+          .then((saved) => setPublishedId(saved.id))
+          .catch((reason: unknown) => {
+            setPublishedId(null)
+            setError(reason instanceof LibraryClientError ? reason.message : 'Publishing failed. Nothing new was saved.')
+          })
+          .finally(() => setPublishing(false))
+      }}
+    >
+      <h4>Publish experiment</h4>
+      <p>Finished does not mean the run succeeded. Unresolved issues stay in the publication.</p>
+      {synthetic ? <p>Synthetic demonstration. Not a camera recording.</p> : null}
+      <p>{session.preparedProtocol.title}, version {session.preparedProtocol.version}. {sourceLabel(session.sourceKind)}.</p>
+      <ol>
+        {session.preparedProtocol.steps.map((instruction) => <li key={instruction}>{instruction}</li>)}
+      </ol>
+      <p>{session.observations?.length ?? 0} recorded observations. {alerts.length} deviations. {corrections} observed corrections. {reports.length} human reports.</p>
+      {unresolved.length > 0 ? (
+        <ul>
+          {unresolved.map((alert) => (
+            <li key={alert.id}>{alert.wellId} remains unresolved. {alert.observedState}</li>
+          ))}
+        </ul>
+      ) : <p>No unresolved deviation was stored.</p>}
+      {evidence.length === 0 ? (
+        <p>No recording metadata was stored. A frame label on a deviation is not footage.</p>
+      ) : (
+        <ul>
+          {evidence.map((item, index) => {
+            const record = item as { label?: string; available?: boolean; kind?: string }
+            return (
+              <li key={`${record.label ?? 'evidence'}-${index}`}>
+                {record.label || 'Evidence label not recorded'}. {record.available ? 'Marked available in this browser. The library stores the label only, not the file.' : 'Not available. No file was stored.'}
+              </li>
+            )
+          })}
+        </ul>
+      )}
+      <label>
+        Researcher notes
+        <textarea value={notes} rows={3} maxLength={500} onChange={(event) => setNotes(event.target.value)} placeholder="Optional outcome and limitations" />
+      </label>
+      <button type="submit" className="primary-action" disabled={publishing}>
+        {publishing ? 'Publishing…' : 'Publish'}
+      </button>
+      {error ? <p role="alert">{error}</p> : null}
+      {publishedId ? (
+        <p role="status">
+          Published {publishedId}.
+          <button type="button" onClick={() => onOpenLibrary(publishedId)}>View in Library</button>
+        </p>
+      ) : null}
+    </form>
   )
 }
 

@@ -149,6 +149,7 @@ export interface VisionSession {
   togglePlayback: () => void
   startRun: () => void
   completeRun: () => void
+  finishSession: () => void
   captureReference: () => void
   selectPreset: (id: ColorPresetId) => void
   setWellSize: (size: number) => void
@@ -1277,6 +1278,11 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
     }
   }
 
+  function finishSession(): void {
+    if (localPhase !== 'completed') return
+    monitorSaver().finish()
+  }
+
   function completeRun(): void {
     if (!runningRef.current) return
     runningRef.current = false
@@ -1535,6 +1541,7 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
     togglePlayback,
     startRun,
     completeRun,
+    finishSession,
     captureReference,
     selectPreset,
     setWellSize,

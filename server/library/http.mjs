@@ -10,6 +10,7 @@ import {
   validateMonitorSession,
   validatePublish,
   validateReplication,
+  validateSessionPublish,
 } from './validate.mjs'
 
 const MAX_BODY_BYTES = 48 * 1024
@@ -129,6 +130,25 @@ async function route(req, res, store) {
     }
   }
 
+  const monitorFinish = /^\/monitor-sessions\/([^/]+)\/finish$/.exec(url.pathname)
+  if (req.method === 'POST' && monitorFinish) {
+    const sessionId = monitorSessionId(decodeURIComponent(monitorFinish[1]))
+    validateExecutionFinish(await readJson(req))
+    await assertDatabase(store)
+    send(res, 200, await store.finishMonitorSession(sessionId))
+    return
+  }
+
+  const monitorPublish = /^\/monitor-sessions\/([^/]+)\/publish$/.exec(url.pathname)
+  if (req.method === 'POST' && monitorPublish) {
+    const sessionId = monitorSessionId(decodeURIComponent(monitorPublish[1]))
+    const { notes } = validateSessionPublish(await readJson(req))
+    await assertDatabase(store)
+    const result = await store.publishRecordedExperiment(sessionId, notes)
+    send(res, result.created ? 201 : 200, result.experiment)
+    return
+  }
+
   const replicationPath = /^\/replications\/([^/]+)$/.exec(url.pathname)
   if (req.method === 'GET' && replicationPath) {
     const id = validateExperimentId(decodeURIComponent(replicationPath[1]))
@@ -197,6 +217,13 @@ function publicError(error) {
 function send(res, status, body) {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' })
   res.end(JSON.stringify(body))
+}
+
+function monitorSessionId(id) {
+  if (!/^session_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+    throw new LibraryError('invalid', 'sessionId')
+  }
+  return `session_${id.slice('session_'.length).toLowerCase()}`
 }
 
 function localDevOrigin(origin) {

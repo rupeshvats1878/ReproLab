@@ -5,9 +5,11 @@ import {
   listQuery,
   PAGE_SIZE,
   publishedLabel,
+  recordLabel,
   stepLabel,
   versionLabel,
 } from './browse.ts'
+import { monitorProtocolFromInstructions, type PreparedMonitorProtocol } from '../prepare/sixWell.ts'
 import {
   LibraryClientError,
   listExperiments,
@@ -28,7 +30,8 @@ type LoadState = 'loading' | 'ready' | 'unavailable' | 'unreachable' | 'error'
 export function Library(props: {
   focusId: string | null
   onFocusHandled: () => void
-  onOpenPrepare: () => void
+  onOpenResults: () => void
+  onSetupMonitoring: (protocol: PreparedMonitorProtocol) => void
 }) {
   const [draftQuery, setDraftQuery] = useState('')
   const [query, setQuery] = useState('')
@@ -141,10 +144,10 @@ export function Library(props: {
   return (
     <section className="library-lab">
       <h2>Experiment library</h2>
-      <p>Browse published procedures and start a replication.</p>
+      <p>Inspect what was recorded and repeat the procedure.</p>
       <details className="library-note">
         <summary>About this library</summary>
-        <p>Shared on this network. Local drafts stay in Prepare. Publishing does not make a protocol public, and this screen does not sign anyone in.</p>
+        <p>Shared on this network. A finished monitor session is published from Results. This screen does not sign anyone in, and a publication is not a public website.</p>
       </details>
       <form
         className="library-toolbar"
@@ -182,7 +185,7 @@ export function Library(props: {
           </select>
         </label>
         <button type="button" onClick={() => { setStatus('loading'); setError(''); setReload((value) => value + 1) }}>Refresh</button>
-        <button type="button" onClick={props.onOpenPrepare}>Publish in Prepare</button>
+        <button type="button" onClick={props.onOpenResults}>Publish from Results</button>
       </form>
       {error ? <p role="alert" className="library-warning">{error}</p> : null}
       {notice ? <p role="status">{notice}</p> : null}
@@ -203,6 +206,7 @@ export function Library(props: {
           onCopy={() => void copyId(opened.id)}
           onReplicate={() => void replicate()}
           onOpenRun={(id) => setRunId(id)}
+          onSetupMonitoring={props.onSetupMonitoring}
         />
       ) : (
         <Browser
@@ -214,7 +218,7 @@ export function Library(props: {
           onOpen={(id) => void openSelected(id)}
           onPrevious={() => { setStatus('loading'); setError(''); setOffset((value) => Math.max(0, value - PAGE_SIZE)) }}
           onNext={() => { setStatus('loading'); setError(''); setOffset((value) => value + PAGE_SIZE) }}
-          onOpenPrepare={props.onOpenPrepare}
+          onOpenResults={props.onOpenResults}
         />
       )}
     </section>
@@ -230,7 +234,7 @@ function Browser(props: {
   onOpen: (id: string) => void
   onPrevious: () => void
   onNext: () => void
-  onOpenPrepare: () => void
+  onOpenResults: () => void
 }) {
   if (props.status === 'loading') return <p role="status">Loading publications.</p>
   if (props.status === 'unavailable') {
@@ -244,7 +248,7 @@ function Browser(props: {
     return (
       <div role="status">
         <p>{props.searching ? `No publications match “${props.query}”.` : 'No publications yet.'}</p>
-        <button type="button" className="primary-action" onClick={props.onOpenPrepare}>Publish in Prepare</button>
+        <button type="button" className="primary-action" onClick={props.onOpenResults}>Publish from Results</button>
       </div>
     )
   }
@@ -262,6 +266,7 @@ function Browser(props: {
             <th>Protocol version</th>
             <th>Steps</th>
             <th>Published</th>
+            <th>Record</th>
             <th></th>
           </tr>
         </thead>
@@ -272,6 +277,7 @@ function Browser(props: {
               <td>{versionLabel(experiment.protocolVersion)}</td>
               <td>{stepLabel(experiment.stepCount)}</td>
               <td>{publishedLabel(experiment.publishedAt)}</td>
+              <td>{recordLabel(experiment.kind)}</td>
               <td><button type="button" onClick={() => props.onOpen(experiment.id)}>Open</button></td>
             </tr>
           ))}
@@ -284,6 +290,7 @@ function Browser(props: {
             <p>{versionLabel(experiment.protocolVersion)}</p>
             <p>{stepLabel(experiment.stepCount)}</p>
             <p>{publishedLabel(experiment.publishedAt)}</p>
+            <p>{recordLabel(experiment.kind)}</p>
             <button type="button" onClick={() => props.onOpen(experiment.id)}>Open</button>
           </article>
         ))}
@@ -305,9 +312,17 @@ function Publication(props: {
   onCopy: () => void
   onReplicate: () => void
   onOpenRun: (id: string) => void
+  onSetupMonitoring: (protocol: PreparedMonitorProtocol) => void
 }) {
   const snapshot = props.record.protocolSnapshot
   const steps = Array.isArray(snapshot.steps) ? snapshot.steps : []
+  const run = props.record.runRecord
+  const monitoring = monitorProtocolFromInstructions(
+    steps.filter((step): step is SnapshotStep => typeof step === 'object' && step !== null),
+    typeof snapshot.id === 'string' ? snapshot.id : props.record.id,
+    typeof snapshot.version === 'number' ? snapshot.version : 1,
+    props.record.title,
+  )
   const source = typeof snapshot.sourceText === 'string' && snapshot.sourceText.trim() ? snapshot.sourceText : ''
   const quotes = steps.flatMap((step, index) => {
     const quote = stepQuote(step)
@@ -317,7 +332,8 @@ function Publication(props: {
     <div className="library-record">
       <button type="button" onClick={props.onBack}>Back to the list</button>
       <h3>{props.record.title}</h3>
-      <p>Frozen protocol {versionLabel(typeof snapshot.version === 'number' ? snapshot.version : undefined)}.</p>
+      <p>{recordLabel(props.record.kind)}. Frozen protocol {versionLabel(typeof snapshot.version === 'number' ? snapshot.version : undefined)}.</p>
+      {run ? <RecordedSummary run={run} /> : null}
       {steps.length === 0 ? <p>No steps were stored in this snapshot.</p> : (
         <ol>
           {steps.map((step, index) => (
@@ -348,16 +364,73 @@ function Publication(props: {
         <button type="button" onClick={props.onCopy}>Copy</button>
         {props.copyNote ? <p role="status">{props.copyNote}</p> : null}
         {props.record.description ? <p>{props.record.description}</p> : null}
+        {props.record.monitorSessionId ? <p>Monitor session {props.record.monitorSessionId}</p> : null}
         {props.record.publishedAt ? <p>Published {publishedLabel(props.record.publishedAt)}</p> : null}
+        {run ? <ObservationHistory run={run} /> : null}
       </details>
-      <button type="button" className="primary-action" onClick={props.onReplicate} disabled={props.busy}>Start replication</button>
+      <button type="button" className="primary-action" onClick={props.onReplicate} disabled={props.busy}>Repeat experiment</button>
       {props.replication ? (
         <div>
           <p>Replication status: {props.replication.status === 'planned' ? 'Planned' : props.replication.status}.</p>
-          <p>{props.replication.note}</p>
+          <p>{props.replication.note} The original run is not copied.</p>
           <button type="button" onClick={() => props.onOpenRun(props.replication!.id)}>Open record</button>
+          {monitoring ? (
+            <button type="button" onClick={() => props.onSetupMonitoring(monitoring)}>Set up monitoring</button>
+          ) : (
+            <p>Automatic monitoring is unavailable for this procedure.</p>
+          )}
         </div>
       ) : null}
+    </div>
+  )
+}
+
+function RecordedSummary({ run }: { run: NonNullable<StoredExperiment['runRecord']> }) {
+  const alerts = run.alerts ?? []
+  const unresolved = alerts.filter((alert) => (alert.updates?.length ?? 0) === 0)
+  const corrections = alerts.reduce((count, alert) => count + (alert.updates?.length ?? 0), 0)
+  const reports = run.humanReports ?? []
+  const evidence = run.evidence ?? []
+  return (
+    <div>
+      <p>{run.sourceKind === 'synthetic' ? 'Synthetic demonstration.' : run.sourceKind === 'prerecorded' ? 'Imported video.' : run.sourceKind === 'live' ? 'Camera.' : 'Source not recorded.'} {run.observationCount ?? run.observations?.length ?? 0} observations. {alerts.length} deviations. {corrections} observed corrections. {reports.length} human reports.</p>
+      {unresolved.length > 0 ? (
+        <ul>
+          {unresolved.map((alert) => (
+            <li key={alert.id}>{alert.wellId} unresolved. {alert.observedState}{alert.evidence?.label ? ` Frame label: ${alert.evidence.label}. No footage is stored.` : ''}</li>
+          ))}
+        </ul>
+      ) : <p>No unresolved deviation was stored.</p>}
+      {reports.length > 0 ? (
+        <ul>
+          {reports.map((report) => (
+            <li key={report.id ?? report.humanNote}>{report.wellId}: {report.humanNote}{report.humanReportedState ? ` Reported ${report.humanReportedState}.` : ''} A report is not an observed correction.</li>
+          ))}
+        </ul>
+      ) : null}
+      {run.notes ? <p>Notes: {run.notes}</p> : <p>No researcher notes.</p>}
+      {evidence.length === 0 ? <p>No recording metadata was stored.</p> : (
+        <ul>
+          {evidence.map((item) => (
+            <li key={item.id ?? item.label}>{item.label || 'Evidence label not recorded'}. {item.available ? 'Marked available in the browser. The file is not in the library.' : 'Not available. No file was stored.'}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function ObservationHistory({ run }: { run: NonNullable<StoredExperiment['runRecord']> }) {
+  const observations = run.observations ?? []
+  if (observations.length === 0) return <p>No observation timestamps were stored.</p>
+  return (
+    <div>
+      <p>{observations.length} observation timestamps.</p>
+      <ul>
+        {observations.map((item, index) => (
+          <li key={item.id ?? index}>{item.observationTimestamp ?? 'Time not recorded'} ms</li>
+        ))}
+      </ul>
     </div>
   )
 }

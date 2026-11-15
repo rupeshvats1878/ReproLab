@@ -26,6 +26,12 @@ export function stepLabel(count: number | undefined): string {
   return count === 1 ? '1 step' : `${count} steps`
 }
 
+export function recordLabel(kind: string | undefined): string {
+  if (kind === 'recorded') return 'Recorded experiment'
+  if (kind === 'demonstration') return 'Synthetic demonstration'
+  return 'Protocol only'
+}
+
 export function publishedLabel(value: string | undefined): string {
   if (!value) return 'Date not recorded'
   const parsed = Date.parse(value)

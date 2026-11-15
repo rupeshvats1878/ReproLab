@@ -1,6 +1,6 @@
 # Experiment library handoff
 
-Local MongoDB library for publishing an approved protocol snapshot and recording a planned replication. Built on `reference-video` commit `4743431`. This branch does not change `App.tsx`, `web/src/shared/types.ts`, `server/index.mjs`, or the protocol-preparation files.
+Local MongoDB library for publishing an approved protocol snapshot, a finished monitor run, and a planned replication. Built on `reference-video` commit `4743431`. The current demo UI publishes a finished monitor session from Results. `POST /experiments` remains the protocol-only route.
 
 ## Temporary protocol boundary
 
@@ -45,7 +45,11 @@ curl -s 'http://127.0.0.1:8788/experiments?q=dye&sort=oldest&limit=20&offset=0'
 curl -s http://127.0.0.1:8788/experiments/EXPERIMENT_ID
 ```
 
-The list returns summaries and `limit`, `offset`, and `total`. `total` counts the publications matching the filter, not only the page. Optional `q` is a case-insensitive title search of at most 120 characters. The service escapes it before using it as a regular expression. Optional `sort` is `newest` or `oldest`; the default is newest. Unknown query keys, a longer `q`, and any other `sort` return `400`. Summaries omit `protocolSnapshot`. When the stored snapshot has a numeric `version` or a `steps` array, the summary adds `protocolVersion` or `stepCount`. Open returns the stored snapshot. Unknown ids return `404`. Invalid ids and query parameters return `400`. A list while the database is unavailable returns `503` and `{"error":"database_unavailable"}`.
+The list returns summaries and `limit`, `offset`, and `total`. `total` counts the publications matching the filter, not only the page. Optional `q` is a case-insensitive title search of at most 120 characters. The service escapes it before using it as a regular expression. Optional `sort` is `newest` or `oldest`; the default is newest. Unknown query keys, a longer `q`, and any other `sort` return `400`. Summaries omit `protocolSnapshot` and `runRecord`. Each summary includes `kind`: `recorded`, `demonstration`, or `protocol` when the stored document has no kind. When the stored snapshot has a numeric `version` or a `steps` array, the summary adds `protocolVersion` or `stepCount`. Open returns the stored snapshot and any copied `runRecord`. Unknown ids return `404`. Invalid ids and query parameters return `400`. A list while the database is unavailable returns `503` and `{"error":"database_unavailable"}`.
+
+`POST /monitor-sessions/:id/finish` with `{}` sets `finishedAt` if it is empty and returns the same timestamp on a retry. It does not run when a session is created or when an event is saved. After it is set, a new event returns `409` and `invalid_state`. An identical event id still returns the existing event.
+
+`POST /monitor-sessions/:id/publish` accepts `{}` or `{ "notes": "..." }` up to 500 characters. The session must already be finished and must have a prepared six-well procedure. The response is a new experiment whose `protocolSnapshot` is that procedure and whose `runRecord` is a copy of the stored observations, alerts, human reports, and evidence labels. No image or video bytes are copied. `kind` is `demonstration` for a synthetic source and `recorded` otherwise. `monitorSessionId` links the publication to the session. A second request returns `200` and the first publication unchanged, including when the notes differ. A session that is not finished returns `409`. A finished session without a procedure returns `400`.
 
 ```bash
 curl -s -X POST http://127.0.0.1:8788/replications \

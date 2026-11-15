@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { countLabel, listQuery, publishedLabel, stepLabel, versionLabel } from './browse.ts'
+import { countLabel, listQuery, publishedLabel, recordLabel, stepLabel, versionLabel } from './browse.ts'
 
 describe('library browsing', () => {
   it('sends a bounded title query without implying an empty search', () => {
@@ -21,5 +21,11 @@ describe('library browsing', () => {
     expect(stepLabel(undefined)).toBe('Steps not recorded')
     expect(publishedLabel(undefined)).toBe('Date not recorded')
     expect(publishedLabel('not-a-date')).toBe('not-a-date')
+  })
+
+  it('labels a missing publication kind as protocol only', () => {
+    expect(recordLabel('recorded')).toBe('Recorded experiment')
+    expect(recordLabel('demonstration')).toBe('Synthetic demonstration')
+    expect(recordLabel(undefined)).toBe('Protocol only')
   })
 })

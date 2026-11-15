@@ -26,7 +26,6 @@ export default function App() {
     setTab('library')
   }, [])
   const clearLibraryFocus = useCallback(() => setLibraryFocusId(null), [])
-  const openPrepare = useCallback(() => setTab('prepare'), [])
 
   return (
     <div className={tab === 'monitor' ? 'app-shell app-shell-monitor' : 'app-shell'}>
@@ -56,7 +55,6 @@ export default function App() {
               setPreparedProtocol(protocol)
               setTab('monitor')
             }}
-            onOpenLibrary={openLibrary}
           />
         </div>
         <div hidden={tab !== 'monitor'}>
@@ -71,13 +69,17 @@ export default function App() {
           />
         </div>
         <div hidden={tab !== 'results'}>
-          <Results review={review} active={tab === 'results'} />
+          <Results review={review} active={tab === 'results'} onOpenLibrary={openLibrary} />
         </div>
         <div hidden={tab !== 'library'}>
           <Library
             focusId={libraryFocusId}
             onFocusHandled={clearLibraryFocus}
-            onOpenPrepare={openPrepare}
+            onOpenResults={() => setTab('results')}
+            onSetupMonitoring={(protocol) => {
+              setPreparedProtocol(protocol)
+              setTab('monitor')
+            }}
           />
         </div>
       </main>

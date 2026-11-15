@@ -34,6 +34,12 @@ export function isSupportedSixWell(steps: readonly ProtocolStep[]): boolean {
   )
 }
 
+export function monitorProtocolFromInstructions(steps: readonly { instruction?: string }[] | undefined, id: string, version: number, title: string): PreparedMonitorProtocol | null {
+  if (!steps || steps.length !== SIX_WELL_INSTRUCTIONS.length) return null
+  if (!steps.every((step, index) => step.instruction?.trim() === SIX_WELL_INSTRUCTIONS[index])) return null
+  return { id, version, title, steps: [...SIX_WELL_INSTRUCTIONS] }
+}
+
 export function preparedMonitorProtocol(id: string, version: number, title: string, steps: readonly ProtocolStep[]): PreparedMonitorProtocol {
   return {
     id,

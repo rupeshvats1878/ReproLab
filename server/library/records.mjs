@@ -1,4 +1,5 @@
 import { LibraryError } from './errors.mjs'
+import { presentMonitorSession } from './monitorRecords.mjs'
 
 export const COMPLETION_NOTE = 'Session ended. Completed means the recording session ended, not that the experiment succeeded or was reproduced.'
 
@@ -160,7 +161,89 @@ export function experimentSummary(experiment) {
   }
   if (snapshot != null && typeof snapshot.version === 'number') summary.protocolVersion = snapshot.version
   if (snapshot != null && Array.isArray(snapshot.steps)) summary.stepCount = snapshot.steps.length
+  summary.kind = experiment.kind === 'recorded' || experiment.kind === 'demonstration' ? experiment.kind : 'protocol'
   return summary
+}
+
+const RUN_RECORD_BYTES = 1_500_000
+
+export function recordedExperimentRecord(session, notes, { id, publishedAt }) {
+  if (!session.finishedAt) throw new LibraryError('invalid_state')
+  const protocol = session.preparedProtocol
+  if (!protocol || !Array.isArray(protocol.steps)) throw new LibraryError('invalid', 'preparedProtocol')
+  const presented = presentMonitorSession(session)
+  const kind = session.sourceKind === 'synthetic' ? 'demonstration' : 'recorded'
+  const runRecord = {
+    sourceKind: session.sourceKind,
+    startedAtIso: session.startedAtIso ?? null,
+    finishedAt: session.finishedAt,
+    notes,
+    observationCount: presented.observations.length,
+    observations: presented.observations.map((item) => ({
+      id: item.id,
+      observationTimestamp: item.observationTimestamp,
+      rawState: item.rawState,
+      stableState: item.stableState,
+    })),
+    alerts: presented.alerts.map((alert) => ({
+      id: alert.id,
+      wellId: alert.wellId,
+      observationTimestamp: alert.observationTimestamp,
+      observedState: alert.observedState,
+      rule: alert.rule,
+      evidence: frameLabel(alert.evidence),
+      updates: (alert.updates ?? []).map((update) => ({
+        id: update.id,
+        observationTimestamp: update.observationTimestamp,
+        observedState: update.observedState,
+        stableState: update.stableState,
+        evidence: frameLabel(update.evidence),
+      })),
+    })),
+    humanReports: presented.humanReports.map((report) => ({
+      id: report.id,
+      wellId: report.wellId,
+      humanActionKind: report.humanActionKind,
+      humanNote: report.humanNote,
+      humanReportedState: report.humanReportedState ?? null,
+      observationTimestamp: report.observationTimestamp,
+    })),
+    evidence: presented.evidence.map((item) => ({
+      id: item.id,
+      kind: item.kind,
+      label: item.label,
+      available: item.available === true,
+      observationTimestamp: item.observationTimestamp,
+      durationMs: item.durationMs ?? null,
+    })),
+  }
+  if (JSON.stringify(runRecord).length > RUN_RECORD_BYTES) throw new LibraryError('too_large')
+  return {
+    id,
+    title: protocol.title,
+    description: notes ?? '',
+    authorDisplayName: '',
+    approvalAcknowledged: true,
+    kind,
+    monitorSessionId: session.id,
+    protocolSnapshot: {
+      id: protocol.id,
+      version: protocol.version,
+      title: protocol.title,
+      steps: protocol.steps.map((instruction) => ({ instruction })),
+    },
+    runRecord,
+    publishedAt,
+  }
+}
+
+function frameLabel(evidence) {
+  if (!evidence || typeof evidence !== 'object') return null
+  return {
+    label: evidence.label ?? null,
+    observationTimestamp: evidence.observationTimestamp ?? null,
+    frameIndex: evidence.frameIndex ?? null,
+  }
 }
 
 export function escapeRegExp(value) {

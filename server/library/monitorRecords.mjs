@@ -15,13 +15,20 @@ export function monitorSession(input, recordedAt) {
     preparedProtocol: input.preparedProtocol ?? null,
     recordedAt,
     blockedReason: null,
+    finishedAt: null,
     events: [],
   }
+}
+
+export function finishMonitorSession(session, finishedAt) {
+  if (session.finishedAt) return session
+  return { ...session, finishedAt }
 }
 
 export function appendMonitorEvent(session, input, recordedAt) {
   const events = Array.isArray(session.events) ? session.events : []
   const existing = events.find((event) => event.id === input.id)
+  if (session.finishedAt && !existing) throw new LibraryError('invalid_state')
   if (existing) {
     const rebuilt = buildEvent(session, events, input, existing.recordedAt)
     if (canonical(existing) !== canonical(rebuilt)) throw new LibraryError('duplicate', 'id')
@@ -50,6 +57,7 @@ export function presentMonitorSummary(session) {
     startedAtIso: session.startedAtIso ?? null,
     recordedAt: session.recordedAt ?? null,
     blockedReason: session.blockedReason ?? null,
+    finishedAt: session.finishedAt ?? null,
     preparedProtocol: protocol
       ? { id: protocol.id, version: protocol.version, title: protocol.title }
       : null,
@@ -74,6 +82,7 @@ export function presentMonitorSession(session) {
     preparedProtocol: session.preparedProtocol ?? null,
     recordedAt: session.recordedAt,
     blockedReason: session.blockedReason ?? null,
+    finishedAt: session.finishedAt ?? null,
     events,
     observations: events.filter((event) => event.type === 'observation'),
     alerts,

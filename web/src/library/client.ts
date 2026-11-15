@@ -7,6 +7,7 @@ export interface ExperimentSummary {
   publishedAt: string
   protocolVersion?: number
   stepCount?: number
+  kind?: 'protocol' | 'recorded' | 'demonstration'
 }
 
 export interface ExperimentPage {
@@ -16,8 +17,40 @@ export interface ExperimentPage {
   total: number | null
 }
 
+export interface RunEvidence {
+  id?: string
+  kind?: string
+  label?: string
+  available?: boolean
+  observationTimestamp?: number
+  durationMs?: number | null
+}
+
+export interface RunAlert {
+  id: string
+  wellId: string
+  observationTimestamp: number
+  observedState: string
+  evidence?: { label?: string | null; observationTimestamp?: number | null; frameIndex?: number | null } | null
+  updates?: Array<{ id?: string; observationTimestamp?: number; observedState?: string; stableState?: string }>
+}
+
+export interface RunRecord {
+  sourceKind?: string
+  startedAtIso?: string | null
+  finishedAt?: string | null
+  notes?: string | null
+  observationCount?: number
+  observations?: Array<{ id?: string; observationTimestamp?: number }>
+  alerts?: RunAlert[]
+  humanReports?: Array<{ id?: string; wellId?: string; humanActionKind?: string; humanNote?: string; humanReportedState?: string | null; observationTimestamp?: number }>
+  evidence?: RunEvidence[]
+}
+
 export interface StoredExperiment extends ExperimentSummary {
   protocolSnapshot: ProtocolSnapshot
+  monitorSessionId?: string
+  runRecord?: RunRecord | null
 }
 
 export interface PlannedReplication {
@@ -97,6 +130,13 @@ const LIBRARY = '/library'
 
 export async function publishExperiment(body: unknown): Promise<StoredExperiment> {
   return readJson(await libraryFetch('/experiments', { method: 'POST', body }))
+}
+
+export async function publishRecordedSession(sessionId: string, notes: string): Promise<StoredExperiment> {
+  return readJson(await libraryFetch(`/monitor-sessions/${encodeURIComponent(sessionId)}/publish`, {
+    method: 'POST',
+    body: notes.trim() ? { notes: notes.trim() } : {},
+  }))
 }
 
 export async function listExperiments(query: string): Promise<ExperimentPage> {

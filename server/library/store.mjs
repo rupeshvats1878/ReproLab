@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { MongoClient } from 'mongodb'
 import { LibraryError } from './errors.mjs'
-import { appendMonitorEvent, monitorSession, presentMonitorSession, presentMonitorSummary, sameMonitorIdentity } from './monitorRecords.mjs'
+import { appendMonitorEvent, finishMonitorSession, monitorSession, presentMonitorSession, presentMonitorSummary, sameMonitorIdentity } from './monitorRecords.mjs'
 import {
   appendExecutionEvent,
   beginExecution,
@@ -13,6 +13,7 @@ import {
   COMPLETION_NOTE,
   matchesExperimentTitle,
   presentReplication,
+  recordedExperimentRecord,
   replicationRecord,
 } from './records.mjs'
 
@@ -114,6 +115,22 @@ export function createMemoryStore({ now = () => new Date().toISOString(), ids = 
       monitorSessions[index] = result.session
       return { created: result.created, session: presentMonitorSession(result.session) }
     },
+    async finishMonitorSession(id) {
+      const index = monitorSessions.findIndex((item) => item.id === id)
+      if (index < 0) throw new LibraryError('not_found')
+      const next = finishMonitorSession(monitorSessions[index], now())
+      monitorSessions[index] = next
+      return presentMonitorSession(next)
+    },
+    async publishRecordedExperiment(id, notes) {
+      const session = monitorSessions.find((item) => item.id === id)
+      if (!session) throw new LibraryError('not_found')
+      const existing = experiments.find((item) => item.monitorSessionId === id)
+      if (existing) return { created: false, experiment: structuredClone(existing) }
+      const record = recordedExperimentRecord(session, notes, { id: ids(), publishedAt: now() })
+      experiments.push(record)
+      return { created: true, experiment: structuredClone(record) }
+    },
   }
 }
 
@@ -156,6 +173,12 @@ export function createUnavailableStore() {
       throw new LibraryError('unavailable')
     },
     async appendMonitorEvent() {
+      throw new LibraryError('unavailable')
+    },
+    async finishMonitorSession() {
+      throw new LibraryError('unavailable')
+    },
+    async publishRecordedExperiment() {
       throw new LibraryError('unavailable')
     },
   }
@@ -221,6 +244,7 @@ export function createMongoStore({ client, dbName }) {
               authorDisplayName: 1,
               approvalAcknowledged: 1,
               publishedAt: 1,
+              kind: 1,
               'protocolSnapshot.version': 1,
               'protocolSnapshot.steps': 1,
             },
@@ -409,6 +433,52 @@ export function createMongoStore({ client, dbName }) {
         const retry = appendMonitorEvent(again, input, recordedAt)
         if (!retry.created) return { created: false, session: presentMonitorSession(retry.session) }
         throw new LibraryError('invalid_state')
+      } catch (error) {
+        if (error instanceof LibraryError) throw error
+        throw new LibraryError('unavailable')
+      }
+    },
+    async finishMonitorSession(id) {
+      await requireDatabase()
+      try {
+        const current = await monitorSessions().findOne({ _id: id }, { projection: { _id: 0 } })
+        if (!current) throw new LibraryError('not_found')
+        if (current.finishedAt) return presentMonitorSession(current)
+        const finishedAt = new Date().toISOString()
+        const updated = await monitorSessions().findOneAndUpdate(
+          { _id: id, $or: [{ finishedAt: null }, { finishedAt: { $exists: false } }] },
+          { $set: { finishedAt } },
+          { returnDocument: 'after', projection: { _id: 0 } },
+        )
+        const doc = updatedDocument(updated)
+        if (doc) return presentMonitorSession(doc)
+        const again = await monitorSessions().findOne({ _id: id }, { projection: { _id: 0 } })
+        if (!again) throw new LibraryError('not_found')
+        if (again.finishedAt) return presentMonitorSession(again)
+        throw new LibraryError('invalid_state')
+      } catch (error) {
+        if (error instanceof LibraryError) throw error
+        throw new LibraryError('unavailable')
+      }
+    },
+    async publishRecordedExperiment(id, notes) {
+      await requireDatabase()
+      try {
+        const existing = await experiments().findOne({ monitorSessionId: id }, { projection: { _id: 0 } })
+        if (existing) return { created: false, experiment: existing }
+        const session = await monitorSessions().findOne({ _id: id }, { projection: { _id: 0 } })
+        if (!session) throw new LibraryError('not_found')
+        const record = recordedExperimentRecord(session, notes, { id: randomUUID(), publishedAt: new Date().toISOString() })
+        try {
+          await experiments().insertOne({ ...record, _id: record.id })
+        } catch (error) {
+          if (error?.code === 11000) {
+            const raced = await experiments().findOne({ monitorSessionId: id }, { projection: { _id: 0 } })
+            if (raced) return { created: false, experiment: raced }
+          }
+          throw new LibraryError('unavailable')
+        }
+        return { created: true, experiment: record }
       } catch (error) {
         if (error instanceof LibraryError) throw error
         throw new LibraryError('unavailable')
