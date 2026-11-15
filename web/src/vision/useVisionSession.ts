@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPoi
 import { createId, initialWellStates } from '../shared/protocol.ts'
 import {
   type FinalPlateDraft,
+  type MediaDraft,
   type MonitorProps,
   type ObservationDraft,
   type WellId,
@@ -58,6 +59,8 @@ import {
   type LiveMonitorState,
   type LiveSourceKind,
 } from '../monitor/liveDecisions.ts'
+import { observationEvent } from '../monitor/persistEvents.ts'
+import { createMonitorSaver, type SaveStatus } from '../monitor/saveSession.ts'
 import { ObservationEmitter, ReadingStabilizer, readingsOf } from './stabilize.ts'
 import { SYNTHETIC_SEQUENCES, type SyntheticFrame } from './synthetic.ts'
 
@@ -105,6 +108,7 @@ export interface VisionSession {
   emitted: ObservationDraft[]
   traces: ObservationTrace[]
   live: LiveMonitorState
+  saveStatus: SaveStatus
   sampleMs: number
   lastProcessingMs: number
   monitorGeneration: number
@@ -257,6 +261,9 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
   const [emitted, setEmitted] = useState<ObservationDraft[]>([])
   const [traces, setTraces] = useState<ObservationTrace[]>([])
   const [live, setLive] = useState<LiveMonitorState>(() => createLiveMonitor('unspecified', 0))
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>({ phase: 'idle', detail: 'Not saved.' })
+  const liveRef = useRef(live)
+  const saverRef = useRef<ReturnType<typeof createMonitorSaver> | null>(null)
   const [lastProcessingMs, setLastProcessingMs] = useState(0)
   const [monitorGeneration, setMonitorGeneration] = useState(0)
   const [finalUrl, setFinalUrl] = useState<string | null>(null)
@@ -311,6 +318,28 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
     }
   }
 
+  function monitorSaver() {
+    if (!saverRef.current) {
+      saverRef.current = createMonitorSaver((status) => {
+        if (mounted.current) setSaveStatus(status)
+      })
+    }
+    return saverRef.current
+  }
+
+  function rememberLive(next: LiveMonitorState, observation?: ReturnType<typeof observationEvent>) {
+    const previous = liveRef.current
+    if (next === previous) return
+    liveRef.current = next
+    if (mounted.current) setLive(next)
+    monitorSaver().saveStep({ previous, next, observation })
+  }
+
+  function publishMedia(draft: MediaDraft): void {
+    callbacksRef.current.onMediaAvailable(draft)
+    monitorSaver().saveEvidence(draft, Math.max(0, lastElapsedRef.current))
+  }
+
   function publish(elapsed: number): void {
     if (!runningRef.current || seekBlockedRef.current) return
     const next = monotonicElapsed(elapsed, lastElapsedRef.current)
@@ -323,9 +352,9 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
     const draft = emitter.current.consider(next, stabilizer.current.snapshot())
     if (!draft) {
       const reason = emitter.current.blocked
-      if (reason && mounted.current) {
-        setSeekMessage(reason)
-        setLive((current) => blockLiveMonitor(current, reason))
+      if (reason) {
+        if (mounted.current) setSeekMessage(reason)
+        rememberLive(blockLiveMonitor(liveRef.current, reason))
       }
       return
     }
@@ -344,8 +373,11 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
           processingMs: processingMsRef.current,
         },
       ])
-      setLive((current) => applyStableObservation(current, draft, evidence, rawWells))
     }
+    rememberLive(
+      applyStableObservation(liveRef.current, draft, evidence, rawWells),
+      observationEvent(createId('observation'), draft.elapsedMs, rawWells, draft.wells),
+    )
   }
 
   function snapshotEvidence(elapsedMs: number): FrameEvidence {
@@ -430,10 +462,8 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
     seekBlockedRef.current = true
     holdRef.current = true
     emitter.current.block(SEEK_MESSAGE)
-    if (mounted.current) {
-      setSeekMessage(SEEK_MESSAGE)
-      setLive((current) => blockLiveMonitor(current, SEEK_MESSAGE))
-    }
+    if (mounted.current) setSeekMessage(SEEK_MESSAGE)
+    rememberLive(blockLiveMonitor(liveRef.current, SEEK_MESSAGE))
   }
 
   function endMonitoringSession(reason: string): void {
@@ -450,8 +480,8 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
       setSeekMessage(reason)
       setLocalPhase('idle')
       setStableStates(initialWellStates())
-      setLive((current) => blockLiveMonitor(current, reason))
     }
+    rememberLive(blockLiveMonitor(liveRef.current, reason))
   }
 
   function registerEvidence(note: string): void {
@@ -461,7 +491,7 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
   function failRecording(mediaId: string, detail: string): void {
     if (recordingSettled.current) return
     recordingSettled.current = true
-    callbacksRef.current.onMediaAvailable(
+    publishMedia(
       cameraRecordingDraft({
         mediaId,
         ok: false,
@@ -487,7 +517,7 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
     }
     const durationMs = await measureVideoDuration(blob)
     rememberVisionBlob(mediaId, blob)
-    callbacksRef.current.onMediaAvailable(
+    publishMedia(
       cameraRecordingDraft({
         mediaId,
         ok: true,
@@ -604,7 +634,9 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
       setTraces([])
       setLocalElapsedMs(0)
       setMonitorGeneration(generation)
-      setLive(createLiveMonitor(sourceKindFrom(inputKindRef.current), generation))
+      const next = createLiveMonitor(sourceKindFrom(inputKindRef.current), generation)
+      liveRef.current = next
+      setLive(next)
     }
   }
 
@@ -828,31 +860,20 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
   }
 
   function acknowledgeOmission(alertId: string, note: string): void {
-    const evidence = snapshotEvidence(Math.max(0, lastElapsedRef.current))
-    setLive((current) =>
-      acknowledgeAlert(current, alertId, Math.max(0, lastElapsedRef.current), evidence, note),
-    )
+    const at = Math.max(0, lastElapsedRef.current)
+    rememberLive(acknowledgeAlert(liveRef.current, alertId, at, snapshotEvidence(at), note))
   }
 
   function reportMissed(alertId: string, note: string, reportedState: WellState): void {
-    const evidence = snapshotEvidence(Math.max(0, lastElapsedRef.current))
-    setLive((current) =>
-      reportMissedObservation(
-        current,
-        alertId,
-        Math.max(0, lastElapsedRef.current),
-        evidence,
-        note,
-        reportedState,
-      ),
+    const at = Math.max(0, lastElapsedRef.current)
+    rememberLive(
+      reportMissedObservation(liveRef.current, alertId, at, snapshotEvidence(at), note, reportedState),
     )
   }
 
   function continueAfter(alertId: string, note: string): void {
-    const evidence = snapshotEvidence(Math.max(0, lastElapsedRef.current))
-    setLive((current) =>
-      continueAfterCorrection(current, alertId, Math.max(0, lastElapsedRef.current), evidence, note),
-    )
+    const at = Math.max(0, lastElapsedRef.current)
+    rememberLive(continueAfterCorrection(liveRef.current, alertId, at, snapshotEvidence(at), note))
   }
 
   function nudge(target: 'video' | 'final', wellId: WellId, dx: number, dy: number): void {
@@ -1091,10 +1112,15 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
         : source === 'live'
           ? 'Live camera. Readings are heuristic and stay unknown when the picture is unclear.'
           : 'Prerecorded video. Observations use the video clock.'
+    const startedAtIso = new Date().toISOString()
+    const monitor = liveRef.current
+    if (monitor.sourceKind === 'live' || monitor.sourceKind === 'prerecorded' || monitor.sourceKind === 'synthetic') {
+      monitorSaver().open({ sessionId: monitor.sessionId, sourceKind: monitor.sourceKind, startedAtIso })
+    }
     callbacksRef.current.onRunStart({
       source,
       title,
-      startedAtIso: new Date().toISOString(),
+      startedAtIso,
       notes,
     })
     callbacksRef.current.onElapsedMs(0)
@@ -1109,7 +1135,7 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
         const mediaId = createId('media')
         rememberVisionBlob(mediaId, file)
         const durationMs = durationMsFromSeconds(video.duration)
-        callbacksRef.current.onMediaAvailable(
+        publishMedia(
           prerecordedDraft({
             mediaId,
             mimeType: file.type || undefined,
@@ -1195,7 +1221,7 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
       }
       rememberVisionBlob(mediaId, blob)
       finalAvailableRef.current = true
-      callbacksRef.current.onMediaAvailable(
+      publishMedia(
         finalImageDraft({
           mediaId,
           ok: true,
@@ -1207,7 +1233,7 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
       setFinalMessage(`${label} Ready to assess.`)
     } catch {
       finalAvailableRef.current = false
-      callbacksRef.current.onMediaAvailable(
+      publishMedia(
         finalImageDraft({
           mediaId,
           ok: false,
@@ -1375,6 +1401,7 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
     emitted,
     traces,
     live,
+    saveStatus,
     sampleMs: SAMPLE_MS,
     lastProcessingMs,
     monitorGeneration,

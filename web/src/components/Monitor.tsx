@@ -1,8 +1,9 @@
-import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { expectedWellId } from '../shared/protocol.ts'
 import { PROTOCOL_ORDER, WELL_GRID, type WellId, type WellState } from '../shared/types.ts'
 import type { MonitorProps } from '../shared/types.ts'
 import { type FrameEvidence, type LiveAlert, type LiveDecisionEntry } from '../monitor/liveDecisions.ts'
+import { describeRetrieved, readMonitorSession } from '../monitor/saveSession.ts'
 import { formatRgb, rgbToCss, COLOR_PRESETS, type ColorPresetId } from '../vision/color.ts'
 import { normalizedToContent, type WellRegions } from '../vision/geometry.ts'
 import { SYNTHETIC_SEQUENCES } from '../vision/synthetic.ts'
@@ -142,6 +143,9 @@ export function Monitor(props: MonitorProps) {
 
         <aside className="live-decisions" aria-label="Protocol decisions">
           <section className="guide" data-attention={selected?.status === 'open' ? 'true' : 'false'} aria-live="polite">
+            <p className="monitor-note" data-save-status={session.saveStatus.phase}>
+              {session.saveStatus.detail}
+            </p>
             <h3>Now</h3>
             <p className="guide-line">{guide.action}</p>
             {selected && selected.status !== 'corrected' ? (
@@ -238,6 +242,7 @@ export function Monitor(props: MonitorProps) {
               </details>
             ) : null}
           </section>
+          <StoredSession sessionId={session.live.sessionId} phase={session.saveStatus.phase} />
           <details className="fold">
             <summary>Decisions ({session.live.timeline.length})</summary>
             {session.live.timeline.length === 0 ? (
@@ -781,4 +786,28 @@ function decisionLabel(entry: LiveDecisionEntry): string {
   if (entry.kind === 'omission_resolved') return `${entry.wellId} continued`
   if (entry.kind === 'correction') return `${entry.wellId} appears filled`
   return `${entry.wellId} appears empty`
+}
+
+function StoredSession({ sessionId, phase }: { sessionId: string; phase: string }) {
+  const [text, setText] = useState('No saved session has been retrieved.')
+  useEffect(() => {
+    const id = sessionStorage.getItem('reprolab-monitor-session-id')
+    if (!id) return
+    let cancel = false
+    void readMonitorSession(id).then((session) => {
+      if (cancel) return
+      setText(session ? describeRetrieved(session) : 'This session was not retrieved. It is not shown as stored.')
+    })
+    return () => {
+      cancel = true
+    }
+  }, [sessionId, phase])
+  return (
+    <details className="fold">
+      <summary>Stored session</summary>
+      <p className="monitor-note" data-retrieved-session>
+        {text}
+      </p>
+    </details>
+  )
 }
