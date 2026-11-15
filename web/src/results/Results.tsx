@@ -404,7 +404,7 @@ function PublishRun({ session, onOpenLibrary }: { session: RetrievedMonitor; onO
             />
             Include recording ({formatByteSize(localFile.size)}). Limit {formatByteSize(SHARED_RECORDING_LIMIT_BYTES)}.
           </label>
-          {overLimit ? <p role="alert">This file is over the 80 MiB library limit, so it cannot be included. The original stays on this computer. Publish the notes without the video, or use a smaller file.</p> : null}
+          {overLimit ? <p role="alert">Video attachments must be 80 MiB or smaller. Choose a smaller file or publish without video.</p> : null}
         </div>
       ) : recording ? (
         <p>A recording was saved for this browser, but the file is not available now. Publishing will not include it.</p>

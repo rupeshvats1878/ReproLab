@@ -217,7 +217,6 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
               </button>
             ) : null}
           </p> : null}
-          {session.mediaNotice ? <p className="media-notice">{session.mediaNotice}</p> : null}
           {session.playbackNotice ? (
             <p className="media-notice" role="alert">{session.playbackNotice}</p>
           ) : null}
