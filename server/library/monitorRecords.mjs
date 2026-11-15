@@ -42,6 +42,20 @@ export function sameMonitorIdentity(existing, input) {
     && JSON.stringify(existing.preparedProtocol ?? null) === JSON.stringify(input.preparedProtocol ?? null)
 }
 
+export function presentMonitorSummary(session) {
+  const protocol = session.preparedProtocol ?? null
+  return {
+    id: session.id,
+    sourceKind: session.sourceKind,
+    startedAtIso: session.startedAtIso ?? null,
+    recordedAt: session.recordedAt ?? null,
+    blockedReason: session.blockedReason ?? null,
+    preparedProtocol: protocol
+      ? { id: protocol.id, version: protocol.version, title: protocol.title }
+      : null,
+  }
+}
+
 export function presentMonitorSession(session) {
   const events = Array.isArray(session.events) ? session.events.map((event) => structuredClone(event)) : []
   const alerts = events.filter((event) => event.type === 'alert').map((alert) => ({

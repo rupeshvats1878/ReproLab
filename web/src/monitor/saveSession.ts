@@ -190,16 +190,69 @@ export async function postMonitorWith(fetchImpl: typeof fetch, path: string, bod
 }
 
 export async function readMonitorSession(id: string): Promise<RetrievedMonitor | null> {
+  const loaded = await loadMonitorSession(id)
+  return loaded.kind === 'ok' ? loaded.session : null
+}
+
+export interface MonitorSessionSummary {
+  id: string
+  sourceKind: string
+  startedAtIso: string | null
+  recordedAt: string
+  blockedReason: string | null
+  preparedProtocol: { id: string; version: number; title: string } | null
+}
+
+export type MonitorListResult =
+  | { kind: 'ok'; sessions: MonitorSessionSummary[] }
+  | { kind: 'unavailable' }
+  | { kind: 'unreachable' }
+
+export type MonitorSessionResult =
+  | { kind: 'ok'; session: RetrievedMonitor }
+  | { kind: 'missing' }
+  | { kind: 'invalid' }
+  | { kind: 'unavailable' }
+  | { kind: 'unreachable' }
+
+export async function listMonitorSessions(): Promise<MonitorListResult> {
+  let response: Response
+  try {
+    response = await fetch('/library/monitor-sessions?limit=20')
+  } catch {
+    return { kind: 'unreachable' }
+  }
+  if (response.status === 503) return { kind: 'unavailable' }
+  if (!response.ok) return { kind: 'unreachable' }
+  const body: unknown = await response.json().catch(() => null)
+  if (!body || typeof body !== 'object' || !('sessions' in body) || !Array.isArray(body.sessions)) {
+    return { kind: 'unreachable' }
+  }
+  return { kind: 'ok', sessions: body.sessions.filter(isMonitorSummary) }
+}
+
+export async function loadMonitorSession(id: string): Promise<MonitorSessionResult> {
   let response: Response
   try {
     response = await fetch(`/library/monitor-sessions/${encodeURIComponent(id)}`)
   } catch {
-    return null
+    return { kind: 'unreachable' }
   }
-  if (!response.ok) return null
+  if (response.status === 404) return { kind: 'missing' }
+  if (response.status === 400) return { kind: 'invalid' }
+  if (response.status === 503) return { kind: 'unavailable' }
+  if (!response.ok) return { kind: 'unreachable' }
   const body: unknown = await response.json().catch(() => null)
-  if (!body || typeof body !== 'object') return null
-  return body as RetrievedMonitor
+  if (!body || typeof body !== 'object') return { kind: 'unreachable' }
+  return { kind: 'ok', session: body as RetrievedMonitor }
+}
+
+function isMonitorSummary(value: unknown): value is MonitorSessionSummary {
+  if (!value || typeof value !== 'object') return false
+  const record = value as MonitorSessionSummary
+  return typeof record.id === 'string'
+    && typeof record.sourceKind === 'string'
+    && (record.recordedAt == null || typeof record.recordedAt === 'string')
 }
 
 export interface RetrievedMonitor {

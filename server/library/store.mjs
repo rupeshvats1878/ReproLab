@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { MongoClient } from 'mongodb'
 import { LibraryError } from './errors.mjs'
-import { appendMonitorEvent, monitorSession, presentMonitorSession, sameMonitorIdentity } from './monitorRecords.mjs'
+import { appendMonitorEvent, monitorSession, presentMonitorSession, presentMonitorSummary, sameMonitorIdentity } from './monitorRecords.mjs'
 import {
   appendExecutionEvent,
   beginExecution,
@@ -80,6 +80,18 @@ export function createMemoryStore({ now = () => new Date().toISOString(), ids = 
       if (!found) throw new LibraryError('not_found')
       return presentMonitorSession(found)
     },
+    async listMonitorSessions({ limit, offset }) {
+      const sorted = [...monitorSessions].sort((left, right) => {
+        const time = String(right.recordedAt).localeCompare(String(left.recordedAt))
+        return time || String(left.id).localeCompare(String(right.id))
+      })
+      return {
+        sessions: sorted.slice(offset, offset + limit).map(presentMonitorSummary),
+        limit,
+        offset,
+        total: sorted.length,
+      }
+    },
     async createMonitorSession(input) {
       const existing = monitorSessions.find((item) => item.id === input.sessionId)
       if (existing) {
@@ -132,6 +144,9 @@ export function createUnavailableStore() {
       throw new LibraryError('unavailable')
     },
     async openMonitorSession() {
+      throw new LibraryError('unavailable')
+    },
+    async listMonitorSessions() {
       throw new LibraryError('unavailable')
     },
     async createMonitorSession() {
@@ -312,6 +327,22 @@ export function createMongoStore({ client, dbName }) {
         const doc = await monitorSessions().findOne({ _id: id }, { projection: { _id: 0 } })
         if (!doc) throw new LibraryError('not_found')
         return presentMonitorSession(doc)
+      } catch (error) {
+        if (error instanceof LibraryError) throw error
+        throw new LibraryError('unavailable')
+      }
+    },
+    async listMonitorSessions({ limit, offset }) {
+      await requireDatabase()
+      try {
+        const total = await monitorSessions().countDocuments()
+        const docs = await monitorSessions()
+          .find({}, { projection: { events: 0, _id: 0 } })
+          .sort({ recordedAt: -1, id: 1 })
+          .skip(offset)
+          .limit(limit)
+          .toArray()
+        return { sessions: docs.map(presentMonitorSummary), limit, offset, total }
       } catch (error) {
         if (error instanceof LibraryError) throw error
         throw new LibraryError('unavailable')

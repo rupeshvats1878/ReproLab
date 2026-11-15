@@ -92,6 +92,13 @@ async function route(req, res, store) {
     return
   }
 
+  if (req.method === 'GET' && url.pathname === '/monitor-sessions') {
+    const query = validateListQuery(url.searchParams)
+    await assertDatabase(store)
+    send(res, 200, await store.listMonitorSessions(query))
+    return
+  }
+
   if (req.method === 'POST' && url.pathname === '/monitor-sessions') {
     const input = validateMonitorSession(await readJson(req))
     await assertDatabase(store)

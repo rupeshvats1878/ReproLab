@@ -4,7 +4,7 @@ import { createServer, request as httpRequest } from 'node:http'
 import test from 'node:test'
 import { createLibraryServer } from './http.mjs'
 import './index.mjs'
-import { createMemoryStore, createStoreFromEnv } from './store.mjs'
+import { createMemoryStore, createStoreFromEnv, createUnavailableStore } from './store.mjs'
 
 const SESSION = 'session_11111111-1111-4111-8111-111111111111'
 const OBS = 'obs_22222222-2222-4222-8222-222222222222'
@@ -253,6 +253,64 @@ test('stores an optional six-well protocol snapshot without changing older sessi
   }
 })
 
+test('lists monitor session summaries newest first without event histories', async () => {
+  let tick = 0
+  const times = ['2026-11-14T00:00:00.000Z', '2026-11-14T01:00:00.000Z']
+  const older = 'session_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1'
+  const newer = 'session_bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2'
+  const server = await listen(createMemoryStore({ now: () => times[Math.min(tick++, times.length - 1)] }))
+  try {
+    await ask(server, 'POST', '/monitor-sessions', sessionBody({ sessionId: older, startedAtIso: times[0] }))
+    await ask(server, 'POST', `/monitor-sessions/${older}/events`, {
+      id: 'obs_22222222-2222-4222-8222-222222222223',
+      type: 'observation',
+      observationTimestamp: 100,
+      rawState: states(),
+      stableState: states(),
+    })
+    const preparedProtocol = {
+      id: 'protocol_1',
+      version: 1,
+      title: 'Six-well colored water',
+      steps: ['Fill A1', 'Fill A2', 'Fill A3', 'Fill B1', 'Fill B2', 'Fill B3'],
+    }
+    await ask(server, 'POST', '/monitor-sessions', {
+      sessionId: newer,
+      sourceKind: 'synthetic',
+      startedAtIso: times[1],
+      preparedProtocol,
+    })
+    const listed = await ask(server, 'GET', '/monitor-sessions?limit=20')
+    assert.equal(listed.status, 200)
+    assert.deepEqual(listed.body.sessions.map((item) => item.id), [newer, older])
+    assert.equal(listed.body.total, 2)
+    assert.equal(listed.body.sessions[0].preparedProtocol.title, 'Six-well colored water')
+    assert.equal(listed.body.sessions[0].preparedProtocol.steps, undefined)
+    assert.equal(listed.body.sessions[1].preparedProtocol, null)
+    assert.equal(listed.body.sessions[1].blockedReason, null)
+    assert.equal('events' in listed.body.sessions[1], false)
+    assert.equal('alerts' in listed.body.sessions[1], false)
+    assert.equal(listed.text.includes('data:'), false)
+    const missing = await ask(server, 'GET', '/monitor-sessions/session_cccccccc-cccc-4ccc-8ccc-ccccccccccc3')
+    assert.equal(missing.status, 404)
+    const extra = await ask(server, 'GET', '/monitor-sessions?extra=1')
+    assert.equal(extra.status, 400)
+  } finally {
+    server.close()
+  }
+})
+
+test('monitor session list reports an unavailable database', async () => {
+  const server = await listen(createUnavailableStore())
+  try {
+    const listed = await ask(server, 'GET', '/monitor-sessions')
+    assert.equal(listed.status, 503)
+    assert.equal(listed.body.error, 'database_unavailable')
+  } finally {
+    server.close()
+  }
+})
+
 test('real MongoDB monitor session persists and leaves existing records unchanged', {
   skip: process.env.MONGODB_URI && process.env.MONGODB_DB && !process.env.MONGODB_URI.includes('USER:PASSWORD')
     ? false
@@ -300,6 +358,12 @@ test('real MongoDB monitor session persists and leaves existing records unchange
     assert.equal(opened.observations[0].provenance, 'prerecorded')
     assert.equal(opened.observations[0].observationTimestamp, 500)
     assert.deepEqual(opened.protocol.order, ['A1', 'A2', 'A3', 'B1', 'B2', 'B3'])
+    const listed = await store.listMonitorSessions({ limit: 20, offset: 0 })
+    const summary = listed.sessions.find((item) => item.id === sessionId)
+    assert.ok(summary)
+    assert.equal(summary.preparedProtocol, null)
+    assert.equal(summary.sourceKind, 'prerecorded')
+    assert.equal('events' in summary, false)
   } finally {
     await store.client.db(dbName).collection('monitorSessions').deleteOne({ _id: sessionId })
     const removed = await store.client.db(dbName).collection('monitorSessions').findOne({ _id: sessionId })

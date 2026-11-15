@@ -18,7 +18,9 @@ curl -s -X POST http://127.0.0.1:8788/monitor-sessions \
 
 `201` creates the session. The same id and the same source return `200`. The same id with a different source returns `409` `duplicate_event`.
 
-`GET /monitor-sessions/:sessionId` returns the session, the append-only `events`, and separate `observations`, `alerts`, `evidence`, and `humanReports`. An alert view lists later `updates` beside the original alert. The stored alert event is not rewritten.
+`GET /monitor-sessions` returns a bounded list of session summaries, newest `recordedAt` first. The query uses the existing `limit` and `offset` rules, with a default limit of 20 and a maximum of 50. Each summary has `id`, `sourceKind`, `startedAtIso`, `recordedAt`, `blockedReason`, and `preparedProtocol` reduced to `id`, `version`, and `title`. `preparedProtocol` is `null` when that session has no association. The list does not include events, observations, alerts, evidence, or image payloads. A blocked session is the only stored status; a saved session is not marked completed. An unknown query key returns `400`. An unavailable database returns `503` `database_unavailable`.
+
+`GET /monitor-sessions/:sessionId` returns the session, the append-only `events`, and separate `observations`, `alerts`, `evidence`, and `humanReports`. An alert view lists later `updates` beside the original alert. The stored alert event is not rewritten. An unknown id returns `404` `not_found`.
 
 ## Events
 
