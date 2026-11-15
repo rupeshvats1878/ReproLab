@@ -42,3 +42,22 @@ Private artifacts are under server/three-cup-offline/local/review.
 No source annotation export was provided, so none was fabricated.
 No model predictions or real accuracy scores were generated.
 The final delivery message records the pushed full commit.
+## Local integration test package, 2026-11-15
+
+Latest reviewed pushed app commit 65f78a42b379fd2c4163bbfbc96a0754c035d64b.
+Latest reviewed adapter commit a34c5a6b9dc29c5bdf9f8f382c48755c98c3d1c6.
+
+Added fifteen synthetic acceptance fixtures and probe_integration.mjs.
+Actual parser probe result was 8 passed, 6 gaps, 1 blocked, exit 1 as designed.
+32 offline tests passed. INTEGRATION_ACCEPTANCE.md records commands and findings.
+
+A private requested-window derivative clip was encoded and fully decoded locally,
+passed Ryan's size/duration/container validation, and produced a genuine
+remote_disabled response with network/transport blocked. Exact clip command,
+source/clip hashes, timing quantization and response are in ignored
+server/three-cup-offline/local/integration. Source hash matched after encoding.
+Audio was omitted from the derivative. Remote inference remains unperformed.
+
+Next action is for Cursor to fix the acceptance gaps and add request identity,
+then test the local wrapper with the disabled response before any authorized
+remote inference. Ryan should address adapter validation gaps in parallel.

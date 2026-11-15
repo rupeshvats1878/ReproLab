@@ -83,3 +83,11 @@ read-only and its 23 tests passed in an ignored local snapshot with network bloc
 INTEGRATION_READINESS.md contains exact contract mapping, pending dependencies,
 reproduced edge cases and the message for Cursor. STATUS.md records current checks.
 No branch merge or remote video inference was performed.
+## Integration fixture follow-up
+
+INTEGRATION_ACCEPTANCE.md is the current actionable parser/wrapper review.
+Synthetic fixtures live in tests/fixtures/integration_cases.json and execute via
+probe_integration.mjs against an explicitly supplied committed parser snapshot.
+The private local/integration directory contains the verified derivative clip,
+timing/hash manifests and actual network-blocked adapter response.
+The source recording remains unchanged. See STATUS.md for exact pass/gap counts.
