@@ -125,3 +125,5 @@ button:not(:disabled):hover { border-color: var(--teal); }
  .app-main .workspace-hero h2 { font-size: clamp(2rem, 7vw, 2.8rem); }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; scroll-behavior: auto !important; } }
+
+.evidence-item .evidence-finding { grid-column: 1 / -1; margin: .15rem 0 .4rem; font-size: .8rem; line-height: 1.5; color: #c8dfd2; }

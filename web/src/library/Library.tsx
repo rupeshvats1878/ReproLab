@@ -148,7 +148,7 @@ export function Library(props: {
       <header className="workspace-hero">
         <p className="workspace-eyebrow">04 / Library</p>
         <h2>Every experiment.<br /><span>A foundation for the next.</span></h2>
-        <p className="workspace-lede">Explore published records, revisit the evidence, and carry a procedure into its next run.</p>
+        <p className="workspace-lede">Revisit the evidence. Start the next run.</p>
       </header>
       <details className="library-note">
         <summary>About this library</summary>

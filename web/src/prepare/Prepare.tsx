@@ -179,12 +179,12 @@ export function Prepare(props: {
       <header className="workspace-hero prepare-hero">
         <div><p className="workspace-eyebrow">01 / Prepare</p>
           <h2>Good science starts<br />with a <span>clear plan.</span></h2>
-          <p className="workspace-lede">Define the procedure. Capture the experiment. Keep the evidence that connects them.</p>
+          <p className="workspace-lede">Plan the procedure. Keep the evidence.</p>
         </div>
         <div className="prepare-launch">
           <span className="workspace-eyebrow">Ready for the bench?</span>
           <h3>Your experiment, in focus.</h3>
-          <p>Open the three-cup workspace to choose a procedure, use your webcam, or review a recording.</p>
+          <p>Capture with your webcam or review a recording.</p>
           <button type="button" className="primary-action" onClick={props.onOpenMonitor}>Open Monitor <span aria-hidden="true">↗</span></button>
         </div>
       </header>
@@ -208,7 +208,7 @@ export function Prepare(props: {
             <textarea id="protocol-text" value={sourceText} disabled={locked} rows={8} onChange={(event) => setSourceText(event.target.value)} />
           </label>
           <label>
-            Or upload a .txt file
+            Upload a .txt file
             <input
               type="file"
               accept=".txt,text/plain"
