@@ -1,0 +1,4 @@
+# Verified together on Python 3.10.11, macOS arm64. Local venv only.
+numpy==2.2.6
+opencv-contrib-python==5.0.0.93
+Pillow==12.3.0

@@ -1,0 +1,1 @@
+video_id,video_path,session_id,split,event_index,event_type,source_cup,destination_cup,start_ms,end_ms,occluded,red_appearance,green_appearance,blue_appearance,annotator,notes
