@@ -1,3 +1,4 @@
+import type { StoredRecordingAnalysis, RecordingHumanReview } from '../capture/recordingReview.ts'
 export interface ExperimentSummary {
   id: string
   title: string
@@ -40,6 +41,8 @@ export interface RunAlert {
 }
 
 export interface RunRecord {
+  recordingAnalyses?: StoredRecordingAnalysis[]
+  recordingReviews?: RecordingHumanReview[]
   procedureId?: string
   sourceKind?: string
   startedAtIso?: string | null

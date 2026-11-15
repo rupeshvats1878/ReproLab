@@ -1,3 +1,4 @@
+import { validateRecordingEvent } from './recordingReview.mjs'
 import { LibraryError } from './errors.mjs'
 
 const TEXT = { title: 120, description: 500, authorDisplayName: 80 }
@@ -347,6 +348,7 @@ function preparedProtocol(value) {
 
 export function validateMonitorEvent(body) {
   plainObject(body, 'body')
+  if (body.type === 'recording_analysis' || body.type === 'recording_review') return validateRecordingEvent(body)
   if (body.type === 'observation') return observationEvent(body)
   if (body.type === 'alert') return alertEvent(body)
   if (body.type === 'alert_update') return alertUpdateEvent(body)

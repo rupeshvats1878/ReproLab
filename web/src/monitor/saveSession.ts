@@ -1,3 +1,4 @@
+import type { StoredRecordingAnalysis, RecordingHumanReview } from '../capture/recordingReview.ts'
 import type { PreparedMonitorProtocol } from '../prepare/sixWell.ts'
 import type { MediaDraft } from '../shared/types.ts'
 import type { LiveMonitorState } from './liveDecisions.ts'
@@ -229,6 +230,7 @@ export async function readMonitorSession(id: string): Promise<RetrievedMonitor |
 }
 
 export interface MonitorSessionSummary {
+  captureProtocolId?: string
   id: string
   sourceKind: string
   startedAtIso: string | null
@@ -290,6 +292,8 @@ function isMonitorSummary(value: unknown): value is MonitorSessionSummary {
 }
 
 export interface RetrievedMonitor {
+  recordingAnalyses?: StoredRecordingAnalysis[]
+  recordingReviews?: RecordingHumanReview[]
   id: string
   sourceKind: string
   startedAtIso?: string | null

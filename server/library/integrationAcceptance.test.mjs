@@ -1,19 +1,13 @@
 import assert from 'node:assert/strict'
-import { readFileSync, writeFileSync } from 'node:fs'
-import { pathToFileURL } from 'node:url'
+import { fixtures, disabled } from './fixtures/adapterCases.mjs'
 import test from 'node:test'
 import { acceptAdapterResult, beginClipCheck, resetClipChecks } from './clipObservation.mjs'
 
-const parserUrl = pathToFileURL('C:/Users/rupes/OneDrive/Documents/GitHub/labbench/web/src/capture/geminiObservation.ts')
-const { reviewModelObservation } = await import(parserUrl.href)
+const { reviewModelObservation } = await import(new URL('../../web/src/capture/geminiObservation.ts', import.meta.url))
 
-const FIXTURES = 'C:/Users/rupes/Projects/labbench-codex-offline/server/three-cup-offline/tests/fixtures/integration_cases.json'
-const DISABLED = 'C:/Users/rupes/Projects/labbench-codex-offline/server/three-cup-offline/local/integration/adapter-disabled-response.json'
 const ACTIVE = 'request_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const OLD = 'request_bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
 
-const fixtures = JSON.parse(readFileSync(FIXTURES, 'utf8'))
-const disabled = JSON.parse(readFileSync(DISABLED, 'utf8'))
 
 function jobFor(fixture, requestId) {
   return {
@@ -58,16 +52,10 @@ test('synthetic acceptance fixtures pass through the wrapper', () => {
     }
     results.push({ name: fixture.name, layer: fixture.layer ?? 'parser', status: 'passed', actualState: result.status })
   }
-  writeFileSync(new URL('./integration-acceptance-record.json', import.meta.url), JSON.stringify({
-    synthetic: true,
-    fixtureCursorCommit: fixtures.cursorCommit,
-    adapterCommit: '119e048931069b817eb7e3a14b4f6d860a050ef5',
-    probe: 'Codex probe_integration.mjs loads only the parser and reports the stale case as blocked. This wrapper run rejects that same-session old request. Evidence inside the clip but outside its event stays uncertain with seeking disabled. Negative times, reversed intervals, zero-length intervals, evidence outside the clip, and identical cups stay rejected, matching the fixtures.',
-    results,
-  }, null, 2))
+  assert.equal(results.every((result) => result.status === 'passed'), true)
 })
 
-test('the captured disabled adapter response stays unavailable and makes no remote call', () => {
+test('a synthetic disabled adapter response stays unavailable and makes no remote call', () => {
   resetClipChecks()
   const job = beginClipCheck({
     sessionId: disabled.sessionId,

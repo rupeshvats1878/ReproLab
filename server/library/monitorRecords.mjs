@@ -92,6 +92,7 @@ export function presentMonitorSummary(session) {
     blockedReason: session.blockedReason ?? null,
     finishedAt: session.finishedAt ?? null,
     procedureId: procedureIdOf(session),
+    captureProtocolId: procedureIdOf(session) === THREE_CUP_PROCEDURE_ID ? captureProtocolIdOf(session.captureProtocolId) : null,
     preparedProtocol: protocol
       ? { id: protocol.id, version: protocol.version, title: protocol.title }
       : null,
@@ -133,14 +134,24 @@ export function presentMonitorSession(session) {
     evidence: events.filter((event) => event.type === 'evidence'),
     humanReports: events.filter((event) => event.type === 'human_report'),
     humanMarkers: events.filter((event) => event.type === 'human_marker'),
+    recordingAnalyses: events.filter((event) => event.type === 'recording_analysis'),
+    recordingReviews: events.filter((event) => event.type === 'recording_review'),
   }
 }
 
 function buildEvent(session, events, input, recordedAt) {
   const capture = procedureIdOf(session) === THREE_CUP_PROCEDURE_ID
   if (capture && SIX_WELL_EVENT_TYPES.has(input.type)) throw new LibraryError('invalid_state')
-  if (!capture && input.type === 'human_marker') throw new LibraryError('invalid_state')
-  const provenance = input.type === 'human_report' || input.type === 'human_marker' ? 'human' : session.sourceKind
+  if (!capture && ['human_marker', 'recording_analysis', 'recording_review'].includes(input.type)) throw new LibraryError('invalid_state')
+  if (input.type === 'recording_analysis') {
+    if (input.captureProtocolId !== captureProtocolIdOf(session.captureProtocolId)) throw new LibraryError('invalid', 'captureProtocolId')
+    if (input.dataKind === 'synthetic' && session.sourceKind !== 'synthetic') throw new LibraryError('invalid', 'sourceKind')
+  }
+  if (input.type === 'recording_review') {
+    const original = events.find((event) => event.type === 'recording_analysis' && event.id === input.analysisId)
+    if (!original || !original.analysis.timeline.events.some((event) => event.eventId === input.eventId)) throw new LibraryError('invalid', 'analysisId')
+  }
+  const provenance = input.type === 'human_report' || input.type === 'human_marker' || input.type === 'recording_review' ? 'human' : input.type === 'recording_analysis' ? (input.dataKind === 'synthetic' ? 'synthetic' : 'model') : session.sourceKind
   if (input.type === 'alert_update' || input.type === 'human_report') {
     const alert = events.find((event) => event.type === 'alert' && event.id === input.alertId)
     if (!alert) throw new LibraryError('invalid', 'alertId')

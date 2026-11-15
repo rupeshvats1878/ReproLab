@@ -1,3 +1,4 @@
+import { SavedRecordingEvidence } from '../capture/RecordingReview.tsx'
 import { useEffect, useState, type FormEvent } from 'react'
 import { Review } from '../components/Review.tsx'
 import {
@@ -115,7 +116,7 @@ export function Results(props: { review: ReviewController; active: boolean; onOp
             <li><strong>Review the saved evidence here.</strong> Check recorded flags and person reports; a finished run does not mean it succeeded.</li>
             <li><strong>Publish when ready.</strong> Save the finished experiment to Library, with an optional recording within the upload limit.</li>
           </ol>
-          <p>A local video or imported Gemini hypothesis remains in Monitor until it is included in a supported saved workflow. Results does not automatically analyze new footage.</p>
+          <p>Save an imported three-cup analysis as a separate review session in Monitor, then finish the review to publish it here. Original videos stay local unless explicitly uploaded. Results does not automatically analyze new footage.</p>
         </details>
       </header>
 
@@ -212,7 +213,7 @@ function MonitorResult({ session, onOpenLibrary }: { session: RetrievedMonitor; 
       <p className="results-small">A finished session is not a verified successful experiment. Flags require review.</p>
       <p role="status">Retrieved from the library.</p>
       <p>
-        {session.preparedProtocol ? `${session.preparedProtocol.title}, version ${session.preparedProtocol.version}` : 'Protocol association not recorded'}
+        {session.preparedProtocol ? `${session.preparedProtocol.title}, version ${session.preparedProtocol.version}` : session.protocol?.approvedSteps?.join('; ') || 'Protocol association not recorded'}
         {' · '}
         {sourceLabel(session.sourceKind)}
         {' · '}
@@ -232,8 +233,9 @@ function MonitorResult({ session, onOpenLibrary }: { session: RetrievedMonitor; 
           <p>These instructions were copied when the session started. A later draft edit does not change them.</p>
         </div>
       ) : null}
-      <h4>Detected issues</h4>
-      {alerts.length === 0 ? <p>No issue was retrieved.</p> : null}
+      {session.recordingAnalyses?.length ? <SavedRecordingEvidence analyses={session.recordingAnalyses} reviews={session.recordingReviews} /> : null}
+      <h4>{session.recordingAnalyses?.length ? 'Other stored flags' : 'Detected issues'}</h4>
+      {alerts.length === 0 ? <p>{session.recordingAnalyses?.length ? 'No other detector flags were stored. Imported transfer findings above remain open for review.' : 'No issue was retrieved.'}</p> : null}
       <ul>
         {alerts.map((alert) => (
           <li key={alert.id}>
@@ -366,7 +368,7 @@ function PublishRun({ session, onOpenLibrary }: { session: RetrievedMonitor; onO
       <h4>Publish experiment</h4>
       <p>Finished does not mean the run succeeded. Unresolved issues stay in the publication.</p>
       {synthetic ? <p>Synthetic demonstration. Not a camera recording.</p> : null}
-      {capture ? <p>Three-cup capture. Automatic checks are not connected. Markers are reports from a person, not camera judgments.</p> : null}
+      {capture ? <p>{session.recordingAnalyses?.length ? 'Saved model hypotheses and separate human decisions will be included. Publishing does not confirm correctness.' : 'Three-cup capture. Automatic checks are not connected. Markers are reports from a person, not camera judgments.'}</p> : null}
       <p>{capture ? 'Three-cup capture' : `${session.preparedProtocol?.title}, version ${session.preparedProtocol?.version}`}. {sourceLabel(session.sourceKind)}.</p>
       {session.preparedProtocol ? (
         <ol>
@@ -385,7 +387,7 @@ function PublishRun({ session, onOpenLibrary }: { session: RetrievedMonitor; onO
             <li key={alert.id}>{alert.wellId} remains unresolved. {alert.observedState}</li>
           ))}
         </ul>
-      ) : <p>No unresolved deviation was stored.</p>}
+      ) : <p>{session.recordingAnalyses?.length ? 'Imported transfer hypotheses retain their own comparisons and human reviews above; this is not a compliance verdict.' : 'No unresolved deviation was stored.'}</p>}
       {recording && localFile && previewUrl ? (
         <div>
           <p>Local recording preview. This file is not in the library until you include it.</p>

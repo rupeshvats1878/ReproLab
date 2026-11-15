@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { disabled } from './fixtures/adapterCases.mjs'
 import { createServer, request as httpRequest } from 'node:http'
 import test from 'node:test'
 import { createLibraryServer } from './http.mjs'
@@ -15,7 +15,7 @@ import {
   resetClipChecks,
 } from './clipObservation.mjs'
 
-const DISABLED = 'C:/Users/rupes/Projects/labbench-codex-offline/server/three-cup-offline/local/integration/adapter-disabled-response.json'
+const DISABLED = 'synthetic-disabled-response.json'
 
 const SESSION = 'session_6a6a6a6a-6a6a-6a6a-8a6a-6a6a6a6a6a6a'
 const REQUEST = 'request_6b6b6b6b-6b6b-6b6b-8b6b-6b6b6b6b6b6b'
@@ -296,9 +296,9 @@ test('an imported synthetic result stays labeled synthetic and an offset is not 
   assert.equal(bounds.reason, 'clip-bounds')
 })
 
-test('the saved disabled adapter response imports as unavailable and makes no remote call', async () => {
+test('a synthetic disabled adapter response imports as unavailable and makes no remote call', async () => {
   resetClipChecks()
-  const document = JSON.parse(readFileSync(DISABLED, 'utf8'))
+  const document = structuredClone(disabled)
   const imported = importAdapterReview(importBody(document, {
     monitorSessionId: SESSION,
     monitorVideoId: 'local-4-recording.mov',

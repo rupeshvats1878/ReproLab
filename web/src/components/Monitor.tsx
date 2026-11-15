@@ -15,6 +15,8 @@ import { useVisionSession, type VisionSession } from '../vision/useVisionSession
 import type { WellMeasurement } from '../vision/analyze.ts'
 import type { PixelRect } from '../vision/geometry.ts'
 import './Monitor.css'
+import { RecordingReviewCard } from '../capture/RecordingReview.tsx'
+import { createRecordingDraft, recordingAssociation, type RecordingDraft, type RecordingAssociation } from '../capture/recordingReview.ts'
 import { parseRecordingAnalysis, recordingComparisons, recordingLinkError, RECORDING_ANALYSIS_SCHEMA, type RecordingAnalysis } from '../capture/recordingAnalysis.ts'
 
 const STATE_LABEL: Record<WellState, string> = {
@@ -958,6 +960,11 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
   const [clipEnd, setClipEnd] = useState('10')
   const [clipPhase, setClipPhase] = useState<'idle' | 'processing' | 'done' | 'error'>('idle')
   const [clipResult, setClipResult] = useState<ClipCheckResponse | null>(null)
+  const [recordingDrafts, setRecordingDrafts] = useState<RecordingDraft[]>([])
+  const [activeDraftId, setActiveDraftId] = useState<string | null>(null)
+  const [wholeAssociation, setWholeAssociation] = useState<RecordingAssociation | null>(null)
+  const [importDataKind, setImportDataKind] = useState<'real' | 'synthetic'>('real')
+  const activeDraft = recordingDrafts.find(draft => draft.id === activeDraftId) ?? null
   const [wholeAnalysis, setWholeAnalysis] = useState<RecordingAnalysis | null>(null)
   const [wholeLinked, setWholeLinked] = useState<'hash-verified' | 'user-confirmed' | null>(null)
   const [manifestSha256, setManifestSha256] = useState<string | null>(null)
@@ -973,6 +980,8 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
     setClipPhase('idle')
     setClipResult(null)
     setWholeAnalysis(null)
+    setActiveDraftId(null)
+    setWholeAssociation(null)
     setWholeLinked(null)
     setManifestSha256(null)
     setManifestInvalid(false)
@@ -980,7 +989,7 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
     setLinkNotice('')
     clipGeneration.current += 1
   }
-  const protocol = captureProtocol(session.captureProtocolId)
+  const protocol = captureProtocol(activeDraft?.captureProtocolId ?? session.captureProtocolId)
   const latest = session.markers.at(-1) ?? null
   const latestComparison = latest ? compareHumanMarker(latest.marker, session.captureProtocolId) : null
   const namedCups = latest ? markerCups(latest.marker) : []
@@ -1046,6 +1055,8 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
     setClipPhase('processing')
     setClipResult(null)
     setWholeAnalysis(null)
+    setActiveDraftId(null)
+    setWholeAssociation(null)
     setWholeLinked(null)
     try {
       const response = await fetch('/library/clip-observations', {
@@ -1077,6 +1088,8 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
     setClipPhase('processing')
     setClipResult(null)
     setWholeAnalysis(null)
+    setActiveDraftId(null)
+    setWholeAssociation(null)
     setWholeLinked(null)
     let parsed: unknown
     try {
@@ -1090,7 +1103,14 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
     if (clipGeneration.current !== generation) return
     if (parsed && typeof parsed === 'object' && 'schemaVersion' in parsed && parsed.schemaVersion === RECORDING_ANALYSIS_SCHEMA) {
       try {
-        setWholeAnalysis(parseRecordingAnalysis(parsed))
+        const analysis = parseRecordingAnalysis(parsed)
+        const existing = recordingDrafts.find(draft => draft.parsed.sessionId === analysis.sessionId && draft.parsed.videoId === analysis.videoId)
+        if (existing && JSON.stringify(existing.analysis) !== JSON.stringify(analysis.raw)) throw new Error('This recording already has a different imported analysis. Its original record is retained; use a distinct source session for another analysis.')
+        const draft = existing ?? createRecordingDraft(analysis, session.captureProtocolId, importDataKind)
+        if (!existing) setRecordingDrafts(current => [...current, draft])
+        setActiveDraftId(draft.id)
+        setWholeAssociation(null)
+        setWholeAnalysis(analysis)
         setClipPhase('done')
         setLinkNotice('Recording analysis loaded locally. Link it to the original recording before showing events.')
       } catch (error) {
@@ -1138,6 +1158,7 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
     setClipPhase('processing')
     setManifestInvalid(false)
     setManifestNote('')
+    setWholeAssociation(null)
     setWholeLinked(null)
     setClipResult((current) => current ? { ...current, linked: false, association: null } : null)
     let parsed: unknown
@@ -1175,10 +1196,12 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
       if (!recording.blob || recording.durationMs == null) { setLinkNotice('Wait for recording metadata to load.'); return }
       setClipPhase('processing')
       try {
-        const hash = manifestSha256 ? await sha256Hex(recording.blob) : null
+        const expectedHash = manifestSha256 ?? wholeAnalysis.sourceSha256
+        const hash = expectedHash ? await sha256Hex(recording.blob) : null
         if (clipGeneration.current !== generation) return
-        const error = recordingLinkError(wholeAnalysis, session.reviewFile.bytes, recording.durationMs, manifestSha256, hash)
-        setWholeLinked(error ? null : manifestSha256 ? 'hash-verified' : 'user-confirmed')
+        const error = recordingLinkError(wholeAnalysis, session.reviewFile.bytes, recording.durationMs, expectedHash, hash)
+        setWholeLinked(error ? null : expectedHash ? 'hash-verified' : 'user-confirmed')
+        setWholeAssociation(!error && expectedHash && hash ? recordingAssociation(wholeAnalysis, expectedHash, hash, session.reviewFile.bytes, recording.durationMs) : null)
         setLinkNotice(error ?? 'Linked locally. Original model and human-confirmation records are preserved; steps remain incomplete.')
       } catch { if (clipGeneration.current === generation) setLinkNotice('Unable to read the selected recording hash.') }
       if (clipGeneration.current === generation) setClipPhase('done')
@@ -1269,6 +1292,7 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
   }
   return (
     <>
+      {recordingDrafts.length ? <section aria-label="Imported recording sessions"><h3>Recording reviews</h3><p>Each recording retains its own approved procedure and saved session. Select its original video and verify the hash before seeking or saving.</p><div className="recording-session-list">{recordingDrafts.map(draft => <button key={draft.id} aria-pressed={activeDraftId === draft.id} onClick={() => { clipGeneration.current += 1; setActiveDraftId(draft.id); setWholeAnalysis(draft.parsed); setWholeLinked(null); setWholeAssociation(null); setManifestSha256(draft.association?.sourceSha256 ?? null); setManifestInvalid(false); setClipPhase('done'); setLinkNotice('Selected saved analysis. Verify this video before seeking.'); }}><strong>{draft.parsed.videoId}</strong><br/>{captureProtocol(draft.captureProtocolId).title}<br/>{draft.saved ? 'Saved separately' : 'Local import · not saved'}</button>)}</div></section> : null}
       <section className="decision-now" aria-label="Current observation">
         <p className="state-badge" data-tone="pending">{wholeAnalysis ? 'Saved recording analysis · needs review' : clipBadge(clipPhase, clipResult)}</p>
         {latest && latestComparison ? (
@@ -1315,6 +1339,7 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
           <summary>{wholeLinked || clipResult?.linked ? 'Analysis loaded · manage' : 'Load analysis'}</summary>
           <p className="capture-caption">Choose the saved JSON, then link it to this recording. No AI call is made.</p>
 
+          <label>Observation origin <select value={importDataKind} disabled={clipPhase === 'processing'} onChange={event => setImportDataKind(event.target.value === 'synthetic' ? 'synthetic' : 'real')}><option value="real">Genuine saved model response</option><option value="synthetic">Synthetic software fixture</option></select></label>
           <label className="file-field">
             Analysis JSON
             <input
@@ -1387,7 +1412,7 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
       <EvidenceStream
         empty="Load an analysis or add a person report to see evidence here."
         items={[
-          ...(wholeAnalysis && wholeLinked ? wholeAnalysis.events.map((event, index) => ({
+          ...(wholeAnalysis && wholeLinked && !activeDraft ? wholeAnalysis.events.map((event, index) => ({
             id: event.id,
             time: `${(event.startMs / 1000).toFixed(2)}–${(event.endMs / 1000).toFixed(2)} s`,
             source: 'Model hypothesis',
@@ -1417,6 +1442,7 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
           })),
         ]}
       />
+      {activeDraft && wholeLinked ? <RecordingReviewCard key={activeDraft.id} draft={activeDraft} association={wholeAssociation} onWatch={watchMedia} onChange={updated => setRecordingDrafts(current => current.map(draft => draft.id === updated.id ? updated : draft))} /> : null}
       {wholeAnalysis && wholeLinked ? <section className="whole-analysis-summary">
         <details><summary>Appearance and provenance</summary>
           <p>{wholeAnalysis.appearanceCount} appearance entries retained in the original document. They refer to different times and are not a single pre-transfer verdict.</p>
