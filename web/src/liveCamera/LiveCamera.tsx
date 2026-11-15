@@ -78,14 +78,15 @@ export function LiveCamera({beforeStart}:{beforeStart:()=>void}) {
       const config=await response.json();token=config.token
       if(enabled&&!config.credentialsConfigured)throw Error('The local bridge needs GEMINI_API_KEY. See the startup instructions.')
       if(enabled&&config.remainingCalls<1)throw Error('The persistent server call ceiling has been reached.')
+      const limit=enabled?Math.min(maximum,config.remainingCalls):maximum
       beforeStart()
       setCapture('Waiting for camera permission — click Allow in your browser')
       stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{width:{ideal:640,max:1280},height:{ideal:360,max:720},frameRate:{ideal:15,max:30}}})
       if(gen!==generation.current){stream.getTracks().forEach(t=>t.stop());return}
-      const session=await jsonRequest('/sessions',token,{maxCalls:maximum,protocolId:protocol,enabled});sessionId=session.id
+      const session=await jsonRequest('/sessions',token,{maxCalls:limit,protocolId:protocol,enabled});sessionId=session.id
       if(gen!==generation.current){stream.getTracks().forEach(t=>t.stop());void jsonRequest(`/sessions/${sessionId}/stop`,token);return}
-      const r:Run={id:sessionId,token,stream,start:performance.now(),enabled,max:maximum,used:0,next:0,active:true,busy:false,automatic,cancelClip:null,windowMs}
-      run.current=r;recent.current=null;setState(newLiveState(r.id,protocol));setUsed(0);setSkipped(0);setClock(0);setRunning(true)
+      const r:Run={id:sessionId,token,stream,start:performance.now(),enabled,max:limit,used:0,next:0,active:true,busy:false,automatic,cancelClip:null,windowMs}
+      run.current=r;recent.current=null;setMaximum(limit);setState(newLiveState(r.id,protocol));setUsed(0);setSkipped(0);setClock(0);setRunning(true)
       if(video.current){video.current.srcObject=stream;await video.current.play()}
       stream.getVideoTracks()[0].onended=()=>{if(r.active){stop();setError('Camera disconnected.')}}
       setRequest(enabled?'Ready for authorized Gemini analysis':'OFFLINE — preview only; no external inference')
@@ -100,9 +101,9 @@ export function LiveCamera({beforeStart}:{beforeStart:()=>void}) {
     <div className="live-ai-settings">
       <label>Approved procedure<select value={protocol} disabled={running||starting} onChange={e=>setProtocol(e.target.value as CaptureProtocolId)}>{CAPTURE_PROTOCOLS.map(p=><option key={p.id} value={p.id}>{p.title}</option>)}</select></label>
       <label>Clip window<select value={windowMs} disabled={running||starting} onChange={e=>setWindowMs(Number(e.target.value))}><option value={2000}>2 seconds · fastest updates</option><option value={6000}>6 seconds · more pour context</option><option value={12000}>12 seconds · full transfer context</option></select></label>
-      <label>Maximum calls<input type="number" min={1} max={12} value={maximum} disabled={running||starting} onChange={e=>setMaximum(Math.min(12,Math.max(1,Number(e.target.value)||1)))}/></label>
+      <label>Maximum calls<input type="number" min={1} max={15} value={maximum} disabled={running||starting} onChange={e=>setMaximum(Math.min(15,Math.max(1,Number(e.target.value)||1)))}/></label>
     </div>
-    <div className="live-ai-consent"><label><input type="checkbox" checked={enabled} disabled={running||starting} onChange={e=>setEnabled(e.target.checked)}/> Enable Real Gemini Analysis</label><p>When enabled, new camera clips are sent to Google Gemini and may incur charges. No microphone. Maximum 12 calls across server restarts; no retries. Model: gemini-4-hydrogen.</p></div>
+    <div className="live-ai-consent"><label><input type="checkbox" checked={enabled} disabled={running||starting} onChange={e=>setEnabled(e.target.checked)}/> Enable Real Gemini Analysis</label><p>When enabled, new camera clips are sent to Google Gemini and may incur charges. No microphone. Maximum 15 calls across server restarts; no retries. Model: gemini-4-hydrogen.</p></div>
     <div className="live-ai-actions"><button type="button" className="primary-action" disabled={running||starting} onClick={()=>void start()}>{starting?'Opening camera…':'Start Live AI Monitoring'}</button><button type="button" disabled={!running&&!starting} onClick={stop}>Stop Live AI Monitoring</button><button type="button" disabled={!running||!enabled||busy||!hasClip} onClick={()=>{const r=run.current,c=recent.current;if(r&&c)void analyze(r,c)}}>Analyze recent clip</button><label><input type="checkbox" checked={automatic} onChange={e=>{setAutomatic(e.target.checked);if(run.current)run.current.automatic=e.target.checked}}/> Automatic analysis</label></div>
     {error?<p className="live-ai-error" role="alert">{error}</p>:null}
     <div className="live-ai-grid"><div><video ref={video} autoPlay muted playsInline aria-label="Live camera preview"/><div className="live-ai-cups"><span>RED</span><span>GREEN</span><span>BLUE</span></div><p>{capture} · {skipped} busy windows skipped</p><p>Short windows can split a pour. Analysis gaps and uncertain labels require review. Under-three-second feedback is a target, not a guarantee.</p></div><div className="live-ai-summary"><strong aria-live="polite">{request}</strong><dl><dt>Approved for this run</dt><dd>{captureProtocol(state?.protocolId??protocol).title}</dd><dt>Calls reserved</dt><dd>{used} / {maximum}</dd><dt>Observed events / awaiting review</dt><dd>{state?.events.length??0} / {waiting}</dd><dt>Model observation status</dt><dd>{last?(last.observation as {observationStatus?:string}).observationStatus??'unavailable':'None'}</dd><dt>Last analyzed window</dt><dd>{last?`${(last.sourceOffsetMs/1000).toFixed(2)}–${((last.sourceOffsetMs+last.durationMs)/1000).toFixed(2)} s`:'None'}</dd><dt>Measured clip-end → result</dt><dd>{last?`${Math.max(0,(last.receivedAtMs-last.sourceOffsetMs-last.durationMs)/1000).toFixed(2)} s`:'Not measured'}</dd></dl><p aria-live="polite">{state?.message??'No model observation yet.'}</p><p>Partial monitoring only. No whole-run compliance decision or automatic step completion.</p></div></div>
