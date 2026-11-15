@@ -54,3 +54,16 @@ it('failed model call stops automatic analysis without retry',async()=>{
  expect(container.textContent).toContain('Synthetic timeout');expect(button('Start Live AI Monitoring').disabled).toBe(false)
  await emit();expect(fetchMock.mock.calls.filter(c=>String(c[0]).endsWith('/clips'))).toHaveLength(1)
 })
+
+it('new findings open a dismissible notification without removing the evidence card',async()=>{
+ expect(container.querySelector('.live-ai-toast')).toBeNull()
+ await click(checkbox('Enable Real Gemini Analysis'));await click(button('Start Live AI Monitoring'));await emit();await click(button('Analyze recent clip'))
+ const toast=container.querySelector('.live-ai-toast')!
+ expect(toast.getAttribute('role')).toBe('status')
+ expect(toast.textContent).toContain('GREEN → BLUE')
+ expect(toast.textContent).toContain('Possible wrong order')
+ expect(toast.textContent).toContain('Human verification: required')
+ await click(container.querySelector('[aria-label="Dismiss pour notification"]') as HTMLElement)
+ expect(container.querySelector('.live-ai-toast')).toBeNull()
+ expect(container.querySelector('.live-ai-events')?.textContent).toContain('GREEN → BLUE')
+})

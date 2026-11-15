@@ -16,6 +16,7 @@ export function LiveCamera({beforeStart}:{beforeStart:()=>void}) {
   const [automatic,setAutomatic]=useState(false),[running,setRunning]=useState(false),[starting,setStarting]=useState(false)
   const [capture,setCapture]=useState('Camera off'),[request,setRequest]=useState('OFFLINE — no external inference')
   const [error,setError]=useState(''),[clock,setClock]=useState(0),[busy,setBusy]=useState(false),[used,setUsed]=useState(0),[skipped,setSkipped]=useState(0)
+  const [dismissedFinding,setDismissedFinding]=useState<string|null>(null)
   const [state,setState]=useState<LiveState|null>(null),[hasClip,setHasClip]=useState(false)
   const run=useRef<Run|null>(null),recent=useRef<Clip|null>(null),video=useRef<HTMLVideoElement>(null),generation=useRef(0)
   function stop() {
@@ -86,7 +87,7 @@ export function LiveCamera({beforeStart}:{beforeStart:()=>void}) {
       const session=await jsonRequest('/sessions',token,{maxCalls:limit,protocolId:protocol,enabled});sessionId=session.id
       if(gen!==generation.current){stream.getTracks().forEach(t=>t.stop());void jsonRequest(`/sessions/${sessionId}/stop`,token);return}
       const r:Run={id:sessionId,token,stream,start:performance.now(),enabled,max:limit,used:0,next:0,active:true,busy:false,automatic,cancelClip:null,windowMs}
-      run.current=r;recent.current=null;setMaximum(limit);setState(newLiveState(r.id,protocol));setUsed(0);setSkipped(0);setClock(0);setRunning(true)
+      run.current=r;recent.current=null;setMaximum(limit);setDismissedFinding(null);setState(newLiveState(r.id,protocol));setUsed(0);setSkipped(0);setClock(0);setRunning(true)
       if(video.current){video.current.srcObject=stream;await video.current.play()}
       stream.getVideoTracks()[0].onended=()=>{if(r.active){stop();setError('Camera disconnected.')}}
       setRequest(enabled?'Ready for authorized Gemini analysis':'OFFLINE — preview only; no external inference')
@@ -95,8 +96,17 @@ export function LiveCamera({beforeStart}:{beforeStart:()=>void}) {
     finally {if(gen===generation.current)setStarting(false)}
   }
   const last=state?.windows.at(-1), findings=state?liveFindings(state):[]
+  const newest=state?.events.at(-1)
+  const findingKey=state&&newest?`${state.id}:${newest.id}`:null
   const waiting=state?.events.filter(e=>!state.reviews[e.id]).length??0
   return <section className="live-ai" aria-label="Live Gemini camera monitoring">
+    {newest && findingKey!==dismissedFinding ? <aside className="live-ai-toast" role="status" aria-live="polite" aria-label="New pour observation">
+      <button type="button" className="live-ai-toast-close" aria-label="Dismiss pour notification" onClick={()=>setDismissedFinding(findingKey)}>×</button>
+      <span className="live-ai-kicker">POSSIBLE POUR · HUMAN REVIEW</span>
+      <strong>{newest.sourceLiquidColor && newest.sourceLiquidColor!=='unknown' ? `${newest.sourceLiquidColor} liquid` : newest.source} → {newest.destinationLiquidColor && newest.destinationLiquidColor!=='unknown' ? `${newest.destinationLiquidColor} liquid` : newest.destination}</strong>
+      <p>{findings.at(-1)}</p>
+      <small>{(newest.startMs/1000).toFixed(2)}–{(newest.endMs/1000).toFixed(2)} s · Human verification: {state?.reviews[newest.id]??'required'}</small>
+    </aside> : null}
     <header><div><span className="live-ai-kicker">NEW CAMERA FOOTAGE · {running&&enabled?'REAL GEMINI':'PROVIDER OFF'}</span><h2>Live AI Monitoring</h2><p>Visible pours and liquid colors. Cup identities when identifiable. Human review.</p></div><span className="live-ai-clock">{(clock/1000).toFixed(1)}<small>session seconds</small></span></header>
     <div className="live-ai-settings">
       <label>Approved procedure<select value={protocol} disabled={running||starting} onChange={e=>setProtocol(e.target.value as CaptureProtocolId)}>{CAPTURE_PROTOCOLS.map(p=><option key={p.id} value={p.id}>{p.title}</option>)}</select></label>
