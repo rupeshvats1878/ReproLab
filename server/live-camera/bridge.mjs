@@ -6,7 +6,7 @@ import { join, resolve, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { exec, normalize, mediaType, MAX_BYTES, hash } from './media.mjs'
 const here = fileURLToPath(new URL('.', import.meta.url))
-export const MAX_CALLS = 15
+export const MAX_CALLS = 50
 const int = (x,min,max) => Number.isSafeInteger(x) && x>=min && x<=max
 const fail = (message, status=400) => Object.assign(new Error(message), {status})
 
@@ -21,7 +21,7 @@ export class LiveBridge {
     })
     this.sessions=new Map(); this.busy=false; this.totalCalls=0
   }
-  create({maxCalls=12, protocolId, enabled=false}) {
+  create({maxCalls=50, protocolId, enabled=false}) {
     if (!int(maxCalls,1,MAX_CALLS) || !['red-blue-then-green-red','blue-red-then-green-blue'].includes(protocolId) || typeof enabled!=='boolean') throw fail('Invalid session settings.')
     if (enabled && !this.credentials()) throw fail('GEMINI_API_KEY is not configured on the local bridge.',503)
     // A page reload can lose its session ID without delivering an unmount request.
@@ -112,9 +112,9 @@ export async function budgetLedger(path) {
       // Re-read under the lock so another bridge cannot reset or race reservations.
       try { used=JSON.parse(await readFile(path,'utf8')).reservedCalls } catch(e) {if(e.code!=='ENOENT')throw e}
       if(!int(used,0,MAX_CALLS))throw fail('Invalid persistent budget ledger.',503)
-      if(used>=MAX_CALLS) throw fail('Persistent 15-call budget ceiling reached.',429)
+      if(used>=MAX_CALLS) throw fail('Persistent 50-call budget ceiling reached.',429)
       used++
-      await writeFile(path+'.tmp',JSON.stringify({reservedCalls:used,reservedUsd:used*0.25,policy:'15 calls total; $0.25 conservative reserve per bounded Hydrogen request'}),{mode:0o600})
+      await writeFile(path+'.tmp',JSON.stringify({reservedCalls:used,reservedUsd:used*0.25,policy:'50 calls total; $0.25 conservative reserve per bounded Hydrogen request'}),{mode:0o600})
       await rename(path+'.tmp',path)
     } finally {if(lock){await lock.close();await rm(path+'.lock',{force:true})}}
   }}

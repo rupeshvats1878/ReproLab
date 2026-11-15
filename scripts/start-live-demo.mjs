@@ -26,4 +26,4 @@ children.forEach(c=>{c.on('error',()=>stop(1));c.on('exit',code=>{if(!stopping)s
 process.on('SIGINT',()=>stop());process.on('SIGTERM',()=>stop())
 console.log(`Live demo: http://127.0.0.1:${ui} — Monitor → Three-cup capture. Real inference starts OFF.`)
 console.log(process.env.GEMINI_API_KEY?'Server-side Gemini key is configured.':'Preview works without a key. Set GEMINI_API_KEY or LIVE_ENV_FILE for real inference.')
-console.log('15 calls total across restarts; no retries. Ctrl+C stops only these child services. Existing Library/text services are not changed.')
+console.log('50 calls total across restarts; no retries. Ctrl+C stops only these child services. Existing Library/text services are not changed.')
