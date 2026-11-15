@@ -516,6 +516,82 @@
         "videoId": "synthetic-video"
       },
       "expectedState": "uncertain"
+    },
+    {
+      "name": "evidence_outside_event",
+      "synthetic": true,
+      "payload": {
+        "schemaVersion": "three-cup-gemini-observation/v0.1",
+        "sessionId": "synthetic-session",
+        "videoId": "synthetic-video",
+        "events": [
+          {
+            "sourceCupId": "RED",
+            "destinationCupId": "BLUE",
+            "eventStartMs": 85000,
+            "eventEndMs": 87000,
+            "evidenceTimestampsMs": [
+              88000
+            ],
+            "observationStatus": "observed",
+            "needsHumanVerification": true
+          }
+        ],
+        "appearances": [],
+        "observationStatus": "observed",
+        "needsHumanVerification": true,
+        "modelId": "synthetic-model",
+        "latencyMs": null,
+        "error": null,
+        "warnings": [],
+        "videoDurationMs": 8000,
+        "samplingFps": 4,
+        "sourceOffsetMs": 84000,
+        "remoteCallMade": false
+      },
+      "expected": {
+        "sessionId": "synthetic-session",
+        "videoId": "synthetic-video"
+      },
+      "expectedState": "uncertain"
+    },
+    {
+      "name": "response_window_exceeds_request",
+      "synthetic": true,
+      "payload": {
+        "schemaVersion": "three-cup-gemini-observation/v0.1",
+        "sessionId": "synthetic-session",
+        "videoId": "synthetic-video",
+        "events": [
+          {
+            "sourceCupId": "RED",
+            "destinationCupId": "BLUE",
+            "eventStartMs": 93000,
+            "eventEndMs": 94000,
+            "evidenceTimestampsMs": [
+              93500
+            ],
+            "observationStatus": "observed",
+            "needsHumanVerification": true
+          }
+        ],
+        "appearances": [],
+        "observationStatus": "observed",
+        "needsHumanVerification": true,
+        "modelId": "synthetic-model",
+        "latencyMs": null,
+        "error": null,
+        "warnings": [],
+        "videoDurationMs": 16000,
+        "samplingFps": 4,
+        "sourceOffsetMs": 84000,
+        "remoteCallMade": false
+      },
+      "expected": {
+        "sessionId": "synthetic-session",
+        "videoId": "synthetic-video"
+      },
+      "expectedState": "rejected"
     }
   ]
 }

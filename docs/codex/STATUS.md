@@ -61,3 +61,21 @@ Audio was omitted from the derivative. Remote inference remains unperformed.
 Next action is for Cursor to fix the acceptance gaps and add request identity,
 then test the local wrapper with the disabled response before any authorized
 remote inference. Ryan should address adapter validation gaps in parallel.
+## Fixed adapter verification and response checker
+
+Ryan commit 119e048931069b817eb7e3a14b4f6d860a050ef5 verified in a private
+network-blocked snapshot. 30 tests and all four prior validation probes passed.
+Cursor commit 2a5862600178ab82e6e35b0f6211331a41e75756 reviewed read-only.
+Expanded wrapper fixtures yield 16 passed and one requested-window validation gap.
+Expanded parser fixtures yield 14 passed, two gaps and one wrapper-only blocked case.
+The original parser regressions are fixed.
+
+check_response.py is ready for the real saved JSON. Its CLI passed on the genuine
+disabled-path response. Eight new checker tests bring the offline suite to 40
+passing tests. It never authenticates latency provenance or claims accuracy.
+
+FIXED_ADAPTER_REVIEW.md contains exact findings, commands and a copy-paste Cursor
+prompt. Minimal snapshot execution of upstream wrapper tests could not load its
+missing HTTP dependency; those tests are not claimed run. Our actual wrapper
+function probes ran successfully and identified the remaining gap.
+Devpost work is paused. No genuine inference was repeated or credentials accessed.

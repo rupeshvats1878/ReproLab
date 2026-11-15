@@ -91,3 +91,10 @@ probe_integration.mjs against an explicitly supplied committed parser snapshot.
 The private local/integration directory contains the verified derivative clip,
 timing/hash manifests and actual network-blocked adapter response.
 The source recording remains unchanged. See STATUS.md for exact pass/gap counts.
+## Fixed adapter follow-up
+
+Current detailed handoff is FIXED_ADAPTER_REVIEW.md. It verifies Ryan's 119e048
+fixes, reviews Cursor's 2a58626 wrapper, documents the trusted-window gap and
+provides the exact next Cursor prompt. check_response.py validates a saved raw
+response with optional hash-bound operator provenance. Structural validity never
+establishes model accuracy or authenticated origin. Actual artifacts remain local/.
