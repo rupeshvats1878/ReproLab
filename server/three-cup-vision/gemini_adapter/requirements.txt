@@ -1,0 +1,2 @@
+# Runtime and tests use the Python 3.10+ standard library only.
+# Create a virtual environment, then run unittest. Do not pip install for this package.
