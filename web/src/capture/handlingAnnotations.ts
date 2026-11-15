@@ -12,3 +12,12 @@ export function handlingAnnotations(raw: unknown, durationMs: number): HandlingA
 export function activeHandling(items: HandlingAnnotation[], timeMs: number): HandlingAnnotation | undefined {
   return items.findLast(item => item.timestampMs <= timeMs && timeMs < item.timestampMs + 4000)
 }
+
+export function sameModelAnalysis(a: unknown, b: unknown): boolean {
+  function modelOnly(value: unknown) {
+    if (!value || typeof value !== 'object') return value
+    const { teamAnnotations: _annotations, ...model } = value as Record<string, unknown>
+    return model
+  }
+  return JSON.stringify(modelOnly(a)) === JSON.stringify(modelOnly(b))
+}

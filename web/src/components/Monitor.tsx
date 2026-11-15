@@ -1,3 +1,4 @@
+import { handlingAnnotations, sameModelAnalysis } from '../capture/handlingAnnotations.ts'
 import { ProcedureChecklist } from '../capture/ProcedureChecklist.tsx'
 import { playbackEventIndex } from '../capture/recordingAnalysis.ts'
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
@@ -1025,6 +1026,9 @@ function CapturePanel({ session, running, playbackMs, onReplaySource }: { sessio
   const playbackIndex = wholeAnalysis && wholeLinked ? playbackEventIndex(wholeAnalysis.events, playbackMs) : -1
   const playbackEvent = playbackIndex >= 0 ? wholeAnalysis!.events[playbackIndex] : null
   const playbackFinding = playbackEvent && wholeAnalysis ? recordingComparisons(wholeAnalysis.events, protocol.transfers)[playbackIndex] : null
+  const handlingItems = wholeAnalysis && wholeLinked ? handlingAnnotations(wholeAnalysis.raw, wholeAnalysis.durationMs) : []
+  const latestHandling = handlingItems.findLast(item => item.timestampMs <= playbackMs)
+  const currentHandling = latestHandling && latestHandling.timestampMs >= (playbackEvent?.startMs ?? -1) ? latestHandling : null
   const playbackDeviation = playbackFinding?.includes('Possible') || playbackFinding?.includes('possible order') || playbackEvent?.uncertain
 
   const latest = session.markers.at(-1) ?? null
@@ -1146,8 +1150,9 @@ function CapturePanel({ session, running, playbackMs, onReplaySource }: { sessio
     if (parsed && typeof parsed === 'object' && 'schemaVersion' in parsed && parsed.schemaVersion === RECORDING_ANALYSIS_SCHEMA) {
       try {
         const analysis = parseRecordingAnalysis(parsed)
-        const existing = recordingDrafts.find(draft => draft.parsed.sessionId === analysis.sessionId && draft.parsed.videoId === analysis.videoId)
-        if (existing && JSON.stringify(existing.analysis) !== JSON.stringify(analysis.raw)) throw new Error('This recording already has a different imported analysis. Its original record is retained; use a distinct source session for another analysis.')
+        const related = recordingDrafts.filter(draft => draft.parsed.sessionId === analysis.sessionId && draft.parsed.videoId === analysis.videoId)
+        const existing = related.find(draft => JSON.stringify(draft.analysis) === JSON.stringify(analysis.raw))
+        if (!existing && related.some(draft => !sameModelAnalysis(draft.analysis, analysis.raw))) throw new Error('This recording already has a different imported model analysis. Its original record is retained; use a distinct source session for another analysis.')
         const draft = existing ?? createRecordingDraft(analysis, session.captureProtocolId, importDataKind)
         if (!existing) setRecordingDrafts(current => [...current, draft])
         setActiveDraftId(draft.id)
@@ -1337,10 +1342,10 @@ function CapturePanel({ session, running, playbackMs, onReplaySource }: { sessio
       {recordingDrafts.length ? <section aria-label="Imported recording sessions"><h3>Recording reviews</h3><p>Each recording retains its own approved procedure and saved session. Select its original video and verify the hash before seeking or saving.</p><div className="recording-session-list">{recordingDrafts.map(draft => <button key={draft.id} aria-pressed={activeDraftId === draft.id} onClick={() => { clipGeneration.current += 1; setActiveDraftId(draft.id); setWholeAnalysis(draft.parsed); setWholeLinked(null); setWholeAssociation(null); setManifestSha256(draft.association?.sourceSha256 ?? null); setManifestInvalid(false); setClipPhase('done'); setLinkNotice('Selected saved analysis. Verify this video before seeking.'); }}><strong>{draft.parsed.videoId}</strong><br/>{captureProtocol(draft.captureProtocolId).title}<br/>{draft.saved ? 'Saved separately' : 'Local import · not saved'}</button>)}</div></section> : null}
       <section className="decision-now" aria-label="Current observation">
         <p className="state-badge" data-tone="pending">{wholeAnalysis ? 'Saved analysis playback · needs review' : clipBadge(clipPhase, clipResult)}</p>
-        {wholeAnalysis && wholeLinked ? <div className="playback-finding" data-deviation={Boolean(playbackDeviation)} aria-live="polite">
-          <span className="capture-kicker">{playbackEvent ? (playbackMs <= playbackEvent.endMs ? 'At this moment' : 'Most recent event') : 'Ready to review'}</span>
-          <p className="decision-title">{playbackEvent ? `${playbackEvent.source} → ${playbackEvent.destination}` : 'Play the video or choose Watch.'}</p>
-          {playbackEvent ? <><p className="playback-verdict">{playbackFinding}</p><p className="capture-caption">{(playbackEvent.startMs / 1000).toFixed(2)}–{(playbackEvent.endMs / 1000).toFixed(2)} s · Model hypothesis</p><p className="capture-caption">Human confirmation: {playbackEvent.humanConfirmed ? 'supplied in imported record' : 'not supplied'}</p></> : <p className="capture-caption">Findings follow the recording. No live AI call is running.</p>}
+        {wholeAnalysis && wholeLinked ? <div className="playback-finding" data-deviation={Boolean(currentHandling || playbackDeviation)} aria-live="polite">
+          <span className="capture-kicker">{currentHandling ? 'Handling procedure concern' : playbackEvent ? (playbackMs <= playbackEvent.endMs ? 'At this moment' : 'Most recent event') : 'Ready to review'}</span>
+          <p className="decision-title">{currentHandling ? currentHandling.message : playbackEvent ? `${playbackEvent.source} → ${playbackEvent.destination}` : 'Play the video or choose Watch.'}</p>
+          {currentHandling ? <><p className="playback-verdict">Possible procedure deviation</p><p className="capture-caption">{(currentHandling.timestampMs / 1000).toFixed(2)} s · Team annotation · requires review</p></> : playbackEvent ? <><p className="playback-verdict">{playbackFinding}</p><p className="capture-caption">{(playbackEvent.startMs / 1000).toFixed(2)}–{(playbackEvent.endMs / 1000).toFixed(2)} s · Model hypothesis</p><p className="capture-caption">Human confirmation: {playbackEvent.humanConfirmed ? 'supplied in imported record' : 'not supplied'}</p></> : <p className="capture-caption">Findings follow the recording. No live AI call is running.</p>}
         </div> : latest && latestComparison ? (
           <>
             <p className="decision-title">{latestComparison.reported}</p>
@@ -1459,6 +1464,11 @@ function CapturePanel({ session, running, playbackMs, onReplaySource }: { sessio
         selectedId={playbackEvent?.id}
         empty="Load an analysis or add a person report to see evidence here."
         items={[
+          ...handlingItems.filter(item => item.timestampMs <= playbackMs).map(item => ({
+            id: `handling-${item.timestampMs}`, time: `${(item.timestampMs / 1000).toFixed(2)} s`,
+            source: 'Team annotation', title: item.message, detail: 'Requires review; not a model detection.',
+            finding: 'Possible procedure deviation', onWatch: () => watchMedia(item.timestampMs),
+          })),
           ...(wholeAnalysis && wholeLinked && !activeDraft ? wholeAnalysis.events.map((event, index) => ({
             id: event.id,
             time: `${(event.startMs / 1000).toFixed(2)}–${(event.endMs / 1000).toFixed(2)} s`,

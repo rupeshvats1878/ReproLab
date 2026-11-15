@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { handlingAnnotations, activeHandling } from './handlingAnnotations.ts'
+import { handlingAnnotations, activeHandling, sameModelAnalysis } from './handlingAnnotations.ts'
 describe('team handling annotations',()=>{
  const item={timestampMs:42000,message:'Synthetic handling concern',source:'team-annotation'}
  it('requires explicit provenance and valid recording time',()=>{
@@ -12,4 +12,10 @@ describe('team handling annotations',()=>{
   expect(activeHandling(items,46000)).toBeUndefined()
   expect(activeHandling(items,0)).toBeUndefined()
  })
+})
+
+it('allows annotation variants but rejects changed model results',()=>{
+ const base={sessionId:'synthetic',timeline:[{startMs:1000}]}
+ expect(sameModelAnalysis(base,{...base,teamAnnotations:[{timestampMs:2000}]})).toBe(true)
+ expect(sameModelAnalysis(base,{...base,timeline:[{startMs:3000}]})).toBe(false)
 })
