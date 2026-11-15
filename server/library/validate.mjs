@@ -249,6 +249,198 @@ function boundedText(value, field, max) {
   return text
 }
 
+const MONITOR_SOURCES = ['live', 'prerecorded', 'synthetic']
+const MONITOR_WELLS = ['A1', 'A2', 'A3', 'B1', 'B2', 'B3']
+const MONITOR_STATES = ['empty', 'filled', 'unknown']
+const HUMAN_ACTIONS = ['omission_acknowledged', 'omission_resolved', 'correction_note']
+const MEDIA_KINDS = ['camera_recording', 'prerecorded_source', 'final_plate_image']
+const MONITOR_UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+const MAX_CLOCK_MS = 86_400_000
+
+export function validateMonitorSession(body) {
+  plainObject(body, 'body')
+  exactKeys(body, optionalKeys(body, ['sessionId', 'sourceKind'], ['startedAtIso']), 'body')
+  if (!MONITOR_SOURCES.includes(body.sourceKind)) throw new LibraryError('invalid', 'sourceKind')
+  return {
+    sessionId: prefixedId(body.sessionId, 'session_', 'sessionId'),
+    sourceKind: body.sourceKind,
+    startedAtIso: body.startedAtIso === undefined ? null : monitorInstant(body.startedAtIso),
+  }
+}
+
+export function validateMonitorEvent(body) {
+  plainObject(body, 'body')
+  if (body.type === 'observation') return observationEvent(body)
+  if (body.type === 'alert') return alertEvent(body)
+  if (body.type === 'alert_update') return alertUpdateEvent(body)
+  if (body.type === 'evidence') return evidenceEvent(body)
+  if (body.type === 'human_report') return humanReportEvent(body)
+  if (body.type === 'block') return blockEvent(body)
+  throw new LibraryError('invalid', 'type')
+}
+
+function observationEvent(body) {
+  exactKeys(body, ['id', 'type', 'observationTimestamp', 'rawState', 'stableState'], 'body')
+  return {
+    id: prefixedId(body.id, 'obs_', 'id'),
+    type: body.type,
+    observationTimestamp: clockMs(body.observationTimestamp, 'observationTimestamp'),
+    rawState: wellMap(body.rawState, 'rawState'),
+    stableState: wellMap(body.stableState, 'stableState'),
+  }
+}
+
+function alertEvent(body) {
+  exactKeys(body, ['id', 'type', 'observationTimestamp', 'wellId', 'rule', 'expectedWell', 'observedState', 'rawState', 'stableState', 'evidence'], 'body')
+  const alertedWell = monitorWell(body.wellId, 'wellId')
+  if (body.stableState !== 'empty') throw new LibraryError('invalid', 'stableState')
+  return {
+    id: prefixedId(body.id, 'alert_', 'id'),
+    type: body.type,
+    observationTimestamp: clockMs(body.observationTimestamp, 'observationTimestamp'),
+    wellId: alertedWell,
+    expectedWell: monitorWell(body.expectedWell, 'expectedWell'),
+    rule: boundedText(body.rule, 'rule', 300),
+    observedState: boundedText(body.observedState, 'observedState', 500),
+    rawState: wellState(body.rawState, 'rawState'),
+    stableState: 'empty',
+    evidence: frameEvidence(body.evidence),
+  }
+}
+
+function alertUpdateEvent(body) {
+  exactKeys(body, ['id', 'type', 'alertId', 'observationTimestamp', 'rule', 'observedState', 'stableState', 'evidence'], 'body')
+  if (body.stableState !== 'filled') throw new LibraryError('invalid', 'stableState')
+  return {
+    id: prefixedId(body.id, 'decision_', 'id'),
+    type: body.type,
+    alertId: prefixedId(body.alertId, 'alert_', 'alertId'),
+    observationTimestamp: clockMs(body.observationTimestamp, 'observationTimestamp'),
+    rule: boundedText(body.rule, 'rule', 300),
+    observedState: boundedText(body.observedState, 'observedState', 500),
+    stableState: 'filled',
+    evidence: frameEvidence(body.evidence),
+  }
+}
+
+function evidenceEvent(body) {
+  exactKeys(body, optionalKeys(body, ['id', 'type', 'kind', 'observationTimestamp', 'runStartOffsetMs', 'available', 'label'], ['durationMs', 'mimeType']), 'body')
+  if (!MEDIA_KINDS.includes(body.kind)) throw new LibraryError('invalid', 'kind')
+  if (typeof body.available !== 'boolean') throw new LibraryError('invalid', 'available')
+  return {
+    id: prefixedId(body.id, 'media_', 'id'),
+    type: body.type,
+    kind: body.kind,
+    observationTimestamp: clockMs(body.observationTimestamp, 'observationTimestamp'),
+    runStartOffsetMs: signedClock(body.runStartOffsetMs, 'runStartOffsetMs'),
+    durationMs: body.durationMs == null ? null : clockMs(body.durationMs, 'durationMs'),
+    available: body.available,
+    mimeType: body.mimeType == null ? null : boundedText(body.mimeType, 'mimeType', 80),
+    label: boundedText(body.label, 'label', 200),
+  }
+}
+
+function humanReportEvent(body) {
+  const optional = ['evidence']
+  if (body.humanActionKind === 'correction_note') optional.push('humanReportedState')
+  exactKeys(body, optionalKeys(body, ['id', 'type', 'humanActionKind', 'alertId', 'wellId', 'observationTimestamp', 'humanNote'], optional), 'body')
+  if (!HUMAN_ACTIONS.includes(body.humanActionKind)) throw new LibraryError('invalid', 'humanActionKind')
+  if (body.humanActionKind === 'correction_note' && body.humanReportedState === undefined) {
+    throw new LibraryError('invalid', 'humanReportedState')
+  }
+  if (body.humanActionKind !== 'correction_note' && body.humanReportedState !== undefined) {
+    throw new LibraryError('invalid', 'humanReportedState')
+  }
+  return {
+    id: prefixedId(body.id, 'evt_', 'id'),
+    type: body.type,
+    humanActionKind: body.humanActionKind,
+    alertId: prefixedId(body.alertId, 'alert_', 'alertId'),
+    wellId: monitorWell(body.wellId, 'wellId'),
+    observationTimestamp: clockMs(body.observationTimestamp, 'observationTimestamp'),
+    humanNote: boundedText(body.humanNote, 'humanNote', 500),
+    humanReportedState: body.humanReportedState === undefined ? null : wellState(body.humanReportedState, 'humanReportedState'),
+    evidence: body.evidence === undefined ? null : frameEvidence(body.evidence),
+  }
+}
+
+function blockEvent(body) {
+  exactKeys(body, ['id', 'type', 'observationTimestamp', 'reason'], 'body')
+  return {
+    id: prefixedId(body.id, 'decision_', 'id'),
+    type: body.type,
+    observationTimestamp: clockMs(body.observationTimestamp, 'observationTimestamp'),
+    reason: boundedText(body.reason, 'reason', 200),
+  }
+}
+
+function frameEvidence(value) {
+  plainObject(value, 'evidence')
+  exactKeys(value, ['mediaId', 'observationTimestamp', 'frameIndex', 'label'], 'evidence')
+  if (value.mediaId !== null && typeof value.mediaId !== 'string') throw new LibraryError('invalid', 'evidence')
+  return {
+    mediaId: value.mediaId === null ? null : prefixedId(value.mediaId, 'media_', 'evidence'),
+    observationTimestamp: clockMs(value.observationTimestamp, 'evidence'),
+    frameIndex: value.frameIndex === null ? null : frameIndex(value.frameIndex),
+    label: boundedText(value.label, 'evidence', 200),
+  }
+}
+
+function wellMap(value, field) {
+  plainObject(value, field)
+  exactKeys(value, MONITOR_WELLS, field)
+  const states = {}
+  for (const well of MONITOR_WELLS) states[well] = wellState(value[well], field)
+  return states
+}
+
+function monitorWell(value, field) {
+  if (!MONITOR_WELLS.includes(value)) throw new LibraryError('invalid', field)
+  return value
+}
+
+function wellState(value, field) {
+  if (!MONITOR_STATES.includes(value)) throw new LibraryError('invalid', field)
+  return value
+}
+
+function prefixedId(value, prefix, field) {
+  if (typeof value !== 'string' || !new RegExp(`^${prefix}${MONITOR_UUID}$`, 'i').test(value)) {
+    throw new LibraryError('invalid', field)
+  }
+  return prefix + value.slice(prefix.length).toLowerCase()
+}
+
+function clockMs(value, field) {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > MAX_CLOCK_MS) {
+    throw new LibraryError('invalid', field)
+  }
+  return value
+}
+
+function signedClock(value, field) {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < -MAX_CLOCK_MS || value > MAX_CLOCK_MS) {
+    throw new LibraryError('invalid', field)
+  }
+  return value
+}
+
+function frameIndex(value) {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > 1_000_000) {
+    throw new LibraryError('invalid', 'evidence')
+  }
+  return value
+}
+
+function monitorInstant(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value)) {
+    throw new LibraryError('invalid', 'startedAtIso')
+  }
+  const year = Number(value.slice(0, 4))
+  if (year < 2020 || year > 2100 || Number.isNaN(Date.parse(value))) throw new LibraryError('invalid', 'startedAtIso')
+  return value
+}
+
 function displayText(value, field) {
   if (typeof value !== 'string') throw new LibraryError('invalid', field)
   const text = value.trim()

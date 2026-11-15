@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { MongoClient } from 'mongodb'
 import { LibraryError } from './errors.mjs'
+import { appendMonitorEvent, monitorSession, presentMonitorSession } from './monitorRecords.mjs'
 import {
   appendExecutionEvent,
   beginExecution,
@@ -17,6 +18,7 @@ const DB_NAME = /^[A-Za-z0-9_-]{1,64}$/
 export function createMemoryStore({ now = () => new Date().toISOString(), ids = randomUUID } = {}) {
   const experiments = []
   const replications = []
+  const monitorSessions = []
   return {
     async health() {
       return { database: 'available' }
@@ -73,6 +75,30 @@ export function createMemoryStore({ now = () => new Date().toISOString(), ids = 
       replications[index] = next
       return presentReplication(next)
     },
+    async openMonitorSession(id) {
+      const found = monitorSessions.find((item) => item.id === id)
+      if (!found) throw new LibraryError('not_found')
+      return presentMonitorSession(found)
+    },
+    async createMonitorSession(input) {
+      const existing = monitorSessions.find((item) => item.id === input.sessionId)
+      if (existing) {
+        if (existing.sourceKind !== input.sourceKind || (existing.startedAtIso ?? null) !== input.startedAtIso) {
+          throw new LibraryError('duplicate', 'sessionId')
+        }
+        return { created: false, session: presentMonitorSession(existing) }
+      }
+      const record = monitorSession(input, now())
+      monitorSessions.push(record)
+      return { created: true, session: presentMonitorSession(record) }
+    },
+    async appendMonitorEvent(id, input) {
+      const index = monitorSessions.findIndex((item) => item.id === id)
+      if (index < 0) throw new LibraryError('not_found')
+      const result = appendMonitorEvent(monitorSessions[index], input, now())
+      monitorSessions[index] = result.session
+      return { created: result.created, session: presentMonitorSession(result.session) }
+    },
   }
 }
 
@@ -105,6 +131,15 @@ export function createUnavailableStore() {
     async finishExecution() {
       throw new LibraryError('unavailable')
     },
+    async openMonitorSession() {
+      throw new LibraryError('unavailable')
+    },
+    async createMonitorSession() {
+      throw new LibraryError('unavailable')
+    },
+    async appendMonitorEvent() {
+      throw new LibraryError('unavailable')
+    },
   }
 }
 
@@ -122,6 +157,7 @@ export function createStoreFromEnv(env = process.env) {
 export function createMongoStore({ client, dbName }) {
   const experiments = () => client.db(dbName).collection('experiments')
   const replications = () => client.db(dbName).collection('replications')
+  const monitorSessions = () => client.db(dbName).collection('monitorSessions')
 
   async function available() {
     try {
@@ -264,6 +300,66 @@ export function createMongoStore({ client, dbName }) {
         if (doc) return presentReplication(doc)
         const existing = await replications().findOne({ _id: id }, { projection: { _id: 0 } })
         if (!existing) throw new LibraryError('not_found')
+        throw new LibraryError('invalid_state')
+      } catch (error) {
+        if (error instanceof LibraryError) throw error
+        throw new LibraryError('unavailable')
+      }
+    },
+    async openMonitorSession(id) {
+      await requireDatabase()
+      try {
+        const doc = await monitorSessions().findOne({ _id: id }, { projection: { _id: 0 } })
+        if (!doc) throw new LibraryError('not_found')
+        return presentMonitorSession(doc)
+      } catch (error) {
+        if (error instanceof LibraryError) throw error
+        throw new LibraryError('unavailable')
+      }
+    },
+    async createMonitorSession(input) {
+      await requireDatabase()
+      const record = monitorSession(input, new Date().toISOString())
+      try {
+        await monitorSessions().insertOne({ ...record, _id: record.id })
+        return { created: true, session: presentMonitorSession(record) }
+      } catch (error) {
+        if (error instanceof LibraryError) throw error
+        if (error?.code !== 11000) throw new LibraryError('unavailable')
+        const existing = await monitorSessions().findOne({ _id: record.id }, { projection: { _id: 0 } })
+        if (!existing) throw new LibraryError('unavailable')
+        if (existing.sourceKind !== input.sourceKind || (existing.startedAtIso ?? null) !== input.startedAtIso) {
+          throw new LibraryError('duplicate', 'sessionId')
+        }
+        return { created: false, session: presentMonitorSession(existing) }
+      }
+    },
+    async appendMonitorEvent(id, input) {
+      await requireDatabase()
+      try {
+        const current = await monitorSessions().findOne({ _id: id }, { projection: { _id: 0 } })
+        if (!current) throw new LibraryError('not_found')
+        const recordedAt = new Date().toISOString()
+        const decision = appendMonitorEvent(current, input, recordedAt)
+        if (!decision.created) return { created: false, session: presentMonitorSession(decision.session) }
+        const event = decision.session.events[decision.session.events.length - 1]
+        const filter = {
+          _id: id,
+          events: { $not: { $elemMatch: { id: event.id } } },
+        }
+        if (event.provenance !== 'human') filter.blockedReason = null
+        const update = { $push: { events: event } }
+        if (event.type === 'block') update.$set = { blockedReason: event.reason }
+        const updated = await monitorSessions().findOneAndUpdate(filter, update, {
+          returnDocument: 'after',
+          projection: { _id: 0 },
+        })
+        const doc = updatedDocument(updated)
+        if (doc) return { created: true, session: presentMonitorSession(doc) }
+        const again = await monitorSessions().findOne({ _id: id }, { projection: { _id: 0 } })
+        if (!again) throw new LibraryError('not_found')
+        const retry = appendMonitorEvent(again, input, recordedAt)
+        if (!retry.created) return { created: false, session: presentMonitorSession(retry.session) }
         throw new LibraryError('invalid_state')
       } catch (error) {
         if (error instanceof LibraryError) throw error
