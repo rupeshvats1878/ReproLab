@@ -1,0 +1,61 @@
+{
+  "dataKind": "real",
+  "humanConfirmed": true,
+  "sessionId": "pilot-session-001",
+  "videoId": "recording-1",
+  "model": "gemini-4-hydrogen",
+  "latencyMs": 9782,
+  "samplingFps": 4,
+  "sourceOffsetMs": 84000,
+  "clipDurationMs": 8000,
+  "clipFilename": "recording-1-review-84000-92000.mov",
+  "clipSha256": "f3edb4bd40dce81048e1dca1fcee1e7f82c96182e2720d33f546c58bb8250e60",
+  "capture": {
+    "raw": "recordings/gemini-captures/be6d3de7224e4f628ecdade299c72daa-recording-1-raw.json",
+    "meta": "recordings/gemini-captures/be6d3de7224e4f628ecdade299c72daa-recording-1-meta.json"
+  },
+  "recording": {
+    "filename": "recording 1.mov",
+    "durationMs": 97434,
+    "sizeBytes": 142963865
+  },
+  "usage": {
+    "videoTokens": 2480,
+    "textTokens": 444,
+    "outputTokens": 268,
+    "thoughtTokens": 1230
+  },
+  "event": {
+    "eventId": "recording-1-confirmed-green-red",
+    "sourceCupId": "GREEN",
+    "destinationCupId": "RED",
+    "eventStartMs": 87500,
+    "eventEndMs": 89500,
+    "clipEventStartMs": 3500,
+    "clipEventEndMs": 5500,
+    "evidenceTimestampsMs": [87750, 88250, 88750, 89250],
+    "observationStatus": "observed",
+    "needsHumanVerification": true,
+    "humanConfirmed": true
+  },
+  "appearances": [
+    {
+      "cupId": "RED",
+      "label": "visually_uniform",
+      "evidenceTimestampsMs": [90500, 91250, 91750],
+      "humanConfirmed": false
+    },
+    {
+      "cupId": "BLUE",
+      "label": "visually_uniform",
+      "evidenceTimestampsMs": [85000, 89000, 91500],
+      "humanConfirmed": false
+    },
+    {
+      "cupId": "GREEN",
+      "label": "visually_uniform",
+      "evidenceTimestampsMs": [85000, 91000, 91500],
+      "humanConfirmed": false
+    }
+  ]
+}

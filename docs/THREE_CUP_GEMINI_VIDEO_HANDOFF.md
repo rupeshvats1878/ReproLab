@@ -53,7 +53,7 @@ cd server/three-cup-vision
 ./gemini_adapter/.venv/bin/python -m unittest discover -s gemini_adapter/tests -v
 ```
 
-Python 3.10+ standard library only. Nothing to pip install. 36 tests passed on 15 Nov 2026. The six new tests use fake HTTP responses and do not contact Google.
+Python 3.10+ standard library only. Nothing to pip install. 50 tests passed on 15 Nov 2026. Fourteen of those cover whole-recording planning, merging, and protocol comparison with fake HTTP responses. None of them contact Google.
 
 Input constraints for a live call:
 
@@ -62,6 +62,34 @@ Input constraints for a live call:
 - At most 14680064 raw bytes and 60000 ms unless the caller raises the caps
 - One request, 45 second timeout, no retry
 - `video_fps` omitted means the API's static 1 FPS default. A set value sends `processing: {"type":"static","fps":N}` with `0 < N <= 24`
+
+## Whole recording
+
+`analyze_recording` takes one complete recording. Recording 1 is 97434 ms and 142963865 bytes, so it cannot be one inline request. The plan is two overlapping windows, `0–60000` ms and `52000–97434` ms. Each window is at most 60 seconds. The 8-second overlap is long enough to hold the confirmed pour. Before a request, `avconvert` compresses each window with `Preset960x540`, then `Preset640x480`, then `PresetLowQuality`. It does not use `PresetPassthrough`. A window that is still over 14 MiB is split before `analyze_video` sees it.
+
+Clip times stay clip-relative inside each request. `sourceOffsetMs` is the window start, and the adapter adds it once. The merger sorts the timeline and collapses the same RED/GREEN/BLUE pair when the intervals overlap. A human-confirmed interval wins over a truncated duplicate. RED, GREEN, and BLUE stay the physical cups when the liquid changes color.
+
+The confirmed GREEN → RED observation is real data, separate from the synthetic tests:
+
+`server/three-cup-vision/gemini_adapter/real_observations/recording-1-green-red.json`
+
+It records absolute `87500–89500` ms, from clip time `3500–5500` plus `sourceOffsetMs` 84000. The original raw response and metadata remain in the gitignored `recordings/gemini-captures/` files named in that JSON. New segments also write `*-raw.json` and `*-meta.json` there.
+
+The protocol report is a separate object, `three-cup-protocol-report/v0.1`. Recording 1's card is RED → BLUE, then GREEN → RED. Recording 2 does not inherit that card. Clear model events can be `MATCH`, `POSSIBLE_WRONG_DESTINATION`, `POSSIBLE_WRONG_SOURCE`, `POSSIBLE_WRONG_ORDER`, `POSSIBLE_EXTRA_TRANSFER`, or `POSSIBLE_MISSING_TRANSFER`. `confirmed` is true only for the human-confirmed observation. Uncertain events are `NEEDS_HUMAN_REVIEW`. Every decision has `requiresHumanReview: true` and `automaticAlertEligible: false`. A missing step is `POSSIBLE_MISSING_TRANSFER` only after every window succeeded. Until then it stays `NEEDS_HUMAN_REVIEW`, so the saved second pour is not treated as out of order.
+
+Rupesh can read one JSON object: `recording`, `segments` (offset, duration, sha256, capture paths), `timeline.events`, and `protocolReport`. No frontend file changes in this branch.
+
+No whole-recording request has been sent. From the measured 8-second call (2480 video tokens, 444 text tokens, 268 output tokens, 1230 thought tokens) at the published rates of $1.50 / 1M input and $7.50 / 1M output including thinking, the two planned calls are about **$0.07 to $0.20**. The low figure keeps output tokens at the measured call. The high figure scales them with duration. A failed compression that splits a window adds calls.
+
+This prints the plan and the saved observation. It does not encode or call Gemini:
+
+```bash
+cd /Users/ryanzheng/labbench-three-cup-vision/server/three-cup-vision
+./gemini_adapter/.venv/bin/python -m gemini_adapter.recording \
+  --video "/Users/ryanzheng/labbench-three-cup-vision/recordings/recording 1.mov" \
+  --session-id pilot-session-001 \
+  --video-id recording-1
+```
 
 Observed media, from AVFoundation, not from Gemini:
 
