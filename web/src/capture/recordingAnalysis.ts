@@ -119,3 +119,13 @@ export function recordingComparisons(events: RecordingEvent[], approved: readonl
     return `Pair matches approved step ${step + 1}${outOfOrder ? ' · possible order difference' : ''} · not automatically completed`
   })
 }
+
+/** Most recent event reached by playback; rewinding before all events clears it. */
+export function playbackEventIndex(events: readonly Pick<RecordingEvent, 'startMs'>[], mediaMs: number): number {
+  if (!Number.isFinite(mediaMs) || mediaMs < 0) return -1
+  let selected = -1
+  events.forEach((event, index) => {
+    if (event.startMs <= mediaMs && (selected < 0 || event.startMs >= events[selected].startMs)) selected = index
+  })
+  return selected
+}

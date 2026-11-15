@@ -127,3 +127,9 @@ button:not(:disabled):hover { border-color: var(--teal); }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; scroll-behavior: auto !important; } }
 
 .evidence-item .evidence-finding { grid-column: 1 / -1; margin: .15rem 0 .4rem; font-size: .8rem; line-height: 1.5; color: #c8dfd2; }
+
+.playback-finding { border: 1px solid #5a8872; border-left: 4px solid #a9e4ca; border-radius: .7rem; padding: 1rem; margin: .6rem 0; background: #20382d; }
+.playback-finding[data-deviation='true'] { border-color: #e7ad68; background: #3b2c20; }
+.playback-finding .playback-verdict { font-weight: 650; line-height: 1.5; color: #e1eedf; }
+.playback-finding[data-deviation='true'] .playback-verdict { color: #ffce91; }
+.evidence-item[data-selected='true'] { border-color: #a9e4ca; background: #254037; box-shadow: inset 3px 0 #a9e4ca; }

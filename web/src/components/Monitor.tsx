@@ -1,3 +1,4 @@
+import { playbackEventIndex } from '../capture/recordingAnalysis.ts'
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { expectedWellId } from '../shared/protocol.ts'
 import { PROTOCOL_ORDER, WELL_GRID, type WellId, type WellState } from '../shared/types.ts'
@@ -26,6 +27,7 @@ const STATE_LABEL: Record<WellState, string> = {
 export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonitorProtocol | null }) {
   const { protocol, preparedProtocol = null } = props
   const session = useVisionSession(props, preparedProtocol)
+  const [playbackMs, setPlaybackMs] = useState(0)
   const [wellSize, setWellSize] = useState(0.2)
   const [humanNote, setHumanNote] = useState('')
   const [reportedState, setReportedState] = useState<WellState>('filled')
@@ -130,6 +132,10 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
             ) : null}
         <video
           ref={session.bindVideo}
+          onTimeUpdate={(event) => setPlaybackMs(event.currentTarget.currentTime * 1000)}
+          onSeeked={(event) => setPlaybackMs(event.currentTarget.currentTime * 1000)}
+          onEmptied={() => setPlaybackMs(0)}
+          onLoadedMetadata={(event) => setPlaybackMs(event.currentTarget.currentTime * 1000)}
           className="stage-media"
           data-active={session.inputKind === 'live' || session.inputKind === 'prerecorded'}
           playsInline
@@ -205,7 +211,7 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
         </div>
 
         <aside className="live-decisions" aria-label="Protocol decisions">
-          {session.procedureMode === 'three-cup' ? <CapturePanel key={session.live.sessionId} session={session} running={running} /> : null}
+          {session.procedureMode === 'three-cup' ? <CapturePanel key={session.live.sessionId} session={session} running={running} playbackMs={playbackMs} /> : null}
           {session.procedureMode === 'six-well' ? (
           <>
           <ol className="well-progress" aria-label="Six-well progress">
@@ -950,7 +956,7 @@ function CaptureToolbar({ session }: { session: VisionSession }) {
   )
 }
 
-function CapturePanel({ session, running }: { session: VisionSession; running: boolean }) {
+function CapturePanel({ session, running, playbackMs }: { session: VisionSession; running: boolean; playbackMs: number }) {
   const previewUrl = useObjectUrl(session.localRecording)
   const previewRef = useRef<HTMLVideoElement>(null)
   const [seekNotice, setSeekNotice] = useState('')
@@ -981,6 +987,11 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
     clipGeneration.current += 1
   }
   const protocol = captureProtocol(session.captureProtocolId)
+  const playbackIndex = wholeAnalysis && wholeLinked ? playbackEventIndex(wholeAnalysis.events, playbackMs) : -1
+  const playbackEvent = playbackIndex >= 0 ? wholeAnalysis!.events[playbackIndex] : null
+  const playbackFinding = playbackEvent && wholeAnalysis ? recordingComparisons(wholeAnalysis.events, protocol.transfers)[playbackIndex] : null
+  const playbackDeviation = playbackFinding?.includes('Possible') || playbackFinding?.includes('possible order') || playbackEvent?.uncertain
+
   const latest = session.markers.at(-1) ?? null
   const latestComparison = latest ? compareHumanMarker(latest.marker, session.captureProtocolId) : null
   const namedCups = latest ? markerCups(latest.marker) : []
@@ -1270,8 +1281,12 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
   return (
     <>
       <section className="decision-now" aria-label="Current observation">
-        <p className="state-badge" data-tone="pending">{wholeAnalysis ? 'Saved recording analysis · needs review' : clipBadge(clipPhase, clipResult)}</p>
-        {latest && latestComparison ? (
+        <p className="state-badge" data-tone="pending">{wholeAnalysis ? 'Saved analysis playback · needs review' : clipBadge(clipPhase, clipResult)}</p>
+        {wholeAnalysis && wholeLinked ? <div className="playback-finding" data-deviation={Boolean(playbackDeviation)} aria-live="polite">
+          <span className="capture-kicker">{playbackEvent ? (playbackMs <= playbackEvent.endMs ? 'At this moment' : 'Most recent event') : 'Ready to review'}</span>
+          <p className="decision-title">{playbackEvent ? `${playbackEvent.source} → ${playbackEvent.destination}` : 'Play the video or choose Watch.'}</p>
+          {playbackEvent ? <><p className="playback-verdict">{playbackFinding}</p><p className="capture-caption">{(playbackEvent.startMs / 1000).toFixed(2)}–{(playbackEvent.endMs / 1000).toFixed(2)} s · Model hypothesis</p><p className="capture-caption">Human confirmation: {playbackEvent.humanConfirmed ? 'supplied in imported record' : 'not supplied'}</p></> : <p className="capture-caption">Findings follow the recording. No live AI call is running.</p>}
+        </div> : latest && latestComparison ? (
           <>
             <p className="decision-title">{latestComparison.reported}</p>
             <p>Person · {formatSeconds(latest.observationTimestamp)}</p>
@@ -1385,6 +1400,7 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
         </details>
       ) : null}
       <EvidenceStream
+        selectedId={playbackEvent?.id}
         empty="Load an analysis or add a person report to see evidence here."
         items={[
           ...(wholeAnalysis && wholeLinked ? wholeAnalysis.events.map((event, index) => ({
@@ -1468,14 +1484,14 @@ function markerCups(marker: string): string[] {
   return CAPTURE_MARKERS.find((item) => item.id === marker)?.cups.slice() ?? []
 }
 
-function EvidenceStream({ items, empty }: { items: Array<{ id: string; time: string; source: string; title: string; detail: string; finding?: string; onWatch?: () => void }>; empty: string }) {
+function EvidenceStream({ items, empty, selectedId }: { selectedId?: string; items: Array<{ id: string; time: string; source: string; title: string; detail: string; finding?: string; onWatch?: () => void }>; empty: string }) {
   return (
     <section aria-label="Evidence">
       <h3>Evidence</h3>
       {items.length === 0 ? <p className="monitor-note">{empty}</p> : (
         <ol className="evidence-stream">
           {items.map((item) => (
-            <li key={item.id} className="evidence-item">
+            <li key={item.id} className="evidence-item" data-selected={item.id === selectedId} aria-current={item.id === selectedId ? 'true' : undefined}>
               <span className="state-badge">{item.source}</span>
               <span>{item.time}</span>
               <strong>{item.title}</strong>
