@@ -301,6 +301,35 @@
   height: 1rem;
 }
 
+.camera-setup h3 {
+  margin-top: 0.65rem;
+}
+
+.preview-readings {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.preview-readings li {
+  padding: 0.25rem 0.35rem;
+  border: 1px solid #3a4a5a;
+  border-radius: 0.4rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.preview-readings li[data-state='filled'] {
+  border-color: #8ee0d4;
+}
+
+.preview-readings li[data-state='unknown'] {
+  color: #b7c4d0;
+}
+
 .session-id {
   margin: 0.2rem 0;
   overflow-wrap: anywhere;
@@ -308,6 +337,7 @@
   font-size: 0.85rem;
 }
 
+.monitor .primary-action,
 .monitor .demo-start {
   margin-top: 0.45rem;
   background: #0f6e68;

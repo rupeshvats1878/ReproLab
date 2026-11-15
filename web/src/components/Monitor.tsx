@@ -51,7 +51,7 @@ export function Monitor(props: MonitorProps) {
     <section className="monitor" aria-labelledby="monitor-title" data-debug={session.debugOverlay ? 'true' : 'false'}>
       <div className="monitor-heading">
         <h2 id="monitor-title">Monitor</h2>
-        <p>Fixed order A1, A2, A3, B1, B2, B3. A prepared protocol does not run here.</p>
+        <p>Camera first. Fixed order A1, A2, A3, B1, B2, B3. A prepared protocol does not run here.</p>
       </div>
 
       <div className="live-split">
@@ -76,7 +76,7 @@ export function Monitor(props: MonitorProps) {
           data-active={session.inputKind === 'synthetic'}
         />
         {session.inputKind === 'none' ? (
-          <p className="stage-placeholder">No picture yet.</p>
+          <p className="stage-placeholder">Start the camera. The picture stays on this computer.</p>
         ) : null}
         <RegionLayer
           regions={session.regions}
@@ -101,6 +101,11 @@ export function Monitor(props: MonitorProps) {
               {session.seekMessage}
             </p>
           ) : null}
+          {cameraFailed(session) ? (
+            <p className="attention-note" role="alert">
+              {session.cameraMessage}
+            </p>
+          ) : null}
         </div>
 
         <aside className="live-decisions" aria-label="Protocol decisions">
@@ -120,65 +125,43 @@ export function Monitor(props: MonitorProps) {
             <p className="save-status" data-save-status={session.saveStatus.phase}>
               {session.saveStatus.detail}
             </p>
-            {showSummary ? (
-              <DemoSummary session={session} />
-            ) : session.demoPaused ? (
-              <>
-                <p className="demo-paused">Demo paused</p>
-                <h3>Issue</h3>
-                <p className="guide-line">{guide.issue}</p>
-                <h3>Next</h3>
-                <p className="guide-line">{guide.next ?? (selected ? `Check ${selected.wellId}.` : 'Check the highlighted well.')}</p>
-                <button type="button" className="demo-start" onClick={session.continueDemo}>
-                  Continue demo
-                </button>
-              </>
-            ) : session.summaryHeld ? (
-              <>
-                <h3>Observed correction</h3>
-                <p className="correction-line">{session.correctionNote}</p>
-              </>
+            {session.inputKind === 'synthetic' ? (
+              showSummary ? (
+                <DemoSummary session={session} />
+              ) : session.demoPaused ? (
+                <>
+                  <p className="demo-paused">Demo paused</p>
+                  <h3>Issue</h3>
+                  <p className="guide-line">{guide.issue}</p>
+                  <h3>Next</h3>
+                  <p className="guide-line">{guide.next ?? (selected ? `Check ${selected.wellId}.` : 'Check the highlighted well.')}</p>
+                  <button type="button" className="demo-start" onClick={session.continueDemo}>
+                    Continue demo
+                  </button>
+                </>
+              ) : session.summaryHeld ? (
+                <>
+                  <h3>Observed correction</h3>
+                  <p className="correction-line">{session.correctionNote}</p>
+                </>
+              ) : (
+                <DecisionGuide guide={guide} issueActive={issueActive} correctionNote={session.correctionNote} />
+              )
+            ) : session.localPhase === 'running' ? (
+              <DecisionGuide guide={guide} issueActive={issueActive} correctionNote={session.correctionNote} />
             ) : (
-              <>
-                <h3>Now</h3>
-                <p className="guide-line">{guide.action}</p>
-                {session.correctionNote ? <p className="correction-line">{session.correctionNote}</p> : null}
-                {issueActive ? (
-                  <>
-                    <h3>Issue</h3>
-                    <p className="guide-line">{guide.issue}</p>
-                  </>
-                ) : null}
-                {guide.next ? (
-                  <>
-                    <h3>Next</h3>
-                    <p className="guide-line">{guide.next}</p>
-                  </>
-                ) : null}
-              </>
+              <CameraSetup session={session} wellSize={wellSize} setWellSize={setWellSize} />
             )}
-            <button type="button" className={session.demoPaused ? undefined : 'demo-start'} onClick={startSkipDemo}>
-              {session.monitorGeneration > 0 ? 'Replay demo' : 'Start demo'}
-            </button>
-            <label className="file-field">
-              Synthetic speed
-              <select
-                value={session.syntheticPace}
-                onChange={(event) => session.setSyntheticPace(Number(event.target.value) as 1 | 2 | 4)}
-              >
-                <option value={4}>Slow</option>
-                <option value={2}>Medium</option>
-                <option value={1}>Original</option>
-              </select>
-            </label>
-            <label className="check-field">
-              <input
-                type="checkbox"
-                checked={session.pauseOnIssue}
-                onChange={(event) => session.setPauseOnIssue(event.target.checked)}
-              />
-              Pause demo when an issue appears
-            </label>
+            {session.inputKind !== 'synthetic' && session.localPhase === 'running' ? (
+              <button type="button" onClick={session.completeRun}>
+                Complete monitoring
+              </button>
+            ) : null}
+            {session.inputKind === 'synthetic' ? (
+              <button type="button" onClick={session.startCamera}>
+                Start camera
+              </button>
+            ) : null}
             {selected && selected.status !== 'corrected' ? (
               <>
                 <div className="button-row">
@@ -263,29 +246,44 @@ export function Monitor(props: MonitorProps) {
       </div>
 
       <details className="fold">
-        <summary>Setup</summary>
-        <p className="input-banner" data-kind={session.inputKind} role="status">
-          {session.inputLabel}
-        </p>
-        <div className="button-row">
-          <button type="button" onClick={session.startCamera} disabled={session.cameraPhase === 'starting' || session.cameraPhase === 'live'}>
-            Start Camera
-          </button>
-          <button type="button" onClick={session.stopCamera} disabled={session.cameraPhase !== 'live' && session.cameraPhase !== 'starting'}>
-            Stop Camera
-          </button>
-          <button type="button" onClick={session.togglePlayback} disabled={session.inputKind !== 'prerecorded'}>
-            Play or pause video
-          </button>
-          <button type="button" onClick={session.startRun} disabled={!session.canStartRun}>
-            Start run
-          </button>
-          <button type="button" onClick={session.completeRun} disabled={session.localPhase !== 'running'}>
-            Complete run
-          </button>
+        <summary>Demo</summary>
+        <p className="monitor-note">Optional synthetic sequence or imported video. Pause on an issue applies only to a synthetic demo, not the camera.</p>
+        <button type="button" onClick={startSkipDemo}>
+          {session.inputKind === 'synthetic' && session.monitorGeneration > 0 ? 'Replay demo' : 'Play skip-then-fill demo'}
+        </button>
+        <label className="file-field">
+          Synthetic speed
+          <select
+            value={session.syntheticPace}
+            onChange={(event) => session.setSyntheticPace(Number(event.target.value) as 1 | 2 | 4)}
+          >
+            <option value={4}>Slow</option>
+            <option value={2}>Medium</option>
+            <option value={1}>Original</option>
+          </select>
+        </label>
+        <label className="check-field">
+          <input
+            type="checkbox"
+            checked={session.pauseOnIssue}
+            onChange={(event) => session.setPauseOnIssue(event.target.checked)}
+          />
+          Pause demo when an issue appears
+        </label>
+        <div className="button-row" role="group" aria-label="Synthetic sequences">
+          {SYNTHETIC_SEQUENCES.map((sequence) => (
+            <button
+              key={sequence.id}
+              type="button"
+              aria-pressed={session.syntheticId === sequence.id}
+              onClick={() => session.useSynthetic(sequence.id)}
+            >
+              {sequence.title}
+            </button>
+          ))}
         </div>
         <label className="file-field">
-          Prerecorded video file
+          Imported video
           <input
             type="file"
             accept="video/*"
@@ -296,107 +294,38 @@ export function Monitor(props: MonitorProps) {
             }}
           />
         </label>
-        <div className="button-row" role="group" aria-label="Synthetic sequences">
-          {SYNTHETIC_SEQUENCES.map((sequence) => (
-            <button
-              key={sequence.id}
-              type="button"
-              aria-pressed={session.syntheticId === sequence.id}
-              onClick={() => session.useSynthetic(sequence.id)}
-            >
-              Synthetic: {sequence.title}
-            </button>
-          ))}
+        <button type="button" onClick={session.togglePlayback} disabled={session.inputKind !== 'prerecorded'}>
+          Play or pause video
+        </button>
+      </details>
+
+      <details className="fold">
+        <summary>Setup</summary>
+        <p className="input-banner" data-kind={session.inputKind} role="status">
+          {session.inputLabel}
+        </p>
+        <div className="button-row">
+          <button
+            type="button"
+            aria-pressed={session.observationPaused}
+            onClick={() => session.setObservationPaused(!session.observationPaused)}
+          >
+            {session.observationPaused ? 'Resume observations' : 'Pause observations'}
+          </button>
+          <button
+            type="button"
+            aria-pressed={session.debugOverlay}
+            onClick={() => session.setDebugOverlay(!session.debugOverlay)}
+          >
+            {session.debugOverlay ? 'Hide debug measurements' : 'Show debug measurements'}
+          </button>
         </div>
-        <p className="monitor-note">{session.cameraMessage}</p>
-        <div className="monitor-controls">
-          <fieldset>
-            <legend>Registration and detector</legend>
-            <p className="monitor-note">
-              Drag a well, or focus it and use the arrow keys. Shift moves farther. Positions are fractions of
-              the picture, so they stay aligned when the video display changes size.
-            </p>
-            <div className="button-row">
-              <button type="button" onClick={session.captureReference} disabled={session.inputKind === 'none'}>
-                Capture empty plate
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setWellSize(0.2)
-                  session.resetRegions()
-                }}
-              >
-                Reset well positions
-              </button>
-              <button
-                type="button"
-                aria-pressed={session.samplingColor}
-                onClick={() => session.setSamplingColor(!session.samplingColor)}
-                disabled={session.inputKind === 'none'}
-              >
-                {session.samplingColor ? 'Click the picture to sample' : 'Sample expected color'}
-              </button>
-            </div>
-            <label className="file-field">
-              Well size
-              <input
-                type="range"
-                min={0.08}
-                max={0.32}
-                step={0.01}
-                value={wellSize}
-                onChange={(event) => {
-                  const size = Number(event.target.value)
-                  setWellSize(size)
-                  session.setWellSize(size)
-                }}
-              />
-            </label>
-            <p className="monitor-note">{session.referenceLabel}</p>
-            <div className="color-row">
-              <span className="swatch" style={{ background: rgbToCss(session.expectedColor) }} />
-              <span>
-                Expected color: {session.expectedLabel} ({formatRgb(session.expectedColor)})
-              </span>
-            </div>
-            <div className="button-row" role="group" aria-label="Expected dye color">
-              {COLOR_PRESETS.map((preset) => (
-                <button
-                  key={preset.id}
-                  type="button"
-                  aria-pressed={session.expectedLabel === preset.label}
-                  onClick={() => session.selectPreset(preset.id as ColorPresetId)}
-                >
-                  <span className="swatch" style={{ background: rgbToCss(preset.rgb) }} />
-                  {preset.label}
-                </button>
-              ))}
-            </div>
-            <div className="button-row">
-              <button
-                type="button"
-                aria-pressed={session.observationPaused}
-                onClick={() => session.setObservationPaused(!session.observationPaused)}
-              >
-                {session.observationPaused ? 'Resume observations' : 'Pause observations'}
-              </button>
-              <button
-                type="button"
-                aria-pressed={session.debugOverlay}
-                onClick={() => session.setDebugOverlay(!session.debugOverlay)}
-              >
-                {session.debugOverlay ? 'Hide debug measurements' : 'Show debug measurements'}
-              </button>
-            </div>
-            <p className="monitor-note">
-              {session.inputKind === 'synthetic'
-                ? 'On a synthetic sequence, pause holds the next drawn frame and the run clock.'
-                : 'Pause stops new observations. A live run clock still advances. A prerecorded clock follows the file.'}{' '}
-              Scores are heuristic, not calibrated probabilities. A hand or pipette crossing a well is not treated as a dispense. Mixed regions stay unknown; that is not automatic occlusion detection.
-            </p>
-          </fieldset>
-        </div>
+        <p className="monitor-note">
+          {session.inputKind === 'synthetic'
+            ? 'On a synthetic sequence, pause holds the next drawn frame and the run clock.'
+            : 'Pause stops new observations. A live run clock still advances. A prerecorded clock follows the file.'}{' '}
+          Scores are heuristic, not calibrated probabilities. A hand or pipette crossing a well is not treated as a dispense. Mixed regions stay unknown; that is not automatic occlusion detection.
+        </p>
       </details>
 
       <details className="fold">
@@ -804,6 +733,154 @@ function RegionLayer(props: {
           </button>
         )
       })}
+    </div>
+  )
+}
+
+function cameraFailed(session: VisionSession): boolean {
+  return session.cameraPhase === 'denied' || session.cameraPhase === 'missing' || session.cameraPhase === 'failed'
+}
+
+function DecisionGuide({
+  guide,
+  issueActive,
+  correctionNote,
+}: {
+  guide: ReturnType<typeof guideCopy>
+  issueActive: boolean
+  correctionNote: string | null
+}) {
+  return (
+    <>
+      <h3>Now</h3>
+      <p className="guide-line">{guide.action}</p>
+      {correctionNote ? <p className="correction-line">{correctionNote}</p> : null}
+      {issueActive ? (
+        <>
+          <h3>Issue</h3>
+          <p className="guide-line">{guide.issue}</p>
+        </>
+      ) : null}
+      {guide.next ? (
+        <>
+          <h3>Next</h3>
+          <p className="guide-line">{guide.next}</p>
+        </>
+      ) : null}
+    </>
+  )
+}
+
+function CameraSetup({
+  session,
+  wellSize,
+  setWellSize,
+}: {
+  session: VisionSession
+  wellSize: number
+  setWellSize: (size: number) => void
+}) {
+  const pictureReady = session.cameraPhase === 'live' || session.inputKind === 'prerecorded'
+  const starting = session.cameraPhase === 'starting' || session.cameraPhase === 'live'
+  return (
+    <div className="camera-setup">
+      <h3>1. Camera</h3>
+      <button type="button" className="primary-action" onClick={session.startCamera} disabled={starting}>
+        Start camera
+      </button>
+      {session.cameraPhase === 'live' ? (
+        <button type="button" onClick={session.stopCamera}>
+          Stop camera
+        </button>
+      ) : null}
+      <p className="monitor-note" role={cameraFailed(session) ? 'alert' : 'status'}>
+        {session.inputKind === 'prerecorded' ? session.inputLabel : session.cameraMessage}
+      </p>
+      {pictureReady ? (
+        <>
+          <h3>2. Position</h3>
+          <p className="monitor-note">
+            Drag A1, A2, A3, B1, B2, and B3 onto the six containers. Arrow keys nudge the focused label. Shift moves farther.
+          </p>
+          <label className="file-field">
+            Well size
+            <input
+              type="range"
+              min={0.08}
+              max={0.32}
+              step={0.01}
+              value={wellSize}
+              onChange={(event) => {
+                const size = Number(event.target.value)
+                setWellSize(size)
+                session.setWellSize(size)
+              }}
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => {
+              setWellSize(0.2)
+              session.resetRegions()
+            }}
+          >
+            Reset positions
+          </button>
+          <h3>3. Empty reference and dye</h3>
+          <div className="button-row">
+            <button type="button" onClick={session.captureReference}>
+              Capture empty reference
+            </button>
+            <button
+              type="button"
+              aria-pressed={session.samplingColor}
+              onClick={() => session.setSamplingColor(!session.samplingColor)}
+            >
+              {session.samplingColor ? 'Click the picture to sample' : 'Sample dye color'}
+            </button>
+          </div>
+          <p className="monitor-note">{session.referenceLabel}</p>
+          <div className="color-row">
+            <span className="swatch" style={{ background: rgbToCss(session.expectedColor) }} />
+            <span>
+              Dye: {session.expectedLabel} ({formatRgb(session.expectedColor)})
+            </span>
+          </div>
+          <div className="button-row" role="group" aria-label="Expected dye color">
+            {COLOR_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                aria-pressed={session.expectedLabel === preset.label}
+                onClick={() => session.selectPreset(preset.id as ColorPresetId)}
+              >
+                <span className="swatch" style={{ background: rgbToCss(preset.rgb) }} />
+                {preset.label}
+              </button>
+            ))}
+          </div>
+          <h3>4. Preview</h3>
+          {session.measurements.length === 0 ? (
+            <p className="monitor-note">The latest frame has not been read yet. Empty, filled, and unknown appear here before monitoring starts.</p>
+          ) : (
+            <ul className="preview-readings" aria-label="Preview readings">
+              {PROTOCOL_ORDER.map((wellId) => {
+                const state = session.measurements.find((item) => item.wellId === wellId)?.state ?? 'unknown'
+                return (
+                  <li key={wellId} data-state={state}>
+                    {wellId} {STATE_LABEL[state]}
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+          <p className="monitor-note">This preview is the latest frame. Monitoring uses the stable reading.</p>
+          <h3>5. Monitor</h3>
+          <button type="button" className="primary-action" onClick={session.startRun} disabled={!session.canStartRun}>
+            Start monitoring
+          </button>
+        </>
+      ) : null}
     </div>
   )
 }

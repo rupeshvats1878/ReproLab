@@ -148,13 +148,13 @@ export function cameraErrorCopy(error: unknown): { phase: 'denied' | 'missing' |
   if (name === 'NotAllowedError' || name === 'PermissionDeniedError' || name === 'SecurityError') {
     return {
       phase: 'denied',
-      message: 'Camera permission was denied. Allow the camera for live input, or choose a video file or a synthetic sequence.',
+      message: 'Camera permission was denied. Allow the camera for this site in the browser settings, then press Start camera again.',
     }
   }
   if (name === 'NotFoundError' || name === 'DevicesNotFoundError' || name === 'OverconstrainedError') {
     return {
       phase: 'missing',
-      message: 'No usable camera was found. Choose a prerecorded video or a synthetic sequence.',
+      message: 'No usable camera was found. Connect a webcam, then press Start camera again.',
     }
   }
   const detail = error instanceof Error && error.message ? error.message : 'The camera failed to start.'

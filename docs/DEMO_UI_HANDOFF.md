@@ -1,6 +1,16 @@
 # Demo UI handoff
 
-Branch `demo-ui`. Presentation only. Detection rules, server files, and the monitor-session API were not changed.
+Branch `demo-ui`. Detection rules, server files, and the monitor-session API were not changed.
+
+## Camera workflow
+
+The Monitor leads with the webcam. Synthetic playback is optional and lives under Demo. Pause-on-issue stays synthetic-only.
+
+1. **Start camera.** Permission denied, no camera, and other start failures stay on the picture and in the panel. Allow the camera in the browser, then press Start camera again.
+2. **Position** the six labels over the containers. Drag, or focus a label and use the arrow keys. Well size and Reset positions reuse the existing registration.
+3. **Capture empty reference** while the wells are empty, then choose a dye preset or sample the color from the picture.
+4. **Preview** shows the latest frame as empty, filled, or unknown. It is not the stable reading.
+5. **Start monitoring** uses the existing live alerts, later observed corrections, human reports, and Atlas save status.
 
 ## What changed
 
@@ -21,16 +31,15 @@ Monitor changes:
 
 ## Demo walkthrough
 
-1. Open the app and stay on Monitor.
-2. Leave Synthetic speed on Slow.
-3. Press Start demo. The synthetic label stays on the picture.
-4. When A3 is filled and A2 is still empty, playback pauses. The panel says Demo paused, “A2 appears empty,” and “Check A2.” A2 stays highlighted.
-5. Press Continue demo. That does not acknowledge or correct A2.
-6. When the later frame fills A2, the panel says A2 appears filled and the original alert remains. The warning then clears.
-7. At the end, read the summary: one issue detected, one corrected by a later observation, none unresolved, and no human reports unless you pressed Acknowledge or Report what you saw.
-8. Press Replay demo. The pause clears, the session ID changes, and the old alert is gone until the new sequence raises it again.
-9. Open Setup for camera, file upload, other synthetic sequences, and calibration.
-10. Use Prepare, Review, Footage, Library, and Record from the top navigation. Storage stays collapsed unless you open it.
+1. Open the app and stay on Monitor. Start camera is the primary action.
+2. For the synthetic check, open Demo, leave Synthetic speed on Slow, and press Play skip-then-fill demo. The synthetic label stays on the picture.
+3. When A3 is filled and A2 is still empty, playback pauses. The panel says Demo paused, “A2 appears empty,” and “Check A2.” A2 stays highlighted.
+4. Press Continue demo. That does not acknowledge or correct A2.
+5. When the later frame fills A2, the panel says A2 appears filled and the original alert remains. The warning then clears.
+6. At the end, read the summary: one issue detected, one corrected by a later observation, none unresolved, and no human reports unless you pressed Acknowledge or Report what you saw.
+7. Press Replay demo. The pause clears, the session ID changes, and the old alert is gone until the new sequence raises it again.
+8. Other synthetic sequences and an imported video are under Demo. Pause observations and debug measurements stay under Setup.
+9. Use Prepare, Review, Footage, Library, and Record from the top navigation. Storage stays collapsed unless you open it.
 
 ## Where a future model assessment fits
 

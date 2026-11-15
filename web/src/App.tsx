@@ -12,7 +12,7 @@ type TabId = 'prepare' | 'monitor' | 'review' | 'reference' | 'library' | 'run'
 
 const TABS: readonly { id: TabId; label: string; line: string }[] = [
   { id: 'prepare', label: 'Prepare', line: 'Draft and approve a protocol. It does not control the six-well monitor.' },
-  { id: 'monitor', label: 'Monitor', line: 'Watch the fixed six-well colored-water sequence.' },
+  { id: 'monitor', label: 'Monitor', line: 'Start the camera and watch six wells in order.' },
   { id: 'review', label: 'Review', line: 'Compare observations, alerts, and human reports from a colored-water run.' },
   { id: 'reference', label: 'Footage', line: 'Inspect external dye-dispersion recordings. They are not a replication result.' },
   { id: 'library', label: 'Library', line: 'Browse experiments that have been published.' },
