@@ -105,6 +105,9 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
                 Synthetic demonstration
               </p>
             ) : null}
+            {session.recording.phase === 'recording' ? (
+              <p className="recording-flag" role="status">Recording</p>
+            ) : null}
         <video
           ref={session.bindVideo}
           className="stage-media"
@@ -357,6 +360,17 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
             }}
           />
         </label>
+        {session.inputKind === 'prerecorded' ? (
+          <label className="check-field">
+            <input
+              type="checkbox"
+              checked={session.attachSourceFile}
+              disabled={session.localPhase === 'running'}
+              onChange={(event) => session.setAttachSourceFile(event.target.checked)}
+            />
+            Attach this file to the run
+          </label>
+        ) : null}
         <button type="button" onClick={session.togglePlayback} disabled={session.inputKind !== 'prerecorded'}>
           Play or pause video
         </button>
@@ -991,6 +1005,20 @@ function CameraSetup({
                 ? 'Calibration is missing, so a started run can stay unknown.'
                 : 'The preview is still unknown, so a started run can stay unknown.'}
             </p>
+          ) : null}
+          {session.inputKind === 'live' ? (
+            <label className="check-field">
+              <input
+                type="checkbox"
+                checked={session.recordThisRun}
+                disabled={session.localPhase === 'running'}
+                onChange={(event) => session.setRecordThisRun(event.target.checked)}
+              />
+              Record this run
+            </label>
+          ) : null}
+          {session.inputKind === 'live' ? (
+            <p className="monitor-note">Records the camera without audio. The file stays in this browser until you include it in a publication.</p>
           ) : null}
           <button type="button" className="primary-action" onClick={session.startRun} disabled={!session.canStartRun}>
             Start monitoring

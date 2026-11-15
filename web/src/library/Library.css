@@ -29,6 +29,12 @@
   background: var(--card); border: 1px solid var(--line); border-radius: .75rem; padding: .9rem
 }
 .library-pages { display: flex; gap: .5rem; margin-top: .8rem }
+.library-recording {
+  width: 100%;
+  max-height: 360px;
+  background: #020617;
+}
+
 .library-record { display: grid; gap: .7rem; margin-top: .5rem }
 .library-record details { background: var(--card); border: 1px solid var(--line); border-radius: .6rem; padding: .7rem .85rem }
 @media (max-width: 720px) {

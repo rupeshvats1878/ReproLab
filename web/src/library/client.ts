@@ -23,7 +23,11 @@ export interface RunEvidence {
   label?: string
   available?: boolean
   observationTimestamp?: number
+  runStartOffsetMs?: number
   durationMs?: number | null
+  sharedMediaId?: string | null
+  byteLength?: number | null
+  mimeType?: string | null
 }
 
 export interface RunAlert {
@@ -132,11 +136,45 @@ export async function publishExperiment(body: unknown): Promise<StoredExperiment
   return readJson(await libraryFetch('/experiments', { method: 'POST', body }))
 }
 
-export async function publishRecordedSession(sessionId: string, notes: string): Promise<StoredExperiment> {
+export async function publishRecordedSession(
+  sessionId: string,
+  notes: string,
+  recording?: { evidenceId: string; mediaId: string } | null,
+): Promise<StoredExperiment> {
+  const body: { notes?: string; recording?: { evidenceId: string; mediaId: string } } = {}
+  if (notes.trim()) body.notes = notes.trim()
+  if (recording) body.recording = recording
   return readJson(await libraryFetch(`/monitor-sessions/${encodeURIComponent(sessionId)}/publish`, {
     method: 'POST',
-    body: notes.trim() ? { notes: notes.trim() } : {},
+    body,
   }))
+}
+
+export async function uploadSharedRecording(blob: Blob): Promise<{ id: string; byteLength: number; mimeType: string }> {
+  const mimeType = (blob.type.split(';')[0] || 'video/webm').toLowerCase()
+  let response: Response
+  try {
+    response = await fetch(`${LIBRARY}/media`, {
+      method: 'POST',
+      headers: { 'content-type': mimeType },
+      body: blob,
+    })
+  } catch {
+    throw new LibraryClientError('The recording was not uploaded. The local file is still here.')
+  }
+  const payload: unknown = await response.json().catch(() => null)
+  if (!response.ok || !payload || typeof payload !== 'object' || !('id' in payload)) {
+    throw new LibraryClientError(
+      response.status === 413
+        ? 'The recording is over the 80 MB library limit. The local file is still here.'
+        : 'The recording was not uploaded. The local file is still here.',
+    )
+  }
+  return payload as { id: string; byteLength: number; mimeType: string }
+}
+
+export function sharedRecordingUrl(mediaId: string): string {
+  return `${LIBRARY}/media/${encodeURIComponent(mediaId)}`
 }
 
 export async function listExperiments(query: string): Promise<ExperimentPage> {

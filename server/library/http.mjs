@@ -1,4 +1,5 @@
 import { LibraryError } from './errors.mjs'
+import { SHARED_MEDIA_LIMIT_BYTES, mediaContentType } from './mediaLimit.mjs'
 import {
   validateExecutionEvent,
   validateExecutionFinish,
@@ -16,10 +17,10 @@ import {
 const MAX_BODY_BYTES = 48 * 1024
 const MAX_EVENT_BYTES = 400_000
 
-export function createLibraryServer({ store }) {
+export function createLibraryServer({ store, mediaLimit = SHARED_MEDIA_LIMIT_BYTES }) {
   return async function handle(req, res) {
     try {
-      await route(req, res, store)
+      await route(req, res, store, mediaLimit)
     } catch (error) {
       const response = publicError(error)
       send(res, response.status, response.body)
@@ -27,7 +28,7 @@ export function createLibraryServer({ store }) {
   }
 }
 
-async function route(req, res, store) {
+async function route(req, res, store, mediaLimit) {
   const origin = req.headers.origin
   if (localDevOrigin(origin)) res.setHeader('Access-Control-Allow-Origin', origin)
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
@@ -142,10 +143,32 @@ async function route(req, res, store) {
   const monitorPublish = /^\/monitor-sessions\/([^/]+)\/publish$/.exec(url.pathname)
   if (req.method === 'POST' && monitorPublish) {
     const sessionId = monitorSessionId(decodeURIComponent(monitorPublish[1]))
-    const { notes } = validateSessionPublish(await readJson(req))
+    const { notes, recording } = validateSessionPublish(await readJson(req))
     await assertDatabase(store)
-    const result = await store.publishRecordedExperiment(sessionId, notes)
+    const result = await store.publishRecordedExperiment(sessionId, notes, recording)
     send(res, result.created ? 201 : 200, result.experiment)
+    return
+  }
+
+  if (req.method === 'POST' && url.pathname === '/media') {
+    const mimeType = mediaContentType(req.headers['content-type'])
+    const declared = Number(req.headers['content-length'] ?? 0)
+    if (Number.isFinite(declared) && declared > mediaLimit) {
+      req.resume()
+      throw new LibraryError('too_large')
+    }
+    const bytes = await readBytes(req, mediaLimit)
+    if (bytes.length === 0) throw new LibraryError('invalid', 'body')
+    await assertDatabase(store)
+    send(res, 201, await store.saveMedia({ mimeType, bytes }))
+    return
+  }
+
+  const mediaPath = /^\/media\/(media_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(url.pathname)
+  if (req.method === 'GET' && mediaPath) {
+    await assertDatabase(store)
+    const file = await store.openMedia(`media_${mediaPath[1].slice('media_'.length).toLowerCase()}`)
+    await sendMedia(req, res, file)
     return
   }
 
@@ -175,6 +198,81 @@ async function readJson(req, max = MAX_BODY_BYTES) {
   } catch {
     throw new LibraryError('invalid', 'body')
   }
+}
+
+function readBytes(req, max) {
+  return new Promise((resolve, reject) => {
+    const chunks = []
+    let size = 0
+    let failed = false
+    req.on('data', (chunk) => {
+      size += chunk.length
+      if (size > max) {
+        failed = true
+        reject(new LibraryError('too_large'))
+        req.destroy()
+        return
+      }
+      chunks.push(chunk)
+    })
+    req.on('end', () => {
+      if (!failed) resolve(Buffer.concat(chunks))
+    })
+    req.on('error', () => {
+      if (!failed) reject(new LibraryError('invalid', 'body'))
+    })
+  })
+}
+
+function parseByteRange(header, total) {
+  if (header == null || header === '') return null
+  const match = /^bytes=(\d*)-(\d*)$/.exec(String(header).trim())
+  if (!match || total <= 0) return 'invalid'
+  const startText = match[1]
+  const endText = match[2]
+  if (startText === '' && endText === '') return 'invalid'
+  let start = startText === '' ? null : Number(startText)
+  let end = endText === '' ? null : Number(endText)
+  if (start == null) {
+    if (end <= 0) return 'invalid'
+    start = Math.max(0, total - end)
+    end = total - 1
+  } else if (end == null) {
+    end = total - 1
+  }
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || start >= total || end < start) return 'invalid'
+  return { start, end: Math.min(end, total - 1) }
+}
+
+function sendMedia(req, res, file) {
+  return new Promise((resolve, reject) => {
+    const total = file.byteLength
+    const range = parseByteRange(req.headers.range, total)
+    res.setHeader('accept-ranges', 'bytes')
+    res.setHeader('content-type', file.mimeType)
+    res.setHeader('cache-control', 'private, max-age=0')
+    if (range === 'invalid') {
+      res.writeHead(416, { 'content-range': `bytes */${total}` })
+      res.end()
+      resolve()
+      return
+    }
+    const start = range ? range.start : 0
+    const end = range ? range.end + 1 : total
+    if (range) {
+      res.writeHead(206, {
+        'content-range': `bytes ${range.start}-${range.end}/${total}`,
+        'content-length': end - start,
+      })
+    } else {
+      res.writeHead(200, { 'content-length': total })
+    }
+    const stream = file.open(start, end)
+    stream.on('error', reject)
+    res.on('error', reject)
+    stream.on('end', resolve)
+    stream.pipe(res)
+  })
 }
 
 function readBody(req, max) {

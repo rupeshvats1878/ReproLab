@@ -447,6 +447,22 @@
   min-width: 0;
 }
 
+.recording-flag {
+  position: absolute;
+  top: 0.7rem;
+  right: 0.7rem;
+  z-index: 2;
+  margin: 0;
+  padding: 0.35rem 0.6rem;
+  border-radius: 0.55rem;
+  background: #9a3412;
+  color: #fff7ed;
+  font-size: 0.78rem;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .synthetic-flag {
   position: absolute;
   top: 0.7rem;

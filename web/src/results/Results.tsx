@@ -8,7 +8,9 @@ import {
   type MonitorSessionSummary,
   type RetrievedMonitor,
 } from '../monitor/saveSession.ts'
-import { LibraryClientError, publishRecordedSession } from '../library/client.ts'
+import { LibraryClientError, publishRecordedSession, uploadSharedRecording } from '../library/client.ts'
+import { dropLocalMedia, readLocalMedia } from '../review/store.ts'
+import { formatByteSize, nextPublicationAction, SHARED_RECORDING_LIMIT_BYTES } from './publishChoice.ts'
 import { ReferenceLab } from '../reference/ReferenceLab.tsx'
 import type { ReviewController } from '../shared/types.ts'
 import { MONITOR_SESSION_ID, chooseSavedSession, sessionChoiceLabel, sourceLabel, statusLabel } from './sessionBrowse.ts'
@@ -222,7 +224,7 @@ function MonitorResult({ session, onOpenLibrary }: { session: RetrievedMonitor; 
         {evidence.length === 0 ? (
           <p>No separate recording was stored. Frame metadata on an alert is not video playback.</p>
         ) : (
-          <p>{evidence.length} evidence record{evidence.length === 1 ? '' : 's'} stored. This screen does not play those bytes.</p>
+          <p>{evidence.length} evidence record{evidence.length === 1 ? '' : 's'}. A frame label is not the recording.</p>
         )}
       </details>
       <PublishRun session={session} onOpenLibrary={onOpenLibrary} />
@@ -251,34 +253,70 @@ function PublishRun({ session, onOpenLibrary }: { session: RetrievedMonitor; onO
   const [publishing, setPublishing] = useState(false)
   const [publishedId, setPublishedId] = useState<string | null>(null)
   const [error, setError] = useState('')
+  const [includeRecording, setIncludeRecording] = useState(false)
+  const [uploadFailed, setUploadFailed] = useState(false)
+  const [localFile, setLocalFile] = useState<Blob | null>(null)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const alerts = session.alerts ?? []
   const unresolved = alerts.filter((alert) => (alert.updates?.length ?? 0) === 0)
   const corrections = alerts.reduce((count, alert) => count + (alert.updates?.length ?? 0), 0)
   const reports = session.humanReports ?? []
-  const evidence = session.evidence ?? []
+  const evidence = (session.evidence ?? []) as LocalEvidence[]
+  const recording = evidence.find((item) => item.available && (item.kind === 'camera_recording' || item.kind === 'prerecorded_source') && item.id)
+  const synthetic = session.sourceKind === 'synthetic'
+  useEffect(() => {
+    if (!recording?.id) return undefined
+    let cancelled = false
+    let url = ''
+    void readLocalMedia(recording.id).then((blob) => {
+      if (cancelled || !blob) return
+      url = URL.createObjectURL(blob)
+      setLocalFile(blob)
+      setPreviewUrl(url)
+    })
+    return () => {
+      cancelled = true
+      if (url) URL.revokeObjectURL(url)
+    }
+  }, [recording?.id])
   if (!session.finishedAt) {
     return <p>This session is not finished. Finish it in Monitor before publishing. Stopping the camera does not finish it.</p>
   }
   if (!session.preparedProtocol) {
     return <p>No approved procedure is stored with this session, so it cannot be published.</p>
   }
-  const synthetic = session.sourceKind === 'synthetic'
+  const overLimit = localFile != null && localFile.size > SHARED_RECORDING_LIMIT_BYTES
+  async function publish(confirmWithout: boolean, retryUpload = false) {
+    if (publishing || !session.preparedProtocol) return
+    const action = nextPublicationAction({
+      includeRecording: includeRecording && !overLimit && localFile != null,
+      uploadFailed: retryUpload ? false : uploadFailed,
+      publishWithoutConfirmed: confirmWithout,
+    })
+    if (action === 'hold') return
+    setPublishing(true)
+    setError('')
+    try {
+      let shared: { evidenceId: string; mediaId: string } | null = null
+      if (action === 'upload') {
+        if (!localFile || !recording?.id) throw new LibraryClientError('The local recording is not available.')
+        const uploaded = await uploadSharedRecording(localFile)
+        shared = { evidenceId: recording.id, mediaId: uploaded.id }
+      }
+      const saved = await publishRecordedSession(session.id, notes, shared)
+      if (shared && recording?.id) await dropLocalMedia(recording.id).catch(() => undefined)
+      setUploadFailed(false)
+      setPublishedId(saved.id)
+    } catch (reason: unknown) {
+      setPublishedId(null)
+      if (action === 'upload') setUploadFailed(true)
+      setError(reason instanceof LibraryClientError ? reason.message : 'Publishing failed. Nothing new was saved.')
+    } finally {
+      setPublishing(false)
+    }
+  }
   return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault()
-        if (publishing) return
-        setPublishing(true)
-        setError('')
-        void publishRecordedSession(session.id, notes)
-          .then((saved) => setPublishedId(saved.id))
-          .catch((reason: unknown) => {
-            setPublishedId(null)
-            setError(reason instanceof LibraryClientError ? reason.message : 'Publishing failed. Nothing new was saved.')
-          })
-          .finally(() => setPublishing(false))
-      }}
-    >
+    <form onSubmit={(event) => { event.preventDefault(); void publish(false) }}>
       <h4>Publish experiment</h4>
       <p>Finished does not mean the run succeeded. Unresolved issues stay in the publication.</p>
       {synthetic ? <p>Synthetic demonstration. Not a camera recording.</p> : null}
@@ -294,28 +332,43 @@ function PublishRun({ session, onOpenLibrary }: { session: RetrievedMonitor; onO
           ))}
         </ul>
       ) : <p>No unresolved deviation was stored.</p>}
-      {evidence.length === 0 ? (
-        <p>No recording metadata was stored. A frame label on a deviation is not footage.</p>
+      {recording && localFile && previewUrl ? (
+        <div>
+          <p>Local recording preview. This file is not in the library until you include it.</p>
+          <video className="publish-preview" src={previewUrl} controls playsInline />
+          <label className="check-field">
+            <input
+              type="checkbox"
+              checked={includeRecording && !overLimit}
+              disabled={overLimit || publishing}
+              onChange={(event) => {
+                setIncludeRecording(event.target.checked)
+                setUploadFailed(false)
+              }}
+            />
+            Include recording ({formatByteSize(localFile.size)}). Limit {formatByteSize(SHARED_RECORDING_LIMIT_BYTES)}.
+          </label>
+          {overLimit ? <p role="alert">This file is over the library limit, so it cannot be included. You can still publish the run.</p> : null}
+        </div>
+      ) : recording ? (
+        <p>A recording was saved for this browser, but the file is not available now. Publishing will not include it.</p>
       ) : (
-        <ul>
-          {evidence.map((item, index) => {
-            const record = item as { label?: string; available?: boolean; kind?: string }
-            return (
-              <li key={`${record.label ?? 'evidence'}-${index}`}>
-                {record.label || 'Evidence label not recorded'}. {record.available ? 'Marked available in this browser. The library stores the label only, not the file.' : 'Not available. No file was stored.'}
-              </li>
-            )
-          })}
-        </ul>
+        <p>No recording file is available. A frame label is not footage. You can still publish the run.</p>
       )}
       <label>
         Researcher notes
         <textarea value={notes} rows={3} maxLength={500} onChange={(event) => setNotes(event.target.value)} placeholder="Optional outcome and limitations" />
       </label>
       <button type="submit" className="primary-action" disabled={publishing}>
-        {publishing ? 'Publishing…' : 'Publish'}
+        {publishing ? 'Publishing…' : includeRecording && !overLimit && localFile ? 'Publish with recording' : 'Publish'}
       </button>
-      {error ? <p role="alert">{error}</p> : null}
+      {uploadFailed ? (
+        <p role="alert">
+          {error} The local file is still here.
+          <button type="button" onClick={() => void publish(false, true)} disabled={publishing}>Retry upload</button>
+          <button type="button" onClick={() => void publish(true)} disabled={publishing}>Publish without recording</button>
+        </p>
+      ) : error ? <p role="alert">{error}</p> : null}
       {publishedId ? (
         <p role="status">
           Published {publishedId}.
@@ -324,6 +377,13 @@ function PublishRun({ session, onOpenLibrary }: { session: RetrievedMonitor; onO
       ) : null}
     </form>
   )
+}
+
+interface LocalEvidence {
+  id?: string
+  kind?: string
+  label?: string
+  available?: boolean
 }
 
 function listMessage(kind: ListKind): string {

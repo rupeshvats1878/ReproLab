@@ -467,7 +467,8 @@ test('finishes a monitor session only on request and publishes one immutable run
     assert.equal(camera.status, 201)
     assert.equal(camera.body.kind, 'recorded')
     assert.equal(camera.body.description, '')
-    assert.equal(camera.body.runRecord.evidence[0].available, true)
+    assert.equal(camera.body.runRecord.evidence[0].available, false)
+    assert.equal(camera.body.runRecord.evidence[0].sharedMediaId, null)
     assert.equal(camera.body.runRecord.evidence[0].label, 'Camera recording registered in this browser.')
     assert.equal(Object.hasOwn(camera.body.runRecord.evidence[0], 'data'), false)
 

@@ -10,11 +10,13 @@ import {
   versionLabel,
 } from './browse.ts'
 import { monitorProtocolFromInstructions, type PreparedMonitorProtocol } from '../prepare/sixWell.ts'
+import { watchMomentMs } from '../vision/alignment.ts'
 import {
   LibraryClientError,
   listExperiments,
   openExperiment,
   openReplication,
+  sharedRecordingUrl,
   startReplication,
   type ExperimentPage,
   type ReplicationRecord,
@@ -386,19 +388,53 @@ function Publication(props: {
 }
 
 function RecordedSummary({ run }: { run: NonNullable<StoredExperiment['runRecord']> }) {
+  const videoRef = useRef<HTMLVideoElement>(null)
   const alerts = run.alerts ?? []
   const unresolved = alerts.filter((alert) => (alert.updates?.length ?? 0) === 0)
   const corrections = alerts.reduce((count, alert) => count + (alert.updates?.length ?? 0), 0)
   const reports = run.humanReports ?? []
   const evidence = run.evidence ?? []
+  const shared = evidence.find((item) => item.available && item.sharedMediaId)
+  const source = run.sourceKind === 'synthetic'
+    ? 'Synthetic demonstration.'
+    : run.sourceKind === 'prerecorded'
+      ? 'Imported video.'
+      : run.sourceKind === 'live'
+        ? 'Camera.'
+        : 'Source not recorded.'
+  function watch(momentMs: number) {
+    const video = videoRef.current
+    if (!video) return
+    video.currentTime = momentMs / 1000
+    void video.play().catch(() => undefined)
+  }
   return (
     <div>
-      <p>{run.sourceKind === 'synthetic' ? 'Synthetic demonstration.' : run.sourceKind === 'prerecorded' ? 'Imported video.' : run.sourceKind === 'live' ? 'Camera.' : 'Source not recorded.'} {run.observationCount ?? run.observations?.length ?? 0} observations. {alerts.length} deviations. {corrections} observed corrections. {reports.length} human reports.</p>
+      <p>{source} {run.observationCount ?? run.observations?.length ?? 0} observations. {alerts.length} deviations. {corrections} observed corrections. {reports.length} human reports.</p>
+      {shared?.sharedMediaId ? (
+        <div>
+          <video ref={videoRef} className="library-recording" src={sharedRecordingUrl(shared.sharedMediaId)} controls playsInline />
+          <p>This recording is stored with the shared library. Anyone who can open this library can play it. This library does not sign anyone in.</p>
+        </div>
+      ) : run.sourceKind === 'synthetic' ? (
+        <p>Synthetic demonstration. No camera recording is stored.</p>
+      ) : (
+        <p>No recording was included. A frame label is not footage.</p>
+      )}
       {unresolved.length > 0 ? (
         <ul>
-          {unresolved.map((alert) => (
-            <li key={alert.id}>{alert.wellId} unresolved. {alert.observedState}{alert.evidence?.label ? ` Frame label: ${alert.evidence.label}. No footage is stored.` : ''}</li>
-          ))}
+          {unresolved.map((alert) => {
+            const moment = shared ? watchMomentMs(alert.observationTimestamp, shared.runStartOffsetMs ?? 0, shared.durationMs) : null
+            return (
+              <li key={alert.id}>
+                {alert.wellId} unresolved. {alert.observedState}
+                {alert.evidence?.label ? ` Frame label: ${alert.evidence.label}.` : ''}
+                {moment == null ? '' : (
+                  <button type="button" onClick={() => watch(moment)}>Watch moment</button>
+                )}
+              </li>
+            )
+          })}
         </ul>
       ) : <p>No unresolved deviation was stored.</p>}
       {reports.length > 0 ? (
@@ -412,7 +448,12 @@ function RecordedSummary({ run }: { run: NonNullable<StoredExperiment['runRecord
       {evidence.length === 0 ? <p>No recording metadata was stored.</p> : (
         <ul>
           {evidence.map((item) => (
-            <li key={item.id ?? item.label}>{item.label || 'Evidence label not recorded'}. {item.available ? 'Marked available in the browser. The file is not in the library.' : 'Not available. No file was stored.'}</li>
+            <li key={item.id ?? item.label}>
+              {item.label || 'Evidence label not recorded'}.
+              {item.available && item.sharedMediaId
+                ? ` Shared recording, ${item.byteLength ?? 'unknown'} bytes.`
+                : ' Not included. No file was stored in the library.'}
+            </li>
           ))}
         </ul>
       )}

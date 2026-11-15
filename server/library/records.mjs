@@ -167,11 +167,18 @@ export function experimentSummary(experiment) {
 
 const RUN_RECORD_BYTES = 1_500_000
 
-export function recordedExperimentRecord(session, notes, { id, publishedAt }) {
+export function recordedExperimentRecord(session, notes, { id, publishedAt, shared = null }) {
   if (!session.finishedAt) throw new LibraryError('invalid_state')
   const protocol = session.preparedProtocol
   if (!protocol || !Array.isArray(protocol.steps)) throw new LibraryError('invalid', 'preparedProtocol')
   const presented = presentMonitorSession(session)
+  if (shared) {
+    const source = presented.evidence.find((item) => item.id === shared.evidenceId)
+    if (!source || source.available !== true) throw new LibraryError('invalid', 'evidenceId')
+    if (source.kind !== 'camera_recording' && source.kind !== 'prerecorded_source') {
+      throw new LibraryError('invalid', 'evidenceId')
+    }
+  }
   const kind = session.sourceKind === 'synthetic' ? 'demonstration' : 'recorded'
   const runRecord = {
     sourceKind: session.sourceKind,
@@ -208,14 +215,21 @@ export function recordedExperimentRecord(session, notes, { id, publishedAt }) {
       humanReportedState: report.humanReportedState ?? null,
       observationTimestamp: report.observationTimestamp,
     })),
-    evidence: presented.evidence.map((item) => ({
-      id: item.id,
-      kind: item.kind,
-      label: item.label,
-      available: item.available === true,
-      observationTimestamp: item.observationTimestamp,
-      durationMs: item.durationMs ?? null,
-    })),
+    evidence: presented.evidence.map((item) => {
+      const included = shared != null && item.id === shared.evidenceId
+      return {
+        id: item.id,
+        kind: item.kind,
+        label: item.label,
+        available: included,
+        observationTimestamp: item.observationTimestamp,
+        runStartOffsetMs: item.runStartOffsetMs ?? 0,
+        durationMs: item.durationMs ?? null,
+        sharedMediaId: included ? shared.mediaId : null,
+        byteLength: included ? shared.byteLength : null,
+        mimeType: included ? shared.mimeType : null,
+      }
+    }),
   }
   if (JSON.stringify(runRecord).length > RUN_RECORD_BYTES) throw new LibraryError('too_large')
   return {

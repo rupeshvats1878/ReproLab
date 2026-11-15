@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { MongoClient } from 'mongodb'
+import { Readable } from 'node:stream'
+import { GridFSBucket, MongoClient } from 'mongodb'
 import { LibraryError } from './errors.mjs'
 import { appendMonitorEvent, finishMonitorSession, monitorSession, presentMonitorSession, presentMonitorSummary, sameMonitorIdentity } from './monitorRecords.mjs'
 import {
@@ -23,6 +24,7 @@ export function createMemoryStore({ now = () => new Date().toISOString(), ids = 
   const experiments = []
   const replications = []
   const monitorSessions = []
+  const media = new Map()
   return {
     async health() {
       return { database: 'available' }
@@ -122,14 +124,45 @@ export function createMemoryStore({ now = () => new Date().toISOString(), ids = 
       monitorSessions[index] = next
       return presentMonitorSession(next)
     },
-    async publishRecordedExperiment(id, notes) {
+    async publishRecordedExperiment(id, notes, recording = null) {
       const session = monitorSessions.find((item) => item.id === id)
       if (!session) throw new LibraryError('not_found')
       const existing = experiments.find((item) => item.monitorSessionId === id)
       if (existing) return { created: false, experiment: structuredClone(existing) }
-      const record = recordedExperimentRecord(session, notes, { id: ids(), publishedAt: now() })
+      const shared = recording ? sharedFrom(media.get(recording.mediaId), recording) : null
+      const record = recordedExperimentRecord(session, notes, { id: ids(), publishedAt: now(), shared })
       experiments.push(record)
       return { created: true, experiment: structuredClone(record) }
+    },
+    async saveMedia({ mimeType, bytes }) {
+      const id = `media_${ids()}`
+      media.set(id, { mimeType, bytes: Buffer.from(bytes) })
+      return { id, byteLength: bytes.length, mimeType }
+    },
+    async openMedia(id) {
+      const file = media.get(id)
+      if (!file) throw new LibraryError('not_found')
+      return mediaHandle(file.mimeType, file.bytes)
+    },
+  }
+}
+
+function sharedFrom(file, recording) {
+  if (!file) throw new LibraryError('invalid', 'mediaId')
+  return {
+    evidenceId: recording.evidenceId,
+    mediaId: recording.mediaId,
+    byteLength: file.bytes.length,
+    mimeType: file.mimeType,
+  }
+}
+
+function mediaHandle(mimeType, bytes) {
+  return {
+    mimeType,
+    byteLength: bytes.length,
+    open(start = 0, end = bytes.length) {
+      return Readable.from(bytes.subarray(start, end))
     },
   }
 }
@@ -179,6 +212,12 @@ export function createUnavailableStore() {
       throw new LibraryError('unavailable')
     },
     async publishRecordedExperiment() {
+      throw new LibraryError('unavailable')
+    },
+    async saveMedia() {
+      throw new LibraryError('unavailable')
+    },
+    async openMedia() {
       throw new LibraryError('unavailable')
     },
   }
@@ -461,14 +500,59 @@ export function createMongoStore({ client, dbName }) {
         throw new LibraryError('unavailable')
       }
     },
-    async publishRecordedExperiment(id, notes) {
+    async saveMedia({ mimeType, bytes }) {
+      await requireDatabase()
+      const id = `media_${randomUUID()}`
+      const bucket = new GridFSBucket(client.db(dbName), { bucketName: 'experimentMedia' })
+      await new Promise((resolve, reject) => {
+        const upload = bucket.openUploadStream(id, {
+          contentType: mimeType,
+          metadata: { role: 'experiment-recording' },
+        })
+        upload.on('error', reject)
+        upload.on('finish', resolve)
+        upload.end(Buffer.from(bytes))
+      })
+      return { id, byteLength: bytes.length, mimeType }
+    },
+    async openMedia(id) {
+      await requireDatabase()
+      const bucket = new GridFSBucket(client.db(dbName), { bucketName: 'experimentMedia' })
+      const files = await bucket.find({ filename: id }).sort({ uploadDate: -1 }).limit(1).toArray()
+      const file = files[0]
+      if (!file) throw new LibraryError('not_found')
+      return {
+        mimeType: file.contentType || 'application/octet-stream',
+        byteLength: file.length,
+        open(start = 0, end = file.length) {
+          return bucket.openDownloadStream(file._id, { start, end })
+        },
+      }
+    },
+    async publishRecordedExperiment(id, notes, recording = null) {
       await requireDatabase()
       try {
         const existing = await experiments().findOne({ monitorSessionId: id }, { projection: { _id: 0 } })
         if (existing) return { created: false, experiment: existing }
         const session = await monitorSessions().findOne({ _id: id }, { projection: { _id: 0 } })
         if (!session) throw new LibraryError('not_found')
-        const record = recordedExperimentRecord(session, notes, { id: randomUUID(), publishedAt: new Date().toISOString() })
+        let shared = null
+        if (recording) {
+          let file
+          try {
+            file = await this.openMedia(recording.mediaId)
+          } catch (error) {
+            if (error instanceof LibraryError && error.code === 'not_found') throw new LibraryError('invalid', 'mediaId')
+            throw error
+          }
+          shared = {
+            evidenceId: recording.evidenceId,
+            mediaId: recording.mediaId,
+            byteLength: file.byteLength,
+            mimeType: file.mimeType,
+          }
+        }
+        const record = recordedExperimentRecord(session, notes, { id: randomUUID(), publishedAt: new Date().toISOString(), shared })
         try {
           await experiments().insertOne({ ...record, _id: record.id })
         } catch (error) {

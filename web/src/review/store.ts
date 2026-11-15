@@ -8,6 +8,7 @@ export interface RunStore {
   putBlob(mediaId: string, blob: Blob): Promise<void>
   getBlob(mediaId: string): Promise<Blob | undefined>
   hasBlob(mediaId: string): Promise<boolean>
+  deleteBlob(mediaId: string): Promise<void>
 }
 
 export function memoryRunStore(): RunStore {
@@ -33,6 +34,10 @@ export function memoryRunStore(): RunStore {
     },
     async hasBlob(mediaId) {
       return blobs.has(mediaId)
+    },
+    async deleteBlob(mediaId) {
+      blobs.delete(mediaId)
+      forgetVisionBlob(mediaId)
     },
   }
 }
@@ -131,7 +136,30 @@ function indexedDbRunStore(): RunStore {
       const blob = await this.getBlob(mediaId)
       return blob != null
     },
+    async deleteBlob(mediaId) {
+      forgetVisionBlob(mediaId)
+      const db = await openDb()
+      try {
+        const tx = db.transaction('blobs', 'readwrite')
+        tx.objectStore('blobs').delete(mediaId)
+        await transactionDone(tx)
+      } finally {
+        db.close()
+      }
+    },
   }
+}
+
+export async function keepLocalMedia(mediaId: string, blob: Blob): Promise<void> {
+  await createRunStore().putBlob(mediaId, blob)
+}
+
+export async function readLocalMedia(mediaId: string): Promise<Blob | undefined> {
+  return getVisionBlob(mediaId) ?? createRunStore().getBlob(mediaId)
+}
+
+export async function dropLocalMedia(mediaId: string): Promise<void> {
+  await createRunStore().deleteBlob(mediaId)
 }
 
 function openDb(): Promise<IDBDatabase> {

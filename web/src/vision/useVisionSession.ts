@@ -69,6 +69,7 @@ import {
   resetDemoPresentation,
   setPauseOnIssue as pausePreference,
 } from '../monitor/demoPause.ts'
+import { keepLocalMedia } from '../review/store.ts'
 import { ObservationEmitter, ReadingStabilizer, readingsOf } from './stabilize.ts'
 import { SYNTHETIC_SEQUENCES, type SyntheticFrame } from './synthetic.ts'
 
@@ -142,6 +143,10 @@ export interface VisionSession {
   setDebugOverlay: (enabled: boolean) => void
   setSamplingColor: (enabled: boolean) => void
   setFinalSeparate: (enabled: boolean) => void
+  recordThisRun: boolean
+  setRecordThisRun: (enabled: boolean) => void
+  attachSourceFile: boolean
+  setAttachSourceFile: (enabled: boolean) => void
   startCamera: () => void
   stopCamera: () => void
   useVideoFile: (file: File) => void
@@ -208,6 +213,9 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
   const recorderMime = useRef<string | undefined>(undefined)
   const recordingMediaId = useRef<string | null>(null)
   const recordingSettled = useRef(false)
+  const recordThisRunRef = useRef(false)
+  const attachSourceRef = useRef(false)
+  const recordingTracks = useRef<MediaStreamTrack[]>([])
   const fileBlobRef = useRef<Blob | null>(null)
   const previewUrls = useRef<{ video: string | null; final: string | null }>({ video: null, final: null })
   const bindVideo = useCallback((node: HTMLVideoElement | null) => {
@@ -284,6 +292,8 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
     phase: 'idle',
     detail: 'Not recording.',
   })
+  const [recordThisRun, setRecordThisRunState] = useState(false)
+  const [attachSourceFile, setAttachSourceState] = useState(false)
   const [evidenceNote, setEvidenceNote] = useState('No evidence has been registered in this visit.')
   const [emitted, setEmitted] = useState<ObservationDraft[]>([])
   const [traces, setTraces] = useState<ObservationTrace[]>([])
@@ -579,6 +589,9 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
     }
     const durationMs = await measureVideoDuration(blob)
     rememberVisionBlob(mediaId, blob)
+    void keepLocalMedia(mediaId, blob).catch(() => {
+      registerEvidence('The recording is held for this page. This browser did not keep a copy for later.')
+    })
     publishMedia(
       cameraRecordingDraft({
         mediaId,
@@ -614,15 +627,28 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
     })
   }
 
+  function detachRecordingTracks(): void {
+    for (const track of recordingTracks.current) track.removeEventListener('ended', onRecordingTrackEnded)
+    recordingTracks.current = []
+  }
+
+  function onRecordingTrackEnded(): void {
+    if (recordingSettled.current) return
+    registerEvidence('The camera disconnected. Recording stopped. Monitoring was not stopped.')
+    void stopRecording()
+  }
+
   function startRecording(): void {
     const stream = streamRef.current
     const mediaId = createId('media')
     recordingMediaId.current = mediaId
     recordingSettled.current = false
+    detachRecordingTracks()
     if (!stream || typeof MediaRecorder === 'undefined') {
       failRecording(mediaId, 'This browser cannot record the camera. Video evidence is not available.')
       return
     }
+    for (const track of stream.getAudioTracks()) track.enabled = false
     const mime = chooseRecorderMime((type) => MediaRecorder.isTypeSupported(type))
     recorderMime.current = mime
     try {
@@ -633,22 +659,43 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
         if (event.data.size > 0) chunks.push(event.data)
       }
       recorder.onerror = () => {
-        failRecording(mediaId, 'MediaRecorder reported an error. Video evidence is not available.')
+        failRecording(mediaId, 'MediaRecorder reported an error. Video evidence is not available. Monitoring was not stopped.')
+        try {
+          if (recorder.state !== 'inactive') recorder.stop()
+        } catch {
+          // The recorder can already be stopped.
+        }
       }
       const mediaStart = performance.now()
       recorder.start(1000)
       runOffsetRef.current = runStartOffsetFromClocks(originRef.current, mediaStart)
       recorderRef.current = recorder
+      for (const track of stream.getVideoTracks()) {
+        track.addEventListener('ended', onRecordingTrackEnded)
+        recordingTracks.current.push(track)
+      }
       if (mounted.current) {
         setRecording({
           phase: 'recording',
-          detail: `Recording locally${mime ? ` (${mime})` : ''}. Chunk arrival is not the run clock.`,
+          detail: `Recording without audio${mime ? ` (${mime})` : ''}. The run clock is separate from the recording clock.`,
         })
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Recording failed to start.'
-      failRecording(mediaId, `${message} Video evidence is not available.`)
+      failRecording(mediaId, `${message} Video evidence is not available. Monitoring was not stopped.`)
     }
+  }
+
+  function setRecordThisRun(enabled: boolean): void {
+    if (runningRef.current) return
+    recordThisRunRef.current = enabled
+    setRecordThisRunState(enabled)
+  }
+
+  function setAttachSourceFile(enabled: boolean): void {
+    if (runningRef.current) return
+    attachSourceRef.current = enabled
+    setAttachSourceState(enabled)
   }
 
   function tickSynthetic(): void {
@@ -1075,6 +1122,7 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
     const url = URL.createObjectURL(file)
     replaceUrl('video', url)
     fileBlobRef.current = file
+    setAttachSourceFile(false)
     video.srcObject = null
     video.src = url
     void video.play().catch(() => {
@@ -1234,19 +1282,26 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
       runOffsetRef.current = offset
       lastMediaTime.current = video?.currentTime ?? 0
       if (file && video) {
-        const mediaId = createId('media')
-        rememberVisionBlob(mediaId, file)
-        const durationMs = durationMsFromSeconds(video.duration)
-        publishMedia(
-          prerecordedDraft({
-            mediaId,
-            mimeType: file.type || undefined,
-            runStartOffsetMs: offset,
-            durationMs,
-            label: `Prerecorded file: ${fileName || 'video'}`,
-          }),
-        )
-        registerEvidence('Prerecorded file registered. Bytes stay in this browser session.')
+        if (attachSourceRef.current) {
+          const mediaId = createId('media')
+          rememberVisionBlob(mediaId, file)
+          void keepLocalMedia(mediaId, file).catch(() => {
+            registerEvidence('The imported file is held for this page. This browser did not keep a copy for later.')
+          })
+          const durationMs = durationMsFromSeconds(video.duration)
+          publishMedia(
+            prerecordedDraft({
+              mediaId,
+              mimeType: file.type || undefined,
+              runStartOffsetMs: offset,
+              durationMs,
+              label: `Imported file: ${fileName || 'video'}`,
+            }),
+          )
+          registerEvidence('Imported file attached for this run. It stays in this browser until publication.')
+        } else {
+          registerEvidence('Imported video is the analysis source. It is not attached for publication.')
+        }
         void video.play().catch(() => {
           setPlaybackNote('Press play on the video if the browser blocked autoplay.')
         })
@@ -1255,7 +1310,10 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
 
     if (source === 'live') {
       runOffsetRef.current = 0
-      startRecording()
+      if (recordThisRunRef.current) startRecording()
+      else if (mounted.current) {
+        setRecording({ phase: 'idle', detail: 'This run is not being recorded.' })
+      }
     }
 
     if (source === 'synthetic') {
@@ -1290,7 +1348,10 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
     holdRef.current = true
     const elapsed = lastElapsedRef.current
     void (async () => {
-      if (inputKindRef.current === 'live') await stopRecording()
+      if (inputKindRef.current === 'live') {
+        detachRecordingTracks()
+        await stopRecording()
+      }
       const current = assessmentRef.current
       callbacksRef.current.onRunComplete(
         current
@@ -1504,6 +1565,10 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
     localPhase,
     localElapsedMs,
     recording,
+    recordThisRun,
+    setRecordThisRun,
+    attachSourceFile,
+    setAttachSourceFile,
     evidenceNote,
     emitted,
     traces,

@@ -2,7 +2,6 @@ import type { FinalPlateDraft, MediaDraft, WellId, WellState } from '../shared/t
 import { WELL_IDS } from '../shared/types.ts'
 
 const RECORDER_CANDIDATES = [
-  'video/webm;codecs=vp9,opus',
   'video/webm;codecs=vp9',
   'video/webm;codecs=vp8',
   'video/webm',

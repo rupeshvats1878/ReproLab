@@ -26,14 +26,25 @@ export function validatePublish(body) {
 
 export function validateSessionPublish(body) {
   plainObject(body, 'body')
-  exactKeys(body, optionalKeys(body, [], ['notes']), 'body')
-  if (body.notes == null || body.notes === '') return { notes: null }
-  if (typeof body.notes !== 'string') throw new LibraryError('invalid', 'notes')
-  const notes = body.notes.trim()
-  if (!notes || notes.length > 500 || /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(notes) || notes.startsWith('data:')) {
-    throw new LibraryError('invalid', 'notes')
+  exactKeys(body, optionalKeys(body, [], ['notes', 'recording']), 'body')
+  let notes = null
+  if (body.notes != null && body.notes !== '') {
+    if (typeof body.notes !== 'string') throw new LibraryError('invalid', 'notes')
+    notes = body.notes.trim()
+    if (!notes || notes.length > 500 || /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(notes) || notes.startsWith('data:')) {
+      throw new LibraryError('invalid', 'notes')
+    }
   }
-  return { notes }
+  let recording = null
+  if (body.recording != null) {
+    plainObject(body.recording, 'recording')
+    exactKeys(body.recording, ['evidenceId', 'mediaId'], 'recording')
+    recording = {
+      evidenceId: prefixedId(body.recording.evidenceId, 'media_', 'evidenceId'),
+      mediaId: prefixedId(body.recording.mediaId, 'media_', 'mediaId'),
+    }
+  }
+  return { notes, recording }
 }
 
 export function validateReplication(body) {
