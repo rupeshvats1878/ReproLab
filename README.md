@@ -1,71 +1,119 @@
-# Integrated build
+# ReproLab
 
-Read **docs/INTEGRATION_HANDOFF.md first** for the current installation, fixes, verification and remaining checks. Earlier branch handoffs describe the original implementations.
+### See what happened. Review what matters. Make the next experiment better.
 
-# LabBench
+ReproLab brings the experimental procedure, camera footage, and reviewable evidence into one workspace. It helps researchers examine whether an experiment followed its approved steps, investigate possible deviations, and preserve the context needed to repeat it.
 
-LabBench is a hackathon prototype. It will watch a six-well colored-water procedure, flag possible skipped wells, keep human corrections with video evidence, and compare a run with a final plate image.
+Built for **HackPrinceton · Science & Discovery**.
 
-This repository currently contains the shared foundation only. Camera reading and review behavior are not implemented yet. The app does not claim scientific causation, clinical validation, or general laboratory reliability.
+## From procedure to evidence
 
-Two people can work at the same time. File ownership and the data contract are in [docs/INTERFACE.md](docs/INTERFACE.md). Product scope is in [docs/PRODUCT.md](docs/PRODUCT.md). Wiring is in [docs/INTEGRATION.md](docs/INTEGRATION.md).
+1. **Prepare** — Draft and approve the procedure before the experiment starts. Gemini-assisted protocol extraction is available through the local server when configured.
+2. **Monitor** — Put the experiment on camera. Record a three-cup experiment or open a local recording, keep the approved procedure alongside it, and review timestamped evidence.
+3. **Results** — Review saved monitor sessions and their recorded evidence, then publish a finished run. Recording a video alone does not create an analyzed result; finish and save the session first.
+4. **Library** — Keep published experiments and replication records in MongoDB Atlas, with optional recording attachments.
 
-## Setup on Windows
+The aim is better experimental practice: make possible mistakes easier to inspect, keep the evidence behind a decision, and help a person decide what needs correction. ReproLab is a hackathon prototype, not a validated laboratory safety system.
 
-Node.js is already installed on the integration laptop at `C:\Program Files\nodejs` and is on `PATH`. Check that before installing anything:
+## The three-cup pilot
 
-```powershell
-node -v
-npm -v
-```
+The pilot uses three physical cup identities: **RED**, **GREEN**, and **BLUE**. An identity refers to the physical container, not the current color of its contents.
 
-If `node` or `npm` is not recognized in a new terminal, add it for that session and check again:
+The Monitor places the video beside the approved procedure and an evidence timeline. Saved Gemini analysis can propose transfers and visual appearance observations. Each event can point back to the original recording, so a reviewer can inspect the action instead of trusting a summary alone.
 
-```powershell
-$env:Path = "C:\Program Files\nodejs;" + $env:Path
-node -v
-npm -v
-```
+ReproLab keeps three kinds of information separate:
 
-From the repository root:
+- **Model hypotheses:** what the analysis proposes happened, including unknown or uncertain observations.
+- **Protocol comparisons:** how proposed actions compare with the procedure selected for that experiment.
+- **Human review:** confirmations and corrections made by a person.
 
-```powershell
-cd web
-npm install
-npm test
-npm run dev
-```
+A proposed transfer does not automatically complete a protocol step. Extra events, repeated events, and ordering differences remain reviewable. Visual uniformity is not proof of chemical homogeneity, concentration, or cleanliness.
 
-Open http://localhost:5173 . The Monitor and Review tabs should render. Monitor shows an idle 2×3 bench. Review lists three synthetic demo records.
+## What works today
 
-Production build:
-
-```powershell
-cd web
-npm run build
-```
-
-Other scripts, from `web/`:
-
-```powershell
-npm run lint
-npm run preview
-```
-
-Use npm. Do not add a second package manager.
-
-## What is safe to edit
-
-| Owner | Files |
+| Area | Current behavior |
 | --- | --- |
-| Vision developer | `web/src/vision/**`, `web/src/components/Monitor.tsx`, `web/src/components/Monitor.css` |
-| Review developer | `web/src/review/**`, `web/src/components/Review.tsx`, `web/src/components/Review.css`, and `server/**` only if an optional backend is added later |
-| Integration owner | `web/src/shared/**`, `web/src/App.tsx`, `web/src/App.css`, `web/src/index.css`, package manifests, and lockfiles |
+| Camera and recordings | Webcam capture and local-file playback in the three-cup Monitor. |
+| Gemini video review | Import saved adapter results or combined recording analyses, link them to the recording, and seek timestamped evidence. This is **recorded-video review**, not continuous live Gemini inference. |
+| Recording identity | Preserve original result IDs; support hash verification or an explicit recording association, with uncertainty retained. |
+| Protocol review | Keep the selected approved procedure separate from observations and human reports. |
+| Six-well mode | An optional color-measurement demo using six manually positioned image regions and lighting/reference setup. It does not automatically find six containers. |
+| Experiment history | MongoDB-backed monitor sessions, experiment publication, and replication records. |
 
-Do not edit the other developer's files. Contract changes belong in `web/src/shared/` and `web/src/App.tsx`.
+**Current limits:** imported whole-recording analyses live in page memory and are not yet persisted into Results or Library. The local clip-check route does not initiate external video inference by default. Detection accuracy has not been established on an independently labeled evaluation set. Large recordings can be reviewed locally; publication retains the existing **80 MiB** media limit.
 
-The review controller stub is `export function useReviewController(): ReviewController` in `web/src/review/useReviewController.ts`. Replace the function body. Do not rename the export.
+## Architecture
 
-## Local files that stay off git
+```text
+React + TypeScript Monitor
+  ├─ Camera / local recording → playback and capture
+  ├─ Saved Gemini JSON → validation → evidence timeline → human review
+  ├─ Approved procedure → deterministic comparison
+  └─ Local library API → MongoDB Atlas → saved sessions and publications
 
-`recordings/`, `.env` files, and video files (`.webm`, `.mp4`, `.mov`, `.mkv`) are ignored. A blank `.env.example` is allowed later. Synthetic demo data is JSON only; it does not include video bytes.
+Local Gemini API server → protocol extraction and evidence-based explanations
+Separate video-analysis pilot → saved adapter JSON for import
+```
+
+- [`web/`](web/) — React, TypeScript, and Vite application.
+- [`server/`](server/) — local Gemini-backed protocol and explanation endpoints.
+- [`server/library/`](server/library/) — experiment, session, replication, and media APIs backed by MongoDB.
+- [`scripts/start-demo.mjs`](scripts/start-demo.mjs) — local development launcher.
+- [`web/MONITOR_POLISH_HANDOFF.md`](web/MONITOR_POLISH_HANDOFF.md) — implementation details and integration limits for the current Monitor work.
+
+The separate video-analysis implementation is maintained on [`three-cup-vision-pilot`](https://github.com/rupeshvats1878/labbench/tree/three-cup-vision-pilot/server/three-cup-vision). It is not included in this branch's source tree. Historical integration documents describe earlier checkpoints; use the code and current handoff when checking capabilities.
+
+## Run locally
+
+Use a recent Node.js release compatible with the checked-in Vite version and npm. Run these commands from the repository root:
+
+```sh
+npm --prefix web ci
+npm --prefix server/library ci
+```
+
+For persistent history, copy `server/library/.env.example` to `server/library/.env` and supply your own `MONGODB_URI` and `MONGODB_DB`. For Gemini-assisted extraction and explanations, copy `server/.env.example` to `server/.env` and supply your own API key and an accessible model. Do not commit these files. Configuring a key does not validate model access; requesting hosted AI can incur charges.
+
+Start the local services:
+
+```sh
+node scripts/start-demo.mjs
+```
+
+Open **http://localhost:5173**. The launcher uses ports **8787** for the Gemini server and **8788** for the library. It reports occupied ports rather than stopping existing processes.
+
+For frontend-only exploration:
+
+```sh
+npm --prefix web run dev
+```
+
+The interface can be explored without credentials, but persistent library operations and hosted AI features require their configured services. Camera access requires a browser permission and localhost or HTTPS.
+
+### Review a saved analysis
+
+1. Open **Monitor → Three-cup capture** and choose the approved procedure.
+2. Open the **original recording** with **Review a local recording**.
+3. Import the saved analysis JSON. Add a source-recording manifest when available.
+4. Verify or confirm the association with that recording.
+5. Use **Watch** on an event to inspect its evidence and retain human-review status.
+
+Use original-recording timestamps. Do not add a clip's source offset a second time or substitute the trimmed clip for the original media.
+
+## Tests
+
+```sh
+npm --prefix web test
+npm --prefix web run build
+npm --prefix server test
+npm --prefix server/library test
+node --test scripts/start-demo.test.mjs
+```
+
+Some database integration tests require a configured test database. Synthetic fixtures verify software behavior; they are not measurements of model accuracy on real experiments.
+
+## Data and privacy
+
+Opening a local recording does not itself upload the video. Publishing media or using a separately configured external inference workflow is a distinct action. Keep recordings, extracted frames, real response JSON, credentials, and private review artifacts out of Git. Share approved experiment records deliberately.
+
+ReproLab supports evidence-based review. It does not certify that an experiment is safe, that every mistake was detected, or that a model observation is correct.
