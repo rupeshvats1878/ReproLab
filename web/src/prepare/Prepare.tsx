@@ -13,6 +13,7 @@ const EXTRACTING_NOTICE = 'Extracting a draft. This can take up to a minute. Not
 
 export function Prepare(props: {
   onSetupMonitoring: (protocol: PreparedMonitorProtocol) => void
+  onOpenMonitor: () => void
 }) {
   const [library, setLibrary] = useState(() => readLibrary(localStorage))
   const [protocolId, setProtocolId] = useState<string | null>(null)
@@ -175,11 +176,22 @@ export function Prepare(props: {
 
   return (
     <section className="prepare-lab">
-      <h2>Prepare a protocol.</h2>
-      <p>Draft a procedure and approve it before monitoring.</p>
+      <header className="workspace-hero prepare-hero">
+        <div><p className="workspace-eyebrow">01 / Prepare</p>
+          <h2>Good science starts<br />with a <span>clear plan.</span></h2>
+          <p className="workspace-lede">Define the procedure. Capture the experiment. Keep the evidence that connects them.</p>
+        </div>
+        <div className="prepare-launch">
+          <span className="workspace-eyebrow">Ready for the bench?</span>
+          <h3>Your experiment, in focus.</h3>
+          <p>Open the three-cup workspace to choose a procedure, use your webcam, or review a recording.</p>
+          <button type="button" className="primary-action" onClick={props.onOpenMonitor}>Open Monitor <span aria-hidden="true">↗</span></button>
+        </div>
+      </header>
+      <div className="workspace-section-title"><h3>Build your procedure</h3><p>Draft, review, then approve a version.</p></div>
       <div className="prepare-entries">
-        <button type="button" className="prepare-entry primary-action" onClick={useSixWell}>
-          Six-well procedure
+        <button type="button" className="prepare-entry" onClick={useSixWell}>
+          Load six-well example
         </button>
         <button type="button" className="prepare-entry" onClick={() => document.getElementById('protocol-text')?.focus()}>
           Write a protocol
@@ -323,8 +335,9 @@ export function Prepare(props: {
           ) : null}
         </div>
         <aside>
-          <h3>Saved in this browser</h3>
-          <p>Saved only in this browser. Approving one version does not change an older one.</p>
+          <p className="workspace-eyebrow">Your workspace</p>
+          <h3>Protocol versions</h3>
+          <p>Saved in this browser. Each approved version preserves the plan you reviewed.</p>
           {library.protocols.length === 0 ? <p>No protocols saved yet.</p> : null}
           {library.protocols.map((protocol) => (
             <article key={protocol.id}>

@@ -49,3 +49,6 @@ p {
 h2 {
   line-height: 1.2;
 }
+
+body { background: radial-gradient(ellipse at 12% 0%, #20362f 0, transparent 42rem), var(--bg); }
+::selection { background: #a9e4ca; color: #142b25; }

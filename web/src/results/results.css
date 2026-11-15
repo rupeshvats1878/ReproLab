@@ -45,3 +45,9 @@
 .result-metrics span { font-size: 0.75rem; color: #b4c9bc; }
 .result-metrics strong { font-size: 1.4rem; font-weight: 550; }
 @media (max-width: 650px) { .result-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .results-empty { padding: 1.5rem 0.8rem; } }
+
+.results-block { padding: 1.25rem; border-radius: .9rem; background: #1b2932; }
+.results select, .results button, .results input { padding: .7rem .85rem; border-radius: .55rem; }
+.results-heading > p:last-child { line-height: 1.7; }
+.results-workflow { background: #18262d; margin-top: 1.4rem; }
+.results-tools { background: transparent; }

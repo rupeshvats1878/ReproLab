@@ -145,8 +145,11 @@ export function Library(props: {
 
   return (
     <section className="library-lab">
-      <h2>Experiment library</h2>
-      <p>Inspect what was recorded and repeat the procedure.</p>
+      <header className="workspace-hero">
+        <p className="workspace-eyebrow">04 / Library</p>
+        <h2>Every experiment.<br /><span>A foundation for the next.</span></h2>
+        <p className="workspace-lede">Explore published records, revisit the evidence, and carry a procedure into its next run.</p>
+      </header>
       <details className="library-note">
         <summary>About this library</summary>
         <p>Shared on this network. A finished monitor session is published from Results. This screen does not sign anyone in, and a publication is not a public website.</p>
@@ -248,7 +251,7 @@ function Browser(props: {
   if (props.status === 'error') return null
   if (props.page.experiments.length === 0) {
     return (
-      <div role="status">
+      <div className="library-empty" role="status">
         <p>{props.searching ? `No publications match “${props.query}”.` : 'No publications yet.'}</p>
         <button type="button" className="primary-action" onClick={props.onOpenResults}>Publish from Results</button>
       </div>

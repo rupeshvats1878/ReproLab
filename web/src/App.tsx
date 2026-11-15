@@ -30,19 +30,19 @@ export default function App() {
   return (
     <div className={tab === 'monitor' ? 'app-shell app-shell-monitor' : 'app-shell'}>
       <header className="app-header">
-        <div>
-          <p className="app-kicker">Prototype</p>
-          <h1>ReproLab</h1>
+        <div className="app-brand">
+          <svg className="app-mark" viewBox="0 0 40 40" fill="none" aria-hidden="true"><path d="M14 7v10L7 29a4 4 0 0 0 3.5 6h19a4 4 0 0 0 3.5-6l-7-12V7M11 7h18M12 25h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><circle cx="19" cy="29" r="2" fill="currentColor"/></svg>
+          <div><p className="app-kicker">The evidence behind the experiment</p><h1>ReproLab<span aria-hidden="true">.</span></h1></div>
         </div>
         <nav className="app-tabs" aria-label="Primary">
-          {TABS.map((item) => (
+          {TABS.map((item, index) => (
             <button
               key={item.id}
               type="button"
               aria-pressed={tab === item.id}
               onClick={() => setTab(item.id)}
             >
-              {item.label}
+              <span className="app-tab-number" aria-hidden="true">0{index + 1}</span>{item.label}
             </button>
           ))}
         </nav>
@@ -51,6 +51,7 @@ export default function App() {
       <main className="app-main">
         <div hidden={tab !== 'prepare'}>
           <Prepare
+            onOpenMonitor={() => setTab('monitor')}
             onSetupMonitoring={(protocol) => {
               setPreparedProtocol(protocol)
               setTab('monitor')

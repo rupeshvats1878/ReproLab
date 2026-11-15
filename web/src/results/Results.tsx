@@ -104,9 +104,9 @@ export function Results(props: { review: ReviewController; active: boolean; onOp
 
   return (
     <section className="results">
-      <header className="results-heading">
-        <p className="results-eyebrow">Experiment record</p>
-        <h2>From observation to evidence.</h2>
+      <header className="results-heading workspace-hero">
+        <p className="results-eyebrow workspace-eyebrow">03 / Results</p>
+        <h2>From observation<br />to <span>evidence.</span></h2>
         <p>Review what happened. Keep uncertainty visible. Share the finished record.</p>
         <details className="results-workflow">
           <summary>What happens after recording?</summary>
