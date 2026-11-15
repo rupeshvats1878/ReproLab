@@ -21,8 +21,9 @@ class ResultImportTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.bundle = fixtures.EvaluationTests().adapter_bundle()
+        self.bundle['observationScope']='full_run'
         self.envelope = self.bundle.pop('predictions')
-        self.provenance = dict(origin='mocked_fixture',sessionId=self.envelope['sessionId'],videoId=self.envelope['videoId'],clipFilename='synthetic-clip.mov',sourceOffsetMs=0,videoDurationMs=1000,originalVideoSha256='a'*64,clipSha256='b'*64,modelId=self.envelope['modelId'],adapterCommit='d'*40,attestedBy='synthetic-test',attested=True)
+        self.provenance = dict(origin='mocked_fixture',sessionId=self.envelope['sessionId'],videoId=self.envelope['videoId'],clipFilename='synthetic-clip.mov',sourceOffsetMs=0,videoDurationMs=1000,originalVideoSha256='b'*64,clipSha256='b'*64,modelId=self.envelope['modelId'],adapterCommit='d'*40,attestedBy='synthetic-test',attested=True)
         self.source = self.root/'saved.json'
         self.output = self.root/'package'
 
@@ -43,7 +44,7 @@ class ResultImportTests(unittest.TestCase):
 
     def test_both_protocols_and_unknown_identity(self):
         for number,(pairs,steps,expected) in enumerate((([('RED','BLUE'),('GREEN','BLUE')],[('RED','BLUE'),('GREEN','RED')],['MATCH','POSSIBLE_WRONG_DESTINATION']),([('GREEN','BLUE'),('BLUE','RED')],[('BLUE','RED'),('GREEN','BLUE')],['POSSIBLE_WRONG_ORDER']*2))):
-            b=fixtures.EvaluationTests().adapter_bundle(pairs); self.envelope=b.pop('predictions'); self.bundle=b; self.bundle['protocol']['steps']=[dict(sourceCupId=s,destinationCupId=d) for s,d in steps]; self.output=self.root/f'package-{number}'
+            b=fixtures.EvaluationTests().adapter_bundle(pairs); self.envelope=b.pop('predictions'); self.bundle=b; self.bundle['observationScope']='full_run'; self.bundle['protocol']['steps']=[dict(sourceCupId=s,destinationCupId=d) for s,d in steps]; self.output=self.root/f'package-{number}'
             self.package(); report=json.loads((self.output/'evaluation.json').read_text()); self.assertEqual([d['decision'] for d in report['protocolDecisions']],expected)
         self.output=self.root/'unknown'; self.envelope['events'][0]['sourceCupId']='unknown'; self.package(); self.assertEqual(json.loads((self.output/'evaluation.json').read_text())['protocolDecisions'][0]['decision'],'NEEDS_HUMAN_REVIEW')
 
