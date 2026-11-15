@@ -1,5 +1,5 @@
 import { LibraryError } from './errors.mjs'
-import { presentMonitorSession } from './monitorRecords.mjs'
+import { captureProtocolIdOf, captureProtocolLines, presentMonitorSession } from './monitorRecords.mjs'
 
 export const COMPLETION_NOTE = 'Session ended. Completed means the recording session ended, not that the experiment succeeded or was reproduced.'
 
@@ -167,16 +167,11 @@ export function experimentSummary(experiment) {
 
 const RUN_RECORD_BYTES = 1_500_000
 
-const CAPTURE_STEPS = [
-  'RED and BLUE should look uniformly mixed. GREEN will have visible streaks.',
-  'Expected transfers: RED → BLUE, then GREEN → RED.',
-]
-
 export function recordedExperimentRecord(session, notes, { id, publishedAt, shared = null }) {
   if (!session.finishedAt) throw new LibraryError('invalid_state')
   const presented = presentMonitorSession(session)
   const protocol = presented.procedureId === 'three-cup-capture'
-    ? { id: 'three-cup-capture', version: 1, title: 'Three-cup capture', steps: CAPTURE_STEPS }
+    ? { id: 'three-cup-capture', version: 1, title: 'Three-cup capture', steps: captureProtocolLines(session.captureProtocolId) }
     : session.preparedProtocol
   if (!protocol || !Array.isArray(protocol.steps)) throw new LibraryError('invalid', 'preparedProtocol')
   if (shared) {
@@ -189,6 +184,7 @@ export function recordedExperimentRecord(session, notes, { id, publishedAt, shar
   const kind = session.sourceKind === 'synthetic' ? 'demonstration' : 'recorded'
   const runRecord = {
     procedureId: presented.procedureId,
+    captureProtocolId: presented.procedureId === 'three-cup-capture' ? captureProtocolIdOf(session.captureProtocolId) : null,
     sourceKind: session.sourceKind,
     startedAtIso: session.startedAtIso ?? null,
     finishedAt: session.finishedAt,

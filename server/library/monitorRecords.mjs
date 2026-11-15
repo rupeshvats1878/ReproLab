@@ -4,6 +4,25 @@ export const SIX_WELL_ORDER = ['A1', 'A2', 'A3', 'B1', 'B2', 'B3']
 export const MONITOR_PROTOCOL_ID = 'six-well-colored-water'
 export const THREE_CUP_PROCEDURE_ID = 'three-cup-capture'
 
+const CAPTURE_PROTOCOL_LINES = {
+  'red-blue-then-green-red': [
+    'RED and BLUE should look uniformly mixed. GREEN will have visible streaks.',
+    'Expected transfers: RED → BLUE, then GREEN → RED.',
+  ],
+  'blue-red-then-green-blue': [
+    'First transfer: BLUE → RED.',
+    'Second transfer: GREEN → BLUE.',
+  ],
+}
+
+export function captureProtocolIdOf(value) {
+  return value === 'blue-red-then-green-blue' ? 'blue-red-then-green-blue' : 'red-blue-then-green-red'
+}
+
+export function captureProtocolLines(id) {
+  return [...CAPTURE_PROTOCOL_LINES[captureProtocolIdOf(id)]]
+}
+
 const CAMERA_TYPES = new Set(['observation', 'alert', 'alert_update', 'evidence'])
 const SIX_WELL_EVENT_TYPES = new Set(['observation', 'alert', 'alert_update', 'human_report'])
 
@@ -18,6 +37,7 @@ export function monitorSession(input, recordedAt) {
     sourceKind: input.sourceKind,
     procedureId,
     protocolId: procedureId,
+    captureProtocolId: procedureId === THREE_CUP_PROCEDURE_ID ? captureProtocolIdOf(input.captureProtocolId) : null,
     protocolOrder: procedureId === THREE_CUP_PROCEDURE_ID ? ['RED', 'GREEN', 'BLUE'] : [...SIX_WELL_ORDER],
     startedAtIso: input.startedAtIso,
     preparedProtocol: input.preparedProtocol ?? null,
@@ -53,8 +73,11 @@ export function appendMonitorEvent(session, input, recordedAt) {
 
 export function sameMonitorIdentity(existing, input) {
   const incomingProcedure = input.procedureId === THREE_CUP_PROCEDURE_ID ? THREE_CUP_PROCEDURE_ID : MONITOR_PROTOCOL_ID
+  const existingProtocol = procedureIdOf(existing) === THREE_CUP_PROCEDURE_ID ? captureProtocolIdOf(existing.captureProtocolId) : null
+  const incomingProtocol = incomingProcedure === THREE_CUP_PROCEDURE_ID ? captureProtocolIdOf(input.captureProtocolId) : null
   return existing.sourceKind === input.sourceKind
     && procedureIdOf(existing) === incomingProcedure
+    && existingProtocol === incomingProtocol
     && (existing.startedAtIso ?? null) === (input.startedAtIso ?? null)
     && JSON.stringify(existing.preparedProtocol ?? null) === JSON.stringify(input.preparedProtocol ?? null)
 }
@@ -90,6 +113,8 @@ export function presentMonitorSession(session) {
       ? {
           id: THREE_CUP_PROCEDURE_ID,
           order: ['RED', 'GREEN', 'BLUE'],
+          captureProtocolId: captureProtocolIdOf(session.captureProtocolId),
+          approvedSteps: captureProtocolLines(session.captureProtocolId),
           note: 'Capture only. Automatic checks are not connected. RED, GREEN, and BLUE are physical cup labels.',
         }
       : {

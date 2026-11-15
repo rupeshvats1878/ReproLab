@@ -302,18 +302,22 @@ const PROCEDURE_IDS = ['six-well-colored-water', 'three-cup-capture']
 
 export function validateMonitorSession(body) {
   plainObject(body, 'body')
-  exactKeys(body, optionalKeys(body, ['sessionId', 'sourceKind'], ['startedAtIso', 'preparedProtocol', 'procedureId']), 'body')
+  exactKeys(body, optionalKeys(body, ['sessionId', 'sourceKind'], ['startedAtIso', 'preparedProtocol', 'procedureId', 'captureProtocolId']), 'body')
   if (!MONITOR_SOURCES.includes(body.sourceKind)) throw new LibraryError('invalid', 'sourceKind')
   const procedureId = body.procedureId === undefined ? 'six-well-colored-water' : body.procedureId
   if (!PROCEDURE_IDS.includes(procedureId)) throw new LibraryError('invalid', 'procedureId')
   if (procedureId === 'three-cup-capture' && body.preparedProtocol !== undefined) {
     throw new LibraryError('invalid', 'preparedProtocol')
   }
+  if (body.captureProtocolId !== undefined && (procedureId !== 'three-cup-capture' || (body.captureProtocolId !== 'red-blue-then-green-red' && body.captureProtocolId !== 'blue-red-then-green-blue'))) {
+    throw new LibraryError('invalid', 'captureProtocolId')
+  }
   return {
     sessionId: prefixedId(body.sessionId, 'session_', 'sessionId'),
     sourceKind: body.sourceKind,
     startedAtIso: body.startedAtIso === undefined ? null : monitorInstant(body.startedAtIso),
     procedureId,
+    captureProtocolId: body.captureProtocolId,
     preparedProtocol: body.preparedProtocol === undefined ? null : preparedProtocol(body.preparedProtocol),
   }
 }
@@ -356,6 +360,7 @@ export function validateMonitorEvent(body) {
 const CAPTURE_MARKERS = {
   green_streaks: { cups: ['GREEN'], label: 'Visible streaks in GREEN' },
   transfer_red_to_blue: { cups: ['RED', 'BLUE'], label: 'RED → BLUE transfer' },
+  transfer_blue_to_red: { cups: ['BLUE', 'RED'], label: 'BLUE → RED transfer' },
   transfer_green_to_red: { cups: ['GREEN', 'RED'], label: 'GREEN → RED transfer' },
   transfer_green_to_blue: { cups: ['GREEN', 'BLUE'], label: 'GREEN → BLUE transfer' },
 }

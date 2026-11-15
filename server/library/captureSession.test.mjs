@@ -99,3 +99,53 @@ test('a three-cup capture stores human markers and rejects six-well judgments', 
     server.close()
   }
 })
+
+test('a capture session freezes the selected procedure and keeps an older session on the first procedure', async () => {
+  const server = await listen(createMemoryStore())
+  const second = 'session_5a5a5a5a-5a5a-5a5a-8a5a-5a5a5a5a5a5a'
+  try {
+    const created = await ask(server, 'POST', '/monitor-sessions', {
+      sessionId: second,
+      sourceKind: 'prerecorded',
+      procedureId: 'three-cup-capture',
+      captureProtocolId: 'blue-red-then-green-blue',
+      startedAtIso: '2026-11-14T23:40:00.000Z',
+    })
+    assert.equal(created.status, 201)
+    assert.equal(created.body.protocol.captureProtocolId, 'blue-red-then-green-blue')
+    assert.equal(created.body.protocol.approvedSteps[0].includes('BLUE → RED'), true)
+    const changed = await ask(server, 'POST', '/monitor-sessions', {
+      sessionId: second,
+      sourceKind: 'prerecorded',
+      procedureId: 'three-cup-capture',
+      captureProtocolId: 'red-blue-then-green-red',
+      startedAtIso: '2026-11-14T23:40:00.000Z',
+    })
+    assert.equal(changed.status, 409)
+    const marker = await ask(server, 'POST', `/monitor-sessions/${second}/events`, {
+      id: 'marker_5b5b5b5b-5b5b-5b5b-8b5b-5b5b5b5b5b5b',
+      type: 'human_marker',
+      marker: 'transfer_blue_to_red',
+      observationTimestamp: 1000,
+    })
+    assert.equal(marker.status, 201)
+    assert.deepEqual(marker.body.humanMarkers[0].cups, ['BLUE', 'RED'])
+    await ask(server, 'POST', `/monitor-sessions/${second}/finish`, {})
+    const published = await ask(server, 'POST', `/monitor-sessions/${second}/publish`, { notes: 'Second procedure.' })
+    assert.equal(published.status, 201)
+    assert.equal(published.body.runRecord.captureProtocolId, 'blue-red-then-green-blue')
+    assert.equal(published.body.protocolSnapshot.steps[0].instruction.includes('BLUE → RED'), true)
+    assert.equal(published.body.protocolSnapshot.steps[1].instruction.includes('GREEN → BLUE'), true)
+
+    const older = await ask(server, 'POST', '/monitor-sessions', {
+      sessionId: SESSION,
+      sourceKind: 'live',
+      procedureId: 'three-cup-capture',
+      startedAtIso: '2026-11-14T23:20:00.000Z',
+    })
+    assert.equal(older.status, 201)
+    assert.equal(older.body.protocol.captureProtocolId, 'red-blue-then-green-red')
+  } finally {
+    server.close()
+  }
+})

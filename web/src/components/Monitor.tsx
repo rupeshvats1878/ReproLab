@@ -9,7 +9,7 @@ import type { PreparedMonitorProtocol } from '../prepare/sixWell.ts'
 import { formatRgb, rgbToCss, COLOR_PRESETS, type ColorPresetId } from '../vision/color.ts'
 import { normalizedToContent, type WellRegions } from '../vision/geometry.ts'
 import { SYNTHETIC_SEQUENCES } from '../vision/synthetic.ts'
-import { CAPTURE_MARKERS, compareHumanMarker, recordingSeekSeconds, THREE_CUP_CUPS, THREE_CUP_DEMO_PLAN, THREE_CUP_EXPECTED } from '../capture/threeCup.ts'
+import { CAPTURE_MARKERS, CAPTURE_PROTOCOLS, compareHumanMarker, DEFAULT_CAPTURE_PROTOCOL_ID, recordingSeekSeconds, THREE_CUP_DEMO_PLAN, captureProtocol } from '../capture/threeCup.ts'
 import { useVisionSession, type VisionSession } from '../vision/useVisionSession.ts'
 import type { WellMeasurement } from '../vision/analyze.ts'
 import type { PixelRect } from '../vision/geometry.ts'
@@ -127,6 +127,11 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
           playsInline
           muted
           controls={session.inputKind === 'prerecorded'}
+          onError={() => {
+            if (session.inputKind === 'prerecorded') {
+              session.reportPlaybackError('This browser could not play that file. The original file was not changed.')
+            }
+          }}
         />
         <canvas
           ref={session.bindCanvas}
@@ -168,6 +173,10 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
               </button>
             ) : null}
           </p>
+          {session.mediaNotice ? <p className="media-notice">{session.mediaNotice}</p> : null}
+          {session.playbackNotice ? (
+            <p className="media-notice" role="alert">{session.playbackNotice}</p>
+          ) : null}
           {session.seekMessage ? (
             <p className="attention-note" role="alert">
               {session.seekMessage}
@@ -892,21 +901,38 @@ function setupPrompt(step: SetupStep, pictureReady: boolean): string {
 function CapturePanel({ session, running }: { session: VisionSession; running: boolean }) {
   const previewUrl = useObjectUrl(session.localRecording)
   const previewRef = useRef<HTMLVideoElement>(null)
+  const [seekNotice, setSeekNotice] = useState('')
+  const protocol = captureProtocol(session.captureProtocolId)
   const latest = session.markers.at(-1) ?? null
-  const latestComparison = latest ? compareHumanMarker(latest.marker) : null
+  const latestComparison = latest ? compareHumanMarker(latest.marker, session.captureProtocolId) : null
   const namedCups = latest ? markerCups(latest.marker) : []
-  const seekSeconds = latest
-    ? recordingSeekSeconds(latest.observationTimestamp, session.runStartOffsetMs, session.recordingDurationMs)
-    : null
-  function reviewMoment(): void {
-    const video = previewRef.current
-    if (!video || seekSeconds == null) return
-    const apply = () => {
-      video.currentTime = seekSeconds
-      void video.play().catch(() => undefined)
+  const canReport = running || session.reviewFile != null
+  function watch(observationTimestamp: number): void {
+    if (session.inputKind === 'prerecorded') {
+      session.seekStage(observationTimestamp)
+      return
     }
-    if (video.readyState >= 1) apply()
-    else video.addEventListener('loadedmetadata', apply, { once: true })
+    const video = previewRef.current
+    if (!video) {
+      setSeekNotice('Review after the recording stops.')
+      return
+    }
+    if (video.readyState < 1 || !Number.isFinite(video.duration)) {
+      setSeekNotice('The video time is not loaded yet.')
+      return
+    }
+    const seconds = recordingSeekSeconds(observationTimestamp, session.runStartOffsetMs, session.recordingDurationMs ?? Math.round(video.duration * 1000))
+    if (seconds == null) {
+      setSeekNotice('That time is outside the recording.')
+      return
+    }
+    try {
+      video.currentTime = seconds
+      setSeekNotice('')
+      void video.play().catch(() => setSeekNotice('Press play if the browser blocked playback.'))
+    } catch {
+      setSeekNotice('Playback did not move to that time.')
+    }
   }
   return (
     <>
@@ -923,37 +949,28 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
             ) : null}
           </>
         ) : (
-          <p>No observation yet.</p>
+          <p className="decision-title">No observation yet.</p>
         )}
         <details>
           <summary>Status</summary>
-          <p>Automatic check unavailable. A missing result is not a verdict.</p>
+          <p>No observation request is in flight. A missing result is not a verdict.</p>
         </details>
       </section>
       <section className="protocol-compare" aria-label="Protocol comparison">
         <h3>Expected</h3>
-        <p>{THREE_CUP_CUPS.join(', ')}</p>
+        <p>{protocol.title}</p>
         <ol className="plain-list">
-          {THREE_CUP_EXPECTED.map((line) => <li key={line}>{line}</li>)}
+          {protocol.lines.map((line) => <li key={line}>{line}</li>)}
         </ol>
         {latest && latestComparison ? (
           <p data-relation={latestComparison.relation}>{latestComparison.relation}</p>
         ) : (
           <p>No report to compare.</p>
         )}
-        {latest && latestComparison?.relation === 'differs from the expected transfer' ? (
-          previewUrl && seekSeconds != null ? (
-            <button type="button" onClick={reviewMoment}>Review this moment</button>
-          ) : previewUrl ? (
-            <p>Outside the recording.</p>
-          ) : (
-            <p>Review after the recording stops.</p>
-          )
-        ) : null}
         {latestComparison ? (
           <details>
             <summary>Comparison</summary>
-            <p>{latestComparison.expectedStep} {latestComparison.review}</p>
+            <p>{latestComparison.review}</p>
           </details>
         ) : null}
       </section>
@@ -961,27 +978,36 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
         <h3>Report</h3>
         <div className="button-row">
           {CAPTURE_MARKERS.map((marker) => (
-            <button key={marker.id} type="button" onClick={() => session.addMarker(marker.id)} disabled={!running}>
+            <button key={marker.id} type="button" onClick={() => session.addMarker(marker.id)} disabled={!canReport}>
               {marker.label}
             </button>
           ))}
         </div>
       </section>
+      {seekNotice ? <p className="media-notice" role="alert">{seekNotice}</p> : null}
       <EvidenceStream
         empty="No person report yet."
         items={session.markers.map((marker) => {
-          const comparison = compareHumanMarker(marker.marker)
+          const comparison = compareHumanMarker(marker.marker, session.captureProtocolId)
           return {
             id: marker.id,
             time: formatSeconds(marker.observationTimestamp),
             source: 'Person',
             title: marker.label,
-            detail: comparison.relation,
+            detail: comparison.review,
+            onWatch: () => watch(marker.observationTimestamp),
           }
         })}
       />
       {previewUrl ? (
-        <video ref={previewRef} className="decision-preview" src={previewUrl} controls playsInline />
+        <video
+          ref={previewRef}
+          className="decision-preview"
+          src={previewUrl}
+          controls
+          playsInline
+          onError={() => setSeekNotice('This browser could not play the local recording. The original file was not changed.')}
+        />
       ) : null}
       <div className="button-row">
         <button type="button" onClick={session.downloadRecording} disabled={!session.localRecording}>Download recording</button>
@@ -995,7 +1021,7 @@ function markerCups(marker: string): string[] {
   return CAPTURE_MARKERS.find((item) => item.id === marker)?.cups.slice() ?? []
 }
 
-function EvidenceStream({ items, empty }: { items: Array<{ id: string; time: string; source: string; title: string; detail: string }>; empty: string }) {
+function EvidenceStream({ items, empty }: { items: Array<{ id: string; time: string; source: string; title: string; detail: string; onWatch?: () => void }>; empty: string }) {
   return (
     <section aria-label="Evidence">
       <h3>Evidence</h3>
@@ -1006,6 +1032,7 @@ function EvidenceStream({ items, empty }: { items: Array<{ id: string; time: str
               <span className="state-badge">{item.source}</span>
               <span>{item.time}</span>
               <strong>{item.title}</strong>
+              {item.onWatch ? <button type="button" onClick={item.onWatch}>Watch</button> : null}
               <details>
                 <summary>Details</summary>
                 <p>{item.detail}</p>
@@ -1062,8 +1089,48 @@ function CameraSetup({
           />
           Record this run
         </label>
+        <fieldset className="protocol-choice">
+          <legend>Approved procedure</legend>
+          {CAPTURE_PROTOCOLS.map((item) => (
+            <label key={item.id}>
+              <input
+                type="radio"
+                name="capture-protocol"
+                value={item.id}
+                checked={session.captureProtocolId === item.id}
+                disabled={session.protocolFrozen || session.localPhase === 'running'}
+                onChange={() => session.selectCaptureProtocol(item.id)}
+              />
+              {item.title}
+            </label>
+          ))}
+        </fieldset>
+        {session.protocolFrozen ? <p className="monitor-note">This session keeps the selected procedure.</p> : null}
+        <label className="file-field">
+          Review a local recording
+          <input
+            type="file"
+            accept="video/mp4,video/webm,video/quicktime,.mov,.mp4,.webm"
+            disabled={session.localPhase === 'running'}
+            onChange={(event) => {
+              const file = event.target.files?.[0]
+              if (file) session.openCaptureReview(file)
+              event.target.value = ''
+            }}
+          />
+        </label>
+        {session.reviewFile ? (
+          <button type="button" onClick={session.clearCaptureReview} disabled={session.localPhase === 'running'}>
+            Clear review file
+          </button>
+        ) : null}
         <p className="monitor-note">Records the camera without audio. Cup names stay the physical labels.</p>
-        <p className="monitor-note">Demo plan, separate from the approved procedure: {THREE_CUP_DEMO_PLAN}</p>
+        {session.captureProtocolId === DEFAULT_CAPTURE_PROTOCOL_ID ? (
+          <details>
+            <summary>Demo plan, not an approved step</summary>
+            <p>{THREE_CUP_DEMO_PLAN}</p>
+          </details>
+        ) : null}
         <button type="button" className="primary-action" onClick={session.startRun} disabled={!session.canStartRun || session.inputKind !== 'live'}>
           Start capture
         </button>

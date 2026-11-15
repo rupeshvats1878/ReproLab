@@ -63,9 +63,31 @@ describe('three-cup annotation export', () => {
     const comparison = compareHumanMarker('transfer_green_to_blue')
     expect(comparison.source).toBe('human')
     expect(comparison.relation).toBe('differs from the expected transfer')
-    expect(comparison.expectedStep).toBe('The second expected transfer is GREEN → RED.')
+    expect(comparison.expectedStep).toMatch(/RED → BLUE/)
+    expect(comparison.expectedStep).toMatch(/GREEN → RED/)
     expect(comparison.expectedStep).not.toMatch(/plan|deliberately/)
-    expect(comparison.review).toMatch(/not a detected pour/)
+    expect(comparison.review).toMatch(/does not complete/)
+    expect(comparison.stepNumber).toBeNull()
+    const secondProcedure = compareHumanMarker('transfer_green_to_blue', 'blue-red-then-green-blue')
+    expect(secondProcedure.relation).toBe('matches the expected transfer')
+    expect(secondProcedure.stepNumber).toBe(2)
+    expect(secondProcedure.review).toMatch(/does not complete/)
+    const extra = compareHumanMarker('transfer_red_to_blue', 'blue-red-then-green-blue')
+    expect(extra.relation).toBe('differs from the expected transfer')
+    expect(extra.stepNumber).toBeNull()
+    const firstOfSecond = compareHumanMarker('transfer_blue_to_red', 'blue-red-then-green-blue')
+    expect(firstOfSecond.stepNumber).toBe(1)
+    expect(firstOfSecond.review).toMatch(/does not complete/)
+    const recorded = annotationDocument({
+      sessionId: 'session_2',
+      captureProtocolId: 'blue-red-then-green-blue',
+      runStartOffsetMs: 0,
+      markers: [],
+    })
+    expect(recorded.captureProtocolId).toBe('blue-red-then-green-blue')
+    expect(recorded.expectedProcedure.join(' ')).toMatch(/BLUE → RED/)
+    expect(recorded.expectedProcedure.join(' ')).toMatch(/GREEN → BLUE/)
+    expect(recorded.expectedProcedure.join(' ')).not.toMatch(/deliberately|plan/)
     expect(compareHumanMarker('transfer_red_to_blue').relation).toBe('matches the expected transfer')
     expect(compareHumanMarker('green_streaks').relation).toBe('appearance report')
   })

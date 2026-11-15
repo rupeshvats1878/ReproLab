@@ -69,7 +69,7 @@ import {
   resetDemoPresentation,
   setPauseOnIssue as pausePreference,
 } from '../monitor/demoPause.ts'
-import { annotationDocument, markerDefinition, THREE_CUP_PROCEDURE_ID, type CaptureMarkerId, type CaptureMarkerRecord } from '../capture/threeCup.ts'
+import { annotationDocument, DEFAULT_CAPTURE_PROTOCOL_ID, localReviewNotice, markerDefinition, recordingSeekSeconds, THREE_CUP_PROCEDURE_ID, type CaptureMarkerId, type CaptureMarkerRecord, type CaptureProtocolId } from '../capture/threeCup.ts'
 import { keepLocalMedia } from '../review/store.ts'
 import { durationNeedsRepair, patchWebmDuration } from './webmDuration.ts'
 import { ObservationEmitter, ReadingStabilizer, readingsOf } from './stabilize.ts'
@@ -147,6 +147,16 @@ export interface VisionSession {
   setFinalSeparate: (enabled: boolean) => void
   procedureMode: 'six-well' | 'three-cup'
   setProcedureMode: (mode: 'six-well' | 'three-cup') => void
+  captureProtocolId: CaptureProtocolId
+  protocolFrozen: boolean
+  selectCaptureProtocol: (id: CaptureProtocolId) => void
+  reviewFile: { name: string; bytes: number } | null
+  mediaNotice: string
+  playbackNotice: string
+  openCaptureReview: (file: File) => void
+  clearCaptureReview: () => void
+  seekStage: (observationTimestamp: number) => void
+  reportPlaybackError: (message: string) => void
   markers: CaptureMarkerRecord[]
   addMarker: (marker: CaptureMarkerId) => void
   localRecording: Blob | null
@@ -312,6 +322,15 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
   })
   const [recordThisRun, setRecordThisRunState] = useState(false)
   const [procedureMode, setProcedureModeState] = useState<'six-well' | 'three-cup'>('six-well')
+  const [captureProtocolId, setCaptureProtocolId] = useState<CaptureProtocolId>(DEFAULT_CAPTURE_PROTOCOL_ID)
+  const captureProtocolRef = useRef<CaptureProtocolId>(DEFAULT_CAPTURE_PROTOCOL_ID)
+  const [protocolFrozen, setProtocolFrozen] = useState(false)
+  const protocolFrozenRef = useRef(false)
+  const [reviewFile, setReviewFile] = useState<{ name: string; bytes: number } | null>(null)
+  const reviewOpenRef = useRef(false)
+  const [mediaNotice, setMediaNotice] = useState('')
+  const [playbackNotice, setPlaybackNotice] = useState('')
+  const ignoreVideoErrorRef = useRef(false)
   const [markers, setMarkers] = useState<CaptureMarkerRecord[]>([])
   const [localRecording, setLocalRecording] = useState<Blob | null>(null)
   const [attachSourceFile, setAttachSourceState] = useState(false)
@@ -741,6 +760,7 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
 
   function setProcedureMode(mode: 'six-well' | 'three-cup'): void {
     if (runningRef.current || mode === procedureRef.current) return
+    if (mode !== 'three-cup' && reviewOpenRef.current) clearCaptureReview()
     procedureRef.current = mode
     setProcedureModeState(mode)
     setMarkers([])
@@ -748,14 +768,103 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
     if (mode === 'three-cup') setRecordThisRun(true)
   }
 
+  function selectCaptureProtocol(id: CaptureProtocolId): void {
+    if (runningRef.current || protocolFrozenRef.current) return
+    if (id !== 'red-blue-then-green-red' && id !== 'blue-red-then-green-blue') return
+    captureProtocolRef.current = id
+    setCaptureProtocolId(id)
+  }
+
+  function freezeCaptureProtocol(): void {
+    protocolFrozenRef.current = true
+    setProtocolFrozen(true)
+  }
+
+  function openCaptureReview(file: File): void {
+    if (procedureRef.current !== 'three-cup' || runningRef.current || !videoRef.current) return
+    ignoreVideoErrorRef.current = false
+    useVideoFile(file)
+    reviewOpenRef.current = true
+    setReviewFile({ name: file.name, bytes: file.size })
+    freezeCaptureProtocol()
+    assignRunOffset(0)
+    setMediaNotice(localReviewNotice(file.name, file.size))
+    setPlaybackNotice('')
+  }
+
+  function clearCaptureReview(): void {
+    if (runningRef.current) return
+    reviewOpenRef.current = false
+    setReviewFile(null)
+    protocolFrozenRef.current = false
+    setProtocolFrozen(false)
+    setMediaNotice('')
+    setPlaybackNotice('')
+    inputKindRef.current = 'none'
+    setInputKind('none')
+    const video = videoRef.current
+    if (video) {
+      ignoreVideoErrorRef.current = true
+      video.pause()
+      video.removeAttribute('src')
+      video.load()
+    }
+    replaceUrl('video', null)
+    fileBlobRef.current = null
+    setFileName('')
+    setCameraPhase('idle')
+    setCameraMessage('Camera is off.')
+    setPlaybackNote('')
+    setRecording({ phase: 'idle', detail: 'Not recording.' })
+  }
+
+  function reportPlaybackError(message: string): void {
+    if (ignoreVideoErrorRef.current) return
+    setPlaybackNotice(message)
+  }
+
+  function seekStage(observationTimestamp: number): void {
+    const video = videoRef.current
+    if (!video || video.error) {
+      setPlaybackNotice('Playback is unavailable.')
+      return
+    }
+    if (video.readyState < 1 || !Number.isFinite(video.duration) || video.duration <= 0) {
+      setPlaybackNotice('The video time is not loaded yet.')
+      return
+    }
+    const seconds = recordingSeekSeconds(observationTimestamp, 0, Math.round(video.duration * 1000))
+    if (seconds == null) {
+      setPlaybackNotice('That time is outside the recording.')
+      return
+    }
+    try {
+      video.currentTime = seconds
+      setPlaybackNotice('')
+      void video.play().catch(() => setPlaybackNotice('Press play if the browser blocked playback.'))
+    } catch {
+      setPlaybackNotice('Playback did not move to that time.')
+    }
+  }
+
   function addMarker(marker: CaptureMarkerId): void {
-    if (procedureRef.current !== 'three-cup' || !runningRef.current) return
+    const reviewing = reviewOpenRef.current && inputKindRef.current === 'prerecorded'
+    if (procedureRef.current !== 'three-cup' || (!runningRef.current && !reviewing)) return
     const defined = markerDefinition(marker)
     if (!defined) return
+    let observationTimestamp = Math.max(0, lastElapsedRef.current)
+    if (reviewing) {
+      const video = videoRef.current
+      if (!video || video.readyState < 1 || !Number.isFinite(video.duration)) {
+        setPlaybackNotice('The video time is not loaded yet. The report was not saved.')
+        return
+      }
+      observationTimestamp = Math.round(video.currentTime * 1000)
+    }
     const record: CaptureMarkerRecord = {
       id: `marker_${crypto.randomUUID()}`,
       marker,
-      observationTimestamp: Math.max(0, lastElapsedRef.current),
+      observationTimestamp,
       cups: [...defined.cups],
       label: defined.label,
     }
@@ -775,6 +884,7 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
       runStartOffsetMs: runOffsetRef.current,
       durationMs: recordingDurationRef.current,
       mediaId: recordingMediaId.current,
+      captureProtocolId: captureProtocolRef.current,
     })
     downloadBlob(new Blob([JSON.stringify(document, null, 2)], { type: 'application/json' }), 'three-cup-annotations.json')
   }
@@ -1385,11 +1495,14 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
     const monitor = liveRef.current
     if (monitor.sourceKind === 'live' || monitor.sourceKind === 'prerecorded' || monitor.sourceKind === 'synthetic') {
       const capture = procedureRef.current === 'three-cup'
+      if (capture) freezeCaptureProtocol()
       monitorSaver().open({
         sessionId: monitor.sessionId,
         sourceKind: monitor.sourceKind,
         startedAtIso,
-        ...(capture ? { procedureId: THREE_CUP_PROCEDURE_ID } : { preparedProtocol: preparedRef.current }),
+        ...(capture
+          ? { procedureId: THREE_CUP_PROCEDURE_ID, captureProtocolId: captureProtocolRef.current }
+          : { preparedProtocol: preparedRef.current }),
       })
     }
     callbacksRef.current.onRunStart({
@@ -1692,6 +1805,16 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
     recording,
     procedureMode,
     setProcedureMode,
+    captureProtocolId,
+    protocolFrozen,
+    selectCaptureProtocol,
+    reviewFile,
+    mediaNotice,
+    playbackNotice,
+    openCaptureReview,
+    clearCaptureReview,
+    seekStage,
+    reportPlaybackError,
     markers,
     addMarker,
     localRecording,

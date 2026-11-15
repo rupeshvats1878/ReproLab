@@ -338,6 +338,11 @@ function PublishRun({ session, onOpenLibrary }: { session: RetrievedMonitor; onO
           {session.preparedProtocol.steps.map((instruction) => <li key={instruction}>{instruction}</li>)}
         </ol>
       ) : null}
+      {capture && session.protocol?.approvedSteps?.length ? (
+        <ol>
+          {session.protocol.approvedSteps.map((instruction) => <li key={instruction}>{instruction}</li>)}
+        </ol>
+      ) : null}
       <p>{session.observations?.length ?? 0} recorded observations. {alerts.length} deviations. {corrections} observed corrections. {reports.length} human reports.</p>
       {unresolved.length > 0 ? (
         <ul>
@@ -362,7 +367,7 @@ function PublishRun({ session, onOpenLibrary }: { session: RetrievedMonitor; onO
             />
             Include recording ({formatByteSize(localFile.size)}). Limit {formatByteSize(SHARED_RECORDING_LIMIT_BYTES)}.
           </label>
-          {overLimit ? <p role="alert">This file is over the library limit, so it cannot be included. You can still publish the run.</p> : null}
+          {overLimit ? <p role="alert">This file is over the 80 MiB library limit, so it cannot be included. The original stays on this computer. Publish the notes without the video, or use a smaller file.</p> : null}
         </div>
       ) : recording ? (
         <p>A recording was saved for this browser, but the file is not available now. Publishing will not include it.</p>

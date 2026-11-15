@@ -14,6 +14,7 @@ interface SessionBody {
   startedAtIso: string
   preparedProtocol?: PreparedMonitorProtocol | null
   procedureId?: 'six-well-colored-water' | 'three-cup-capture'
+  captureProtocolId?: 'red-blue-then-green-red' | 'blue-red-then-green-blue'
 }
 
 const MONITOR_INDEX_KEY = 'reprolab-monitor-session-index'
@@ -109,7 +110,7 @@ export function createMonitorSaver(notify: (status: SaveStatus) => void, fetchIm
           sourceKind: input.sourceKind,
           startedAtIso: input.startedAtIso,
           ...(input.preparedProtocol ? { preparedProtocol: input.preparedProtocol } : {}),
-          ...(input.procedureId === 'three-cup-capture' ? { procedureId: input.procedureId } : {}),
+          ...(input.procedureId === 'three-cup-capture' ? { procedureId: input.procedureId, captureProtocolId: input.captureProtocolId } : {}),
         })
         if (typeof sessionStorage !== 'undefined') {
           sessionStorage.setItem(BROWSER_MONITOR_SESSION_KEY, input.sessionId)
@@ -295,6 +296,7 @@ export interface RetrievedMonitor {
   blockedReason?: string | null
   finishedAt?: string | null
   procedureId?: string
+  protocol?: { captureProtocolId?: string; approvedSteps?: string[] }
   humanMarkers?: Array<{ id?: string; marker?: string; label?: string; cups?: string[]; observationTimestamp?: number; provenance?: string }>
   preparedProtocol?: {
     id: string
