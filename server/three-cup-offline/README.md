@@ -1,6 +1,6 @@
 # Three-cup offline tools
 
-Python 3.11+ standard library only. Tested on Windows with Python 3.15.2.
+Import and scoring use Python 3.11+ standard library only. Tested on Windows with Python 3.15.2.
 These tools import human point annotations and score human-reviewed presegmented clips.
 The reviewed starter scorer informed the lookup and abstention logic. Its tests were
 adapted to explicit event types and reviewed clip identities.
@@ -101,5 +101,34 @@ known truth only. All output is strict JSON.
 ## Limits
 
 Synthetic tests establish software behavior. Held-out accuracy is not evaluated.
-Appearance calibration and optional ArUco work are deferred after the prioritized A/B
-handoff. No dependency installation or app service is needed for this checkpoint.
+Appearance calibration and optional ArUco work remain pending. No dependency installation or app service is needed for this checkpoint.
+
+## Appearance measurement follow-up
+
+appearance.py accepts a decoded still image and an explicitly selected physical
+cup identity, liquid ROI, frame ID and original-recording timestamp. The timestamp
+is operator-supplied and must come from the source media. There is no idx/FPS
+timestamp inference. Assess a stationary pre-transfer frame.
+
+Install optional dependencies into the local venv:
+
+    server/three-cup-offline/.venv/Scripts/python.exe -m pip install -r server/three-cup-offline/requirements.txt
+
+These exact pins were installed and tested on Windows Python 3.15.2. Other
+platform/Python combinations remain unverified. macOS uses .venv/bin/python.
+
+    server/three-cup-offline/.venv/Scripts/python.exe server/three-cup-offline/appearance.py --image server/three-cup-offline/local/frame.png --roi 100 100 80 80 --cup RED --frame-id take1-frame1 --time-ms 1200
+
+The metric is RMS Euclidean dispersion of sixteen 4-by-4-grid cell means in float
+CIELAB color space, including lightness. Uneven lighting can increase it. Small
+streaks can average out within cells. Output records the manual crop, time source,
+method version, raw score, Laplacian variance and near-white/near-black pixel
+fractions. These quality measurements have no validated rejection thresholds.
+Near-white pixels can be liquid/background rather than glare. Sharpness does not
+establish motion, hand visibility or occlusion. Human quality review is required.
+Every appearance label remains unclear until setup-specific calibration exists.
+Synthetic uniform and striped fixtures test numerical behavior only.
+
+The full test suite now requires the optional dependencies. To run just the
+standard-library importer/scorer tests, use unittest discover with
+-p test_offline.py. No real appearance accuracy has been measured.

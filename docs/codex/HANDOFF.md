@@ -52,3 +52,17 @@ review a real annotation/recording pair before using results as evidence.
 Ryan's measured service contract is needed for live model integration.
 LIVE_MONITOR_DIRECTION.md records Rupesh's requested real-time visual product
 direction for Cursor, including the decisions panel on the right.
+
+## Concurrent appearance follow-up
+
+After the user confirmed Cursor was running on the UI, Codex added appearance.py
+in its separate worktree. OpenCV-contrib 5.0.0.93 and NumPy 2.5.4 were installed
+only into the ignored local venv on Windows Python 3.15.2. requirements.txt records
+those tested pins. Manual liquid ROI measurement emits raw CIELAB cell dispersion,
+quality measurements, explicit operator-supplied source time and an unclear label.
+
+The warning-strict unittest discovery command above passed 22 tests. Appearance
+CLI help and a temporary synthetic image CLI smoke test passed. No real footage
+was used. Calibration, optional marker recognition and real-media validation remain
+pending. Cursor's UI progress is known only from the user's confirmation that it
+is running. This update does not verify its implementation.
