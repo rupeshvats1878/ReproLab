@@ -61,6 +61,13 @@ import {
 } from '../monitor/liveDecisions.ts'
 import { observationEvent } from '../monitor/persistEvents.ts'
 import { createMonitorSaver, type SaveStatus } from '../monitor/saveSession.ts'
+import {
+  afterSyntheticObservation,
+  continueDemoPlayback,
+  initialDemoPresentation,
+  resetDemoPresentation,
+  setPauseOnIssue as pausePreference,
+} from '../monitor/demoPause.ts'
 import { ObservationEmitter, ReadingStabilizer, readingsOf } from './stabilize.ts'
 import { SYNTHETIC_SEQUENCES, type SyntheticFrame } from './synthetic.ts'
 
@@ -111,6 +118,12 @@ export interface VisionSession {
   saveStatus: SaveStatus
   syntheticPace: 1 | 2 | 4
   setSyntheticPace: (pace: 1 | 2 | 4) => void
+  pauseOnIssue: boolean
+  setPauseOnIssue: (enabled: boolean) => void
+  demoPaused: boolean
+  continueDemo: () => void
+  correctionNote: string | null
+  summaryHeld: boolean
   sampleMs: number
   lastProcessingMs: number
   monitorGeneration: number
@@ -208,6 +221,12 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
   const syntheticTimer = useRef<number | null>(null)
   const syntheticPaceRef = useRef<1 | 2 | 4>(4)
   const [syntheticPace, setSyntheticPaceState] = useState<1 | 2 | 4>(4)
+  const presentationRef = useRef(initialDemoPresentation())
+  const summaryTimer = useRef<number | null>(null)
+  const [pauseOnIssue, setPauseOnIssueState] = useState(true)
+  const [demoPaused, setDemoPaused] = useState(false)
+  const [correctionNote, setCorrectionNote] = useState<string | null>(null)
+  const [summaryHeld, setSummaryHeld] = useState(false)
   const syntheticFrames = useRef<SyntheticFrame[]>([])
   const syntheticIndex = useRef(0)
   const inputKindRef = useRef<VisionSession['inputKind']>('none')
@@ -290,13 +309,15 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
 
   const observationStatus = seekMessage
     ? 'Monitoring session blocked'
-    : observationPaused
-      ? 'Observations paused'
-      : localPhase === 'running'
-        ? 'Observing'
-        : localPhase === 'completed'
-          ? 'Run completed'
-          : 'Idle'
+    : demoPaused
+      ? 'Demo paused'
+      : observationPaused
+        ? 'Observations paused'
+        : localPhase === 'running'
+          ? 'Observing'
+          : localPhase === 'completed'
+            ? 'Run completed'
+            : 'Idle'
 
   const canStartRun =
     (localPhase !== 'running' || seekMessage !== '') &&
@@ -331,12 +352,45 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
     return saverRef.current
   }
 
+  function syncPresentation(next: ReturnType<typeof initialDemoPresentation>): void {
+    presentationRef.current = next
+    if (!mounted.current) return
+    setPauseOnIssueState(next.pauseOnIssue)
+    setDemoPaused(next.paused)
+    setCorrectionNote(next.correctionNote)
+  }
+
+  function clearSummaryHold(): void {
+    if (summaryTimer.current != null) {
+      window.clearTimeout(summaryTimer.current)
+      summaryTimer.current = null
+    }
+    if (mounted.current) setSummaryHeld(false)
+  }
+
+  function armSummaryHold(): void {
+    clearSummaryHold()
+    if (!presentationRef.current.correctionNote || !mounted.current) return
+    setSummaryHeld(true)
+    summaryTimer.current = window.setTimeout(() => {
+      summaryTimer.current = null
+      if (mounted.current) setSummaryHeld(false)
+    }, 3200)
+  }
+
+  function releasePresentation(): void {
+    clearSummaryHold()
+    syncPresentation(resetDemoPresentation(presentationRef.current.pauseOnIssue))
+  }
+
   function rememberLive(next: LiveMonitorState, observation?: ReturnType<typeof observationEvent>) {
     const previous = liveRef.current
     if (next === previous) return
     liveRef.current = next
     if (mounted.current) setLive(next)
     monitorSaver().saveStep({ previous, next, observation })
+    const source = inputKindRef.current === 'none' ? 'unspecified' : inputKindRef.current
+    syncPresentation(afterSyntheticObservation(presentationRef.current, source, previous, next))
   }
 
   function publishMedia(draft: MediaDraft): void {
@@ -603,10 +657,11 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
       holdRef.current = true
       if (mounted.current) {
         setPlaybackNote('Synthetic sequence ended. Observations stopped on the last drawn frame. This was not a camera.')
+        armSummaryHold()
       }
       return
     }
-    if (pausedRef.current) return
+    if (pausedRef.current || presentationRef.current.paused) return
     syntheticIndex.current = index + 1
     const canvas = canvasRef.current
     if (canvas) drawSyntheticFrame(canvas, frame)
@@ -632,6 +687,24 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
     if (syntheticTimer.current != null) scheduleSynthetic()
   }
 
+  function resumeSynthetic(): void {
+    if (syntheticTimer.current == null) return
+    scheduleSynthetic()
+    tickSynthetic()
+  }
+
+  function continueDemo(): void {
+    if (!presentationRef.current.paused) return
+    syncPresentation(continueDemoPlayback(presentationRef.current))
+    resumeSynthetic()
+  }
+
+  function setPauseOnIssue(enabled: boolean): void {
+    const wasPaused = presentationRef.current.paused
+    syncPresentation(pausePreference(presentationRef.current, enabled))
+    if (wasPaused && !presentationRef.current.paused) resumeSynthetic()
+  }
+
   function resetDetector(): void {
     stabilizer.current.reset()
     emitter.current.reset()
@@ -641,6 +714,7 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
     pendingSeek.current = false
     holdRef.current = false
     lastElapsedRef.current = 0
+    releasePresentation()
     monitorGenerationRef.current += 1
     const generation = monitorGenerationRef.current
     if (mounted.current) {
@@ -668,6 +742,7 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
     mounted.current = true
     return () => {
       mounted.current = false
+      if (summaryTimer.current != null) window.clearTimeout(summaryTimer.current)
     }
   }, [])
 
@@ -932,6 +1007,7 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
 
   function startCamera(): void {
     endMonitoringSession(SOURCE_CHANGE_MESSAGE)
+    releasePresentation()
     const token = cameraToken.current + 1
     cameraToken.current = token
     stopSyntheticClock()
@@ -986,6 +1062,7 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
 
   function useVideoFile(file: File): void {
     endMonitoringSession(SOURCE_CHANGE_MESSAGE)
+    releasePresentation()
     void stopRecording()
     releaseCamera(true)
     stopSyntheticClock()
@@ -1420,6 +1497,12 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
     saveStatus,
     syntheticPace,
     setSyntheticPace,
+    pauseOnIssue,
+    setPauseOnIssue,
+    demoPaused,
+    continueDemo,
+    correctionNote,
+    summaryHeld,
     sampleMs: SAMPLE_MS,
     lastProcessingMs,
     monitorGeneration,

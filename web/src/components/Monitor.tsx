@@ -40,6 +40,7 @@ export function Monitor(props: MonitorProps) {
   const issueActive = selected != null && selected.status !== 'corrected'
   const highlightedWell = issueActive ? selected.wellId : expected
   const demoEnded = session.inputKind === 'synthetic' && session.playbackNote.includes('ended')
+  const showSummary = demoEnded && !session.summaryHeld
 
   function startSkipDemo(): void {
     session.useSynthetic('skip-a2-then-fill')
@@ -119,12 +120,29 @@ export function Monitor(props: MonitorProps) {
             <p className="save-status" data-save-status={session.saveStatus.phase}>
               {session.saveStatus.detail}
             </p>
-            {demoEnded ? (
+            {showSummary ? (
               <DemoSummary session={session} />
+            ) : session.demoPaused ? (
+              <>
+                <p className="demo-paused">Demo paused</p>
+                <h3>Issue</h3>
+                <p className="guide-line">{guide.issue}</p>
+                <h3>Next</h3>
+                <p className="guide-line">{guide.next ?? (selected ? `Check ${selected.wellId}.` : 'Check the highlighted well.')}</p>
+                <button type="button" className="demo-start" onClick={session.continueDemo}>
+                  Continue demo
+                </button>
+              </>
+            ) : session.summaryHeld ? (
+              <>
+                <h3>Observed correction</h3>
+                <p className="correction-line">{session.correctionNote}</p>
+              </>
             ) : (
               <>
                 <h3>Now</h3>
                 <p className="guide-line">{guide.action}</p>
+                {session.correctionNote ? <p className="correction-line">{session.correctionNote}</p> : null}
                 {issueActive ? (
                   <>
                     <h3>Issue</h3>
@@ -139,7 +157,7 @@ export function Monitor(props: MonitorProps) {
                 ) : null}
               </>
             )}
-            <button type="button" className="demo-start" onClick={startSkipDemo}>
+            <button type="button" className={session.demoPaused ? undefined : 'demo-start'} onClick={startSkipDemo}>
               {session.monitorGeneration > 0 ? 'Replay demo' : 'Start demo'}
             </button>
             <label className="file-field">
@@ -152,6 +170,14 @@ export function Monitor(props: MonitorProps) {
                 <option value={2}>Medium</option>
                 <option value={1}>Original</option>
               </select>
+            </label>
+            <label className="check-field">
+              <input
+                type="checkbox"
+                checked={session.pauseOnIssue}
+                onChange={(event) => session.setPauseOnIssue(event.target.checked)}
+              />
+              Pause demo when an issue appears
             </label>
             {selected && selected.status !== 'corrected' ? (
               <>
