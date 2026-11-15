@@ -5,6 +5,8 @@ import {
   validateExecutionStart,
   validateExperimentId,
   validateListQuery,
+  validateMonitorEvent,
+  validateMonitorSession,
   validatePublish,
   validateReplication,
 } from './validate.mjs'
@@ -88,6 +90,35 @@ async function route(req, res, store) {
     const replication = action === 'start' ? await store.startExecution(id) : await store.finishExecution(id)
     send(res, action === 'start' ? 201 : 200, replication)
     return
+  }
+
+  if (req.method === 'POST' && url.pathname === '/monitor-sessions') {
+    const input = validateMonitorSession(await readJson(req))
+    await assertDatabase(store)
+    const result = await store.createMonitorSession(input)
+    send(res, result.created ? 201 : 200, result.session)
+    return
+  }
+
+  const monitorAction = /^\/monitor-sessions\/([^/]+)(\/events)?$/.exec(url.pathname)
+  if (monitorAction) {
+    const id = decodeURIComponent(monitorAction[1])
+    if (!/^session_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+      throw new LibraryError('invalid', 'sessionId')
+    }
+    const sessionId = `session_${id.slice('session_'.length).toLowerCase()}`
+    if (req.method === 'GET' && !monitorAction[2]) {
+      await assertDatabase(store)
+      send(res, 200, await store.openMonitorSession(sessionId))
+      return
+    }
+    if (req.method === 'POST' && monitorAction[2] === '/events') {
+      const input = validateMonitorEvent(await readJson(req))
+      await assertDatabase(store)
+      const result = await store.appendMonitorEvent(sessionId, input)
+      send(res, result.created ? 201 : 200, result.session)
+      return
+    }
   }
 
   const replicationPath = /^\/replications\/([^/]+)$/.exec(url.pathname)
