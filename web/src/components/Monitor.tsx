@@ -36,7 +36,6 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
   const [demoMode, setDemoMode] = useState(false)
   const [replaySource, setReplaySource] = useState<ReplaySource | null>(null)
   const [fullResultsState, setFullResultsState] = useState<{key:string|null;fileKey:object|null;value:boolean}>({key:null,fileKey:null,value:false})
-  const [replayNotes, setReplayNotes] = useState<Record<string, string>>({})
   const [mediaClock, setMediaClock] = useState<{key: object | null; timeMs: number; playing: boolean}>({key:null,timeMs:0,playing:false})
   const replay = session.procedureMode === 'three-cup' && session.inputKind === 'prerecorded' && replaySource?.fileKey === session.reviewFile ? replaySource : null
   const fullResults = replayFullResultsEnabled(fullResultsState,replay?.draft.id??null,replay?.fileKey??null)
@@ -246,7 +245,7 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
         </div>
 
         <aside className="live-decisions" aria-label="Protocol decisions">
-          {replayActive && replay ? <DemoDashboard key={replay.draft.id} source={replay} timeMs={playbackMs} playing={playbackPlaying} fullResults={fullResults} onFullResults={setFullResults} onSeek={ms => session.seekStage(ms)} notes={replayNotes[replay.draft.id] ?? ''} onNotes={value => setReplayNotes(current => ({...current,[replay.draft.id]:value}))} /> : null}
+          {replayActive && replay ? <DemoDashboard key={replay.draft.id} source={replay} timeMs={playbackMs} playing={playbackPlaying} fullResults={fullResults} onFullResults={setFullResults} onSeek={ms => session.seekStage(ms)} /> : null}
           {session.procedureMode === 'three-cup' ? <div hidden={replayActive}><CapturePanel key={session.live.sessionId} session={session} running={running} playbackMs={playbackMs} onReplaySource={setReplaySource} /></div> : null}
           {session.procedureMode === 'six-well' ? (
           <>
