@@ -9,7 +9,7 @@ import type { PreparedMonitorProtocol } from '../prepare/sixWell.ts'
 import { formatRgb, rgbToCss, COLOR_PRESETS, type ColorPresetId } from '../vision/color.ts'
 import { normalizedToContent, type WellRegions } from '../vision/geometry.ts'
 import { SYNTHETIC_SEQUENCES } from '../vision/synthetic.ts'
-import { CAPTURE_MARKERS, THREE_CUP_CUPS, THREE_CUP_EXPECTED } from '../capture/threeCup.ts'
+import { CAPTURE_MARKERS, compareHumanMarker, recordingSeekSeconds, THREE_CUP_CUPS, THREE_CUP_DEMO_PLAN, THREE_CUP_EXPECTED } from '../capture/threeCup.ts'
 import { useVisionSession, type VisionSession } from '../vision/useVisionSession.ts'
 import type { WellMeasurement } from '../vision/analyze.ts'
 import type { PixelRect } from '../vision/geometry.ts'
@@ -90,13 +90,7 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
           </button>
         </div>
         {session.procedureMode === 'three-cup' ? (
-          <div>
-            <p role="status">Capture mode — automatic checks not connected</p>
-            <p>Cups keep their physical labels: {THREE_CUP_CUPS.join(', ')}. Red and blue should look uniformly mixed. Green will have visible streaks.</p>
-            <ul>
-              {THREE_CUP_EXPECTED.map((line) => <li key={line}>{line}</li>)}
-            </ul>
-          </div>
+          <p role="status">Capture mode — automatic checks not connected</p>
         ) : null}
         {preparedProtocol && session.procedureMode === 'six-well' ? (
           <div>
@@ -317,6 +311,16 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
               </details>
             ) : null}
           </section>
+          <EvidenceStream
+            empty="No six-well evidence yet. An empty reading is not an omission by itself."
+            items={session.live.timeline.map((entry) => ({
+              id: entry.id,
+              time: formatSeconds(entry.sourceElapsedMs),
+              source: entry.source === 'human' ? 'Person' : session.inputKind === 'synthetic' ? 'Synthetic' : 'Camera',
+              title: `${entry.wellId} · ${entry.observedState}`,
+              detail: entry.rule,
+            }))}
+          />
           </>
           ) : null}
         </aside>
@@ -886,30 +890,143 @@ function setupPrompt(step: SetupStep, pictureReady: boolean): string {
 }
 
 function CapturePanel({ session, running }: { session: VisionSession; running: boolean }) {
+  const previewUrl = useObjectUrl(session.localRecording)
+  const previewRef = useRef<HTMLVideoElement>(null)
+  const latest = session.markers.at(-1) ?? null
+  const latestComparison = latest ? compareHumanMarker(latest.marker) : null
+  const namedCups = latest ? markerCups(latest.marker) : []
+  const seekSeconds = latest
+    ? recordingSeekSeconds(latest.observationTimestamp, session.runStartOffsetMs, session.recordingDurationMs)
+    : null
+  function reviewMoment(): void {
+    const video = previewRef.current
+    if (!video || seekSeconds == null) return
+    const apply = () => {
+      video.currentTime = seekSeconds
+      void video.play().catch(() => undefined)
+    }
+    if (video.readyState >= 1) apply()
+    else video.addEventListener('loadedmetadata', apply, { once: true })
+  }
   return (
-    <section className="guide" aria-label="Three-cup capture">
-      <p>Markers record what you report. They do not complete a step or claim the camera verified it.</p>
-      <div className="button-row">
-        {CAPTURE_MARKERS.map((marker) => (
-          <button key={marker.id} type="button" onClick={() => session.addMarker(marker.id)} disabled={!running}>
-            {marker.label}
-          </button>
-        ))}
-      </div>
-      {session.markers.length === 0 ? <p className="monitor-note">No operator marker yet.</p> : (
-        <ul>
-          {session.markers.map((marker) => (
-            <li key={marker.id}>{marker.label} at {marker.observationTimestamp} ms. Reported by a person.</li>
+    <>
+      <section className="decision-now" aria-label="Current observation">
+        <p className="state-badge" data-tone="pending">Detector not connected</p>
+        {latest && latestComparison ? (
+          <>
+            <p className="decision-title">{latestComparison.reported}</p>
+            <p>Person · {formatSeconds(latest.observationTimestamp)}</p>
+            {namedCups.length > 0 ? (
+              <ul className="cup-names" aria-label="Cups named by a person">
+                {namedCups.map((cup) => <li key={cup}>{cup}</li>)}
+              </ul>
+            ) : null}
+          </>
+        ) : (
+          <p>No observation yet.</p>
+        )}
+        <details>
+          <summary>Status</summary>
+          <p>Automatic check unavailable. A missing result is not a verdict.</p>
+        </details>
+      </section>
+      <section className="protocol-compare" aria-label="Protocol comparison">
+        <h3>Expected</h3>
+        <p>{THREE_CUP_CUPS.join(', ')}</p>
+        <ol className="plain-list">
+          {THREE_CUP_EXPECTED.map((line) => <li key={line}>{line}</li>)}
+        </ol>
+        {latest && latestComparison ? (
+          <p data-relation={latestComparison.relation}>{latestComparison.relation}</p>
+        ) : (
+          <p>No report to compare.</p>
+        )}
+        {latest && latestComparison?.relation === 'differs from the expected transfer' ? (
+          previewUrl && seekSeconds != null ? (
+            <button type="button" onClick={reviewMoment}>Review this moment</button>
+          ) : previewUrl ? (
+            <p>Outside the recording.</p>
+          ) : (
+            <p>Review after the recording stops.</p>
+          )
+        ) : null}
+        {latestComparison ? (
+          <details>
+            <summary>Comparison</summary>
+            <p>{latestComparison.expectedStep} {latestComparison.review}</p>
+          </details>
+        ) : null}
+      </section>
+      <section className="report-controls" aria-label="Person reports">
+        <h3>Report</h3>
+        <div className="button-row">
+          {CAPTURE_MARKERS.map((marker) => (
+            <button key={marker.id} type="button" onClick={() => session.addMarker(marker.id)} disabled={!running}>
+              {marker.label}
+            </button>
           ))}
-        </ul>
-      )}
+        </div>
+      </section>
+      <EvidenceStream
+        empty="No person report yet."
+        items={session.markers.map((marker) => {
+          const comparison = compareHumanMarker(marker.marker)
+          return {
+            id: marker.id,
+            time: formatSeconds(marker.observationTimestamp),
+            source: 'Person',
+            title: marker.label,
+            detail: comparison.relation,
+          }
+        })}
+      />
+      {previewUrl ? (
+        <video ref={previewRef} className="decision-preview" src={previewUrl} controls playsInline />
+      ) : null}
       <div className="button-row">
         <button type="button" onClick={session.downloadRecording} disabled={!session.localRecording}>Download recording</button>
         <button type="button" onClick={session.downloadAnnotations}>Download annotations</button>
       </div>
-      <p className="monitor-note">The annotation file is for review. It is not a Laya training dataset.</p>
+    </>
+  )
+}
+
+function markerCups(marker: string): string[] {
+  return CAPTURE_MARKERS.find((item) => item.id === marker)?.cups.slice() ?? []
+}
+
+function EvidenceStream({ items, empty }: { items: Array<{ id: string; time: string; source: string; title: string; detail: string }>; empty: string }) {
+  return (
+    <section aria-label="Evidence">
+      <h3>Evidence</h3>
+      {items.length === 0 ? <p className="monitor-note">{empty}</p> : (
+        <ol className="evidence-stream">
+          {items.map((item) => (
+            <li key={item.id} className="evidence-item">
+              <span className="state-badge">{item.source}</span>
+              <span>{item.time}</span>
+              <strong>{item.title}</strong>
+              <details>
+                <summary>Details</summary>
+                <p>{item.detail}</p>
+              </details>
+            </li>
+          ))}
+        </ol>
+      )}
     </section>
   )
+}
+
+function useObjectUrl(file: Blob | null): string | null {
+  const [held, setHeld] = useState<{ file: Blob; url: string } | null>(null)
+  let current = held
+  if ((current?.file ?? null) !== file) {
+    if (current) URL.revokeObjectURL(current.url)
+    current = file ? { file, url: URL.createObjectURL(file) } : null
+    setHeld(current)
+  }
+  return current?.url ?? null
 }
 
 function CameraSetup({
@@ -946,6 +1063,7 @@ function CameraSetup({
           Record this run
         </label>
         <p className="monitor-note">Records the camera without audio. Cup names stay the physical labels.</p>
+        <p className="monitor-note">Demo plan, separate from the approved procedure: {THREE_CUP_DEMO_PLAN}</p>
         <button type="button" className="primary-action" onClick={session.startRun} disabled={!session.canStartRun || session.inputKind !== 'live'}>
           Start capture
         </button>

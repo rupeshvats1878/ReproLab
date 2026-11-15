@@ -84,6 +84,7 @@ test('a three-cup capture stores human markers and rejects six-well judgments', 
     assert.equal(published.body.runRecord.humanMarkers[0].provenance, 'human')
     assert.equal(published.body.runRecord.observations.length, 0)
     assert.equal(published.body.protocolSnapshot.steps[0].instruction.includes('GREEN'), true)
+    assert.equal(published.body.protocolSnapshot.steps.some((step) => /deliberately|GREEN → BLUE/.test(step.instruction)), false)
 
     const sixWell = 'session_4e4e4e4e-4e4e-4e4e-8e4e-4e4e4e4e4e4e'
     await ask(server, 'POST', '/monitor-sessions', { sessionId: sixWell, sourceKind: 'live' })

@@ -5,6 +5,10 @@
   padding: 1.5rem 0 3rem;
 }
 
+.app-shell-monitor {
+  width: min(1680px, calc(100% - 1.25rem));
+}
+
 .app-header {
   display: flex;
   justify-content: space-between;

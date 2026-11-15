@@ -170,7 +170,6 @@ const RUN_RECORD_BYTES = 1_500_000
 const CAPTURE_STEPS = [
   'RED and BLUE should look uniformly mixed. GREEN will have visible streaks.',
   'Expected transfers: RED → BLUE, then GREEN → RED.',
-  'This take deliberately uses GREEN → BLUE for the second transfer.',
 ]
 
 export function recordedExperimentRecord(session, notes, { id, publishedAt, shared = null }) {

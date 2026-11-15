@@ -150,6 +150,8 @@ export interface VisionSession {
   markers: CaptureMarkerRecord[]
   addMarker: (marker: CaptureMarkerId) => void
   localRecording: Blob | null
+  runStartOffsetMs: number
+  recordingDurationMs: number | null
   downloadRecording: () => void
   downloadAnnotations: () => void
   startClockCheck: () => void
@@ -218,6 +220,8 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
   const originRef = useRef(0)
   const lastElapsedRef = useRef(0)
   const runOffsetRef = useRef(0)
+  const [runStartOffsetMs, setRunStartOffsetMs] = useState(0)
+  const [recordingDurationMs, setRecordingDurationMs] = useState<number | null>(null)
   const recorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
   const recorderMime = useRef<string | undefined>(undefined)
@@ -617,6 +621,7 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
     }
     if (durationNeedsRepair(durationMs, wallClockMs)) durationMs = wallClockMs
     recordingDurationRef.current = durationMs ?? null
+    if (mounted.current) setRecordingDurationMs(durationMs ?? null)
     rememberVisionBlob(mediaId, file)
     setLocalRecording(file)
     void keepLocalMedia(mediaId, file).catch(() => {
@@ -668,6 +673,11 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
     void stopRecording()
   }
 
+  function assignRunOffset(ms: number): void {
+    runOffsetRef.current = ms
+    if (mounted.current) setRunStartOffsetMs(ms)
+  }
+
   function startRecording(): void {
     const stream = streamRef.current
     const mediaId = createId('media')
@@ -699,7 +709,7 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
       const mediaStart = performance.now()
       recordingStartedAt.current = mediaStart
       recorder.start(1000)
-      runOffsetRef.current = runStartOffsetFromClocks(originRef.current, mediaStart)
+      assignRunOffset(runStartOffsetFromClocks(originRef.current, mediaStart))
       recorderRef.current = recorder
       for (const track of stream.getVideoTracks()) {
         track.addEventListener('ended', onRecordingTrackEnded)
@@ -1394,7 +1404,7 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
       const video = videoRef.current
       const file = fileBlobRef.current
       const offset = Math.round((video?.currentTime ?? 0) * 1000)
-      runOffsetRef.current = offset
+      assignRunOffset(offset)
       lastMediaTime.current = video?.currentTime ?? 0
       if (file && video) {
         if (attachSourceRef.current) {
@@ -1424,7 +1434,7 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
     }
 
     if (source === 'live') {
-      runOffsetRef.current = 0
+      assignRunOffset(0)
       if (recordThisRunRef.current) startRecording()
       else if (mounted.current) {
         setRecording({ phase: 'idle', detail: 'This run is not being recorded.' })
@@ -1432,7 +1442,7 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
     }
 
     if (source === 'synthetic') {
-      runOffsetRef.current = 0
+      assignRunOffset(0)
       const first = syntheticFrames.current[0]
       if (first) {
         referenceRef.current = emptyReferenceFromBuffer(
@@ -1685,6 +1695,8 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
     markers,
     addMarker,
     localRecording,
+    runStartOffsetMs,
+    recordingDurationMs,
     downloadRecording,
     downloadAnnotations,
     startClockCheck,
