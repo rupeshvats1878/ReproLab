@@ -49,7 +49,7 @@ cd server/three-cup-vision
 ./gemini_adapter/.venv/bin/python -m unittest discover -s gemini_adapter/tests -v
 ```
 
-Python 3.10+ standard library only. Nothing to pip install. 23 tests passed on 14 Nov 2026.
+Python 3.10+ standard library only. Nothing to pip install. 30 tests passed on 15 Nov 2026.
 
 Input constraints for a live call:
 
@@ -102,6 +102,18 @@ Cup ids are only `RED`, `GREEN`, `BLUE`, or `unknown`. There is no confidence fi
 `latencyMs` is an integer only after a transport call. It is `null` when no call was made. No live call has been timed.
 
 `sourceOffsetMs` is added to event and appearance timestamps after the clip-range check. Out-of-range clip times stay `unclear`; the offset does not repair them. `videoDurationMs` is the opened file, not the original recording.
+
+An event is `observed` only when its cups are two different known ids and its times pass all of these checks on the opened file, before any source offset is added:
+
+- `eventStartMs` and `eventEndMs` are integers, and `eventStartMs < eventEndMs`. An equal pair is kept and marked `unclear` with warning `timestamp_zero_duration`.
+- Every `evidenceTimestampsMs` value is inside that interval, including the endpoints. A value one millisecond outside is kept and the event is `unclear`, with warning `evidence_outside_event`. Evidence exactly on either endpoint is allowed.
+- The interval also has to sit inside the opened file. A reversed or negative interval stays `unclear`.
+
+Appearance evidence uses the closed range `0` through `videoDurationMs`. A timestamp outside that range rejects the whole appearance. The response does not keep `visually_uniform` or `visibly_streaked` for that note. Warning: `appearance_evidence_outside_video`. A timestamp equal to the file duration is valid. Other appearances in the same response are kept.
+
+`video_fps` must be a finite number greater than 0 and at most 24. `NaN`, positive or negative infinity, zero, and negative values return `invalid_sampling` and do not send a request. `None` still means the API default of 1 FPS.
+
+The 84000 ms offset on `recordings/clips/recording-1-review-84000-92000.mov` was checked against `recordings/recording 1.mov` by decoded frames, not by file size. Frames at source 84.0 s, 88.0 s, and 91.5 s matched clip times 0.0 s, 4.0 s, and 7.5 s. A control frame at source 80.0 s did not match the clip start. This local clip is 12622296 bytes. A copy with a different byte size can still cover the same source window.
 
 Empty `events` with `unavailable` or `unclear` is not a no-pour result.
 
@@ -185,7 +197,7 @@ The virtualenv is gitignored by `server/three-cup-vision/gemini_adapter/.gitigno
 Result on 14 Nov 2026, Python 3.10.11, in that virtualenv:
 
 ```text
-Ran 23 tests in 0.009s
+Ran 30 tests in 0.011s
 OK
 ```
 

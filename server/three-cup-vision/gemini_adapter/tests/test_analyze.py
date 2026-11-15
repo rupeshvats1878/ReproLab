@@ -388,6 +388,109 @@ class AnalyzeVideoTest(unittest.TestCase):
         self.assertEqual(event["observationStatus"], "unclear")
         self.assertIn("timestamp_outside_video", result["warnings"])
 
+    def test_equal_start_and_end_is_not_observed(self):
+        payload = {
+            "transfers": [transfer("RED", "BLUE", 1000, 1000, [1000])],
+            "noVisibleTransfer": False,
+        }
+        transport = RecordingTransport({"status": 200, "body": interaction(payload)})
+        result = analyze(self.video, transport)
+        event = result["events"][0]
+        self.assertEqual(event["eventStartMs"], 1000)
+        self.assertEqual(event["eventEndMs"], 1000)
+        self.assertEqual(event["observationStatus"], "unclear")
+        self.assertEqual(result["observationStatus"], "unclear")
+        self.assertIn("timestamp_zero_duration", result["warnings"])
+
+    def test_one_millisecond_interval_can_be_observed(self):
+        payload = {
+            "transfers": [transfer("RED", "BLUE", 1000, 1001, [1000, 1001])],
+            "noVisibleTransfer": False,
+        }
+        transport = RecordingTransport({"status": 200, "body": interaction(payload)})
+        result = analyze(self.video, transport)
+        self.assertEqual(result["events"][0]["observationStatus"], "observed")
+
+    def test_evidence_on_interval_edges_stays_observed(self):
+        payload = {
+            "transfers": [transfer("RED", "BLUE", 1000, 2000, [1000, 1500, 2000])],
+            "noVisibleTransfer": False,
+        }
+        transport = RecordingTransport({"status": 200, "body": interaction(payload)})
+        result = analyze(self.video, transport)
+        self.assertEqual(result["events"][0]["observationStatus"], "observed")
+        self.assertEqual(result["events"][0]["evidenceTimestampsMs"], [1000, 1500, 2000])
+
+    def test_evidence_outside_the_event_interval_is_uncertain(self):
+        payload = {
+            "transfers": [
+                transfer("RED", "BLUE", 1000, 2000, [999]),
+                transfer("GREEN", "RED", 3000, 4000, [3000, 4001]),
+            ],
+            "noVisibleTransfer": False,
+        }
+        transport = RecordingTransport({"status": 200, "body": interaction(payload)})
+        result = analyze(self.video, transport)
+        before, after = result["events"]
+        self.assertEqual(before["observationStatus"], "unclear")
+        self.assertEqual(before["evidenceTimestampsMs"], [999])
+        self.assertEqual(after["observationStatus"], "unclear")
+        self.assertEqual(after["evidenceTimestampsMs"], [3000, 4001])
+        self.assertEqual(result["observationStatus"], "unclear")
+        self.assertIn("evidence_outside_event", result["warnings"])
+
+    def test_appearance_evidence_at_video_end_is_kept(self):
+        payload = {
+            "transfers": [],
+            "noVisibleTransfer": True,
+            "appearances": [
+                {"cupId": "RED", "label": "visually_uniform", "evidenceTimestampsMs": [0, 8000]}
+            ],
+        }
+        transport = RecordingTransport({"status": 200, "body": interaction(payload)})
+        result = analyze(self.video, transport)
+        self.assertEqual(result["appearances"][0]["label"], "visually_uniform")
+        self.assertEqual(result["appearances"][0]["evidenceTimestampsMs"], [0, 8000])
+
+    def test_appearance_evidence_outside_the_video_is_not_retained(self):
+        payload = {
+            "transfers": [],
+            "noVisibleTransfer": True,
+            "appearances": [
+                {"cupId": "GREEN", "label": "visibly_streaked", "evidenceTimestampsMs": [8001]},
+                {"cupId": "BLUE", "label": "visually_uniform", "evidenceTimestampsMs": [-1]},
+                {"cupId": "RED", "label": "visibly_streaked", "evidenceTimestampsMs": [400, 9000]},
+                {"cupId": "RED", "label": "visually_uniform", "evidenceTimestampsMs": [500]},
+            ],
+        }
+        transport = RecordingTransport({"status": 200, "body": interaction(payload)})
+        result = analyze(self.video, transport)
+        self.assertEqual(
+            [(item["cupId"], item["label"], item["evidenceTimestampsMs"]) for item in result["appearances"]],
+            [("RED", "visually_uniform", [500])],
+        )
+        self.assertNotIn("visibly_streaked", json.dumps(result["appearances"]))
+        self.assertIn("appearance_evidence_outside_video", result["warnings"])
+
+    def test_non_finite_and_nonpositive_fps_is_rejected(self):
+        for fps in (float("nan"), float("inf"), float("-inf"), 0, -1, -0.0):
+            transport = RecordingTransport()
+            result = analyze(self.video, transport, video_fps=fps)
+            self.assertEqual(transport.calls, [])
+            self.assertEqual(result["error"]["category"], "invalid_sampling")
+        accepted = RecordingTransport({"status": 200, "body": interaction({
+            "transfers": [],
+            "noVisibleTransfer": True,
+        })})
+        analyze(self.video, accepted, video_fps=0.5)
+        self.assertEqual(accepted.calls[0]["body"]["input"][0]["processing"]["fps"], 0.5)
+        at_cap = RecordingTransport({"status": 200, "body": interaction({
+            "transfers": [],
+            "noVisibleTransfer": True,
+        })})
+        analyze(self.video, at_cap, video_fps=24)
+        self.assertEqual(at_cap.calls[0]["body"]["input"][0]["processing"]["fps"], 24)
+
     def test_rejects_non_video_file(self):
         path = Path(self.temp.name) / "notes.txt"
         path.write_text("hello", encoding="utf-8")

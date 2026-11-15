@@ -39,7 +39,9 @@ def normalize_observation(payload, duration_ms):
         if not isinstance(item, dict):
             _warn(warnings, "appearance_entry_ignored")
             continue
-        appearances.append(_appearance(item, duration_ms, warnings))
+        appearance = _appearance(item, duration_ms, warnings)
+        if appearance is not None:
+            appearances.append(appearance)
 
     if appearances:
         _warn(warnings, "appearance_is_visual_only")
@@ -86,6 +88,12 @@ def _event(raw, duration_ms, warnings):
         if end < start:
             timestamp_problem = True
             _warn(warnings, "timestamp_not_ordered")
+        elif start == end:
+            timestamp_problem = True
+            _warn(warnings, "timestamp_zero_duration")
+        elif any(stamp < start or stamp > end for stamp in evidence):
+            timestamp_problem = True
+            _warn(warnings, "evidence_outside_event")
         if duration_ms is not None and (start > duration_ms or end > duration_ms):
             timestamp_problem = True
             _warn(warnings, "timestamp_outside_video")
@@ -110,6 +118,9 @@ def _appearance(raw, duration_ms, warnings):
     else:
         normalized = label.strip().lower()
     evidence, _problem = _evidence(raw.get("evidenceTimestampsMs"), duration_ms, warnings)
+    if _outside_video(evidence, duration_ms):
+        _warn(warnings, "appearance_evidence_outside_video")
+        return None
     return {
         "cupId": _cup_id(raw.get("cupId"), warnings),
         "label": normalized,
@@ -140,6 +151,13 @@ def _evidence(value, duration_ms, warnings):
             _warn(warnings, "timestamp_outside_video")
         stamps.append(parsed)
     return stamps, problem
+
+
+def _outside_video(stamps, duration_ms):
+    for stamp in stamps:
+        if stamp < 0 or (duration_ms is not None and stamp > duration_ms):
+            return True
+    return False
 
 
 def _cup_id(value, warnings):

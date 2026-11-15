@@ -1,5 +1,6 @@
 """Observe visible cup transfers. This module does not judge a procedure."""
 
+import math
 import os
 import time
 
@@ -228,7 +229,7 @@ def _sampling_error(video_fps):
         return None
     if isinstance(video_fps, bool) or not isinstance(video_fps, (int, float)):
         return _failure("invalid_sampling")
-    if video_fps <= 0 or video_fps > MAX_STATIC_FPS:
+    if not math.isfinite(video_fps) or video_fps <= 0 or video_fps > MAX_STATIC_FPS:
         return _failure("invalid_sampling")
     return None
 
