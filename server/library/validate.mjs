@@ -44,6 +44,24 @@ export function validateListQuery(searchParams) {
   }
 }
 
+export function validateExperimentListQuery(searchParams) {
+  for (const key of searchParams.keys()) {
+    if (key !== 'limit' && key !== 'offset' && key !== 'q' && key !== 'sort') throw new LibraryError('invalid', key)
+  }
+  const rawQuery = searchParams.get('q')
+  if (rawQuery != null && rawQuery.length > 120) throw new LibraryError('invalid', 'q')
+  const sort = searchParams.get('sort') ?? 'newest'
+  if (sort !== 'newest' && sort !== 'oldest') throw new LibraryError('invalid', 'sort')
+  return {
+    ...validateListQuery(new URLSearchParams([
+      ['limit', searchParams.get('limit') ?? ''],
+      ['offset', searchParams.get('offset') ?? ''],
+    ].filter(([, value]) => value !== ''))),
+    q: rawQuery == null ? '' : rawQuery.trim(),
+    sort,
+  }
+}
+
 // Temporary boundary: protocol preparation is owned by another branch.
 // This accepts one JSON object and does not define protocol fields.
 export function validateSnapshot(value) {

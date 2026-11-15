@@ -149,7 +149,8 @@ function stable(value) {
 }
 
 export function experimentSummary(experiment) {
-  return {
+  const snapshot = experiment.protocolSnapshot
+  const summary = {
     id: experiment.id,
     title: experiment.title,
     description: experiment.description,
@@ -157,4 +158,26 @@ export function experimentSummary(experiment) {
     approvalAcknowledged: experiment.approvalAcknowledged,
     publishedAt: experiment.publishedAt,
   }
+  if (snapshot != null && typeof snapshot.version === 'number') summary.protocolVersion = snapshot.version
+  if (snapshot != null && Array.isArray(snapshot.steps)) summary.stepCount = snapshot.steps.length
+  return summary
+}
+
+export function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+export function experimentTitleFilter(query) {
+  if (!query) return {}
+  return { title: { $regex: escapeRegExp(query), $options: 'i' } }
+}
+
+export function matchesExperimentTitle(experiment, query) {
+  if (!query) return true
+  return experiment.title.toLowerCase().includes(query.toLowerCase())
+}
+
+export function compareExperiments(sort) {
+  const direction = sort === 'oldest' ? 1 : -1
+  return (left, right) => direction * left.publishedAt.localeCompare(right.publishedAt) || left.id.localeCompare(right.id)
 }

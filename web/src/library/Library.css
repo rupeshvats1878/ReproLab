@@ -1,11 +1,36 @@
-.library-lab h2 { font-size: 1.6rem; margin-bottom: .5rem }
+.library-lab h2 { font-size: 1.6rem; margin: 0 0 .4rem }
+.library-lab h3 { margin: 0 0 .35rem }
 .library-lab p, .library-lab li { line-height: 1.5 }
-.library-layout { display: grid; grid-template-columns: 1.1fr .9fr; gap: 1.25rem }
-.library-layout aside { background: var(--teal-bg); padding: 1rem; border-radius: .75rem }
+.library-note { color: var(--muted) }
+.library-toolbar {
+  display: flex; flex-wrap: wrap; gap: .6rem; align-items: end; margin: 1rem 0
+}
+.library-toolbar label { display: grid; gap: .3rem; color: var(--muted); font-size: .85rem }
+.library-toolbar input, .library-toolbar select {
+  min-width: 12rem; font: inherit; color: var(--ink); background: var(--card);
+  border: 1px solid var(--line); border-radius: .4rem; padding: .55rem
+}
 .library-lab button {
-  font: inherit; padding: .55rem; border: 1px solid var(--line); border-radius: .4rem; background: var(--panel); color: var(--ink); cursor: pointer
+  font: inherit; padding: .55rem .75rem; border: 1px solid var(--line); border-radius: .4rem;
+  background: var(--panel); color: var(--ink); cursor: pointer
 }
 .library-lab button:disabled { opacity: .5; cursor: default }
 .library-lab :focus-visible { outline: 3px solid var(--teal); outline-offset: 3px }
 .library-warning { color: #ffb4a8 }
-@media (max-width: 700px) { .library-layout { grid-template-columns: 1fr } }
+.library-table { width: 100%; border-collapse: collapse }
+.library-table th, .library-table td {
+  text-align: left; padding: .8rem .65rem; border-bottom: 1px solid var(--line); vertical-align: middle
+}
+.library-table th { color: var(--muted); font-size: .8rem; font-weight: 650 }
+.library-table tbody tr:hover { background: var(--card) }
+.library-cards { display: none }
+.library-card {
+  background: var(--card); border: 1px solid var(--line); border-radius: .75rem; padding: .9rem
+}
+.library-pages { display: flex; gap: .5rem; margin-top: .8rem }
+.library-record { display: grid; gap: .7rem; margin-top: .5rem }
+.library-record details { background: var(--card); border: 1px solid var(--line); border-radius: .6rem; padding: .7rem .85rem }
+@media (max-width: 720px) {
+  .library-table { display: none }
+  .library-cards { display: grid; gap: .75rem }
+}

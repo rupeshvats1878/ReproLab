@@ -5,6 +5,15 @@ export interface ExperimentSummary {
   authorDisplayName: string
   approvalAcknowledged: boolean
   publishedAt: string
+  protocolVersion?: number
+  stepCount?: number
+}
+
+export interface ExperimentPage {
+  experiments: ExperimentSummary[]
+  limit: number
+  offset: number
+  total: number | null
 }
 
 export interface StoredExperiment extends ExperimentSummary {
@@ -90,9 +99,16 @@ export async function publishExperiment(body: unknown): Promise<StoredExperiment
   return readJson(await libraryFetch('/experiments', { method: 'POST', body }))
 }
 
-export async function listExperiments(): Promise<ExperimentSummary[]> {
-  const body = await readJson<{ experiments?: ExperimentSummary[] }>(await libraryFetch('/experiments'))
-  return Array.isArray(body.experiments) ? body.experiments : []
+export async function listExperiments(query: string): Promise<ExperimentPage> {
+  const body = await readJson<{ experiments?: ExperimentSummary[]; limit?: number; offset?: number; total?: number }>(
+    await libraryFetch(`/experiments?${query}`),
+  )
+  return {
+    experiments: Array.isArray(body.experiments) ? body.experiments : [],
+    limit: typeof body.limit === 'number' ? body.limit : 20,
+    offset: typeof body.offset === 'number' ? body.offset : 0,
+    total: typeof body.total === 'number' ? body.total : null,
+  }
 }
 
 export async function openExperiment(id: string): Promise<StoredExperiment> {

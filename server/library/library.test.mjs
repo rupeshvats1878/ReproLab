@@ -209,6 +209,54 @@ test('paginates published summaries without protocol snapshots', async () => {
     assert.equal(next.body.experiments[0].title, 'First')
     const bad = await ask(server, 'GET', '/experiments?limit=0')
     assert.equal(bad.status, 400)
+    assert.equal(page.body.experiments[0].stepCount, 2)
+    assert.equal('protocolVersion' in page.body.experiments[0], false)
+  } finally {
+    server.close()
+  }
+})
+
+test('searches titles without treating the query as a regular expression', async () => {
+  let tick = 0
+  const store = createMemoryStore({ now: () => `2026-11-14T21:00:0${tick++}.000Z` })
+  const server = await listen(store)
+  try {
+    await ask(server, 'POST', '/experiments', publishBody({
+      title: 'Dye (a+b) check',
+      protocolSnapshot: { version: 2, steps: [{ instruction: 'Add dye', quote: 'Add dye' }, { instruction: 'Stir' }] },
+    }))
+    await ask(server, 'POST', '/experiments', publishBody({ title: 'Plain water' }))
+    await ask(server, 'POST', '/experiments', publishBody({ title: 'dye dispersion' }))
+
+    const matched = await ask(server, 'GET', '/experiments?q=DYE&sort=oldest')
+    assert.equal(matched.status, 200)
+    assert.equal(matched.body.total, 2)
+    assert.deepEqual(matched.body.experiments.map((item) => item.title), ['Dye (a+b) check', 'dye dispersion'])
+    assert.equal(matched.body.experiments[0].protocolVersion, 2)
+    assert.equal(matched.body.experiments[0].stepCount, 2)
+    assert.equal('protocolSnapshot' in matched.body.experiments[0], false)
+
+    const literal = await ask(server, 'GET', '/experiments?q=' + encodeURIComponent('(a+b)'))
+    assert.equal(literal.body.total, 1)
+    assert.equal(literal.body.experiments[0].title, 'Dye (a+b) check')
+
+    const wildcard = await ask(server, 'GET', '/experiments?q=' + encodeURIComponent('.*'))
+    assert.equal(wildcard.body.total, 0)
+    assert.deepEqual(wildcard.body.experiments, [])
+
+    const page = await ask(server, 'GET', '/experiments?q=dye&sort=newest&limit=1&offset=0')
+    assert.equal(page.body.total, 2)
+    assert.equal(page.body.experiments[0].title, 'dye dispersion')
+    const olderPage = await ask(server, 'GET', '/experiments?q=dye&sort=newest&limit=1&offset=1')
+    assert.equal(olderPage.body.experiments[0].title, 'Dye (a+b) check')
+
+    const empty = await ask(server, 'GET', '/experiments?q=' + encodeURIComponent('no such title'))
+    assert.equal(empty.body.total, 0)
+
+    const badSort = await ask(server, 'GET', '/experiments?sort=popular')
+    assert.equal(badSort.status, 400)
+    const longQuery = await ask(server, 'GET', '/experiments?q=' + 'a'.repeat(121))
+    assert.equal(longQuery.status, 400)
   } finally {
     server.close()
   }
@@ -223,6 +271,9 @@ test('does not save or leak errors when the database is unavailable', async () =
     const saved = await ask(server, 'POST', '/experiments', publishBody())
     assert.equal(saved.status, 503)
     assert.equal(saved.body.error, 'database_unavailable')
+    const listed = await ask(server, 'GET', '/experiments?q=dye')
+    assert.equal(listed.status, 503)
+    assert.equal(listed.body.error, 'database_unavailable')
     assert.equal(saved.body.id, undefined)
     assert.equal(saved.text.includes('mongodb'), false)
   } finally {

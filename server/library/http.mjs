@@ -4,6 +4,7 @@ import {
   validateExecutionFinish,
   validateExecutionStart,
   validateExperimentId,
+  validateExperimentListQuery,
   validateListQuery,
   validateMonitorEvent,
   validateMonitorSession,
@@ -51,8 +52,8 @@ async function route(req, res, store) {
     return
   }
 
-  if (req.method === 'GET' && url.pathname === '/experiments') {
-    const query = validateListQuery(url.searchParams)
+      if (req.method === 'GET' && url.pathname === '/experiments') {
+        const query = validateExperimentListQuery(url.searchParams)
     await assertDatabase(store)
     send(res, 200, await store.list(query))
     return

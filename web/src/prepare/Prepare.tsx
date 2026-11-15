@@ -1,8 +1,6 @@
 import { useRef, useState } from 'react'
 import { LibraryClientError, publishExperiment } from '../library/client.ts'
-import { Library } from '../library/Library.tsx'
 import { publishRequest } from '../library/publish.ts'
-import { Run } from '../run/Run.tsx'
 import { commitVersion, readApprovedProtocols, readLibrary, writeLibrary } from './library.ts'
 import type { ProtocolVersion } from './library.ts'
 import { isSupportedSixWell, preparedMonitorProtocol, sixWellDraft, type PreparedMonitorProtocol } from './sixWell.ts'
@@ -11,14 +9,14 @@ import type { ObservationMethod, ProtocolStep } from './validate.ts'
 import './prepare.css'
 
 const TEXT_FILE_LIMIT = 200_000
-const OPEN_REPLICATION_KEY = 'reprolab-open-replication-id'
 const EXTRACT_URL = 'http://127.0.0.1:8787/protocols/extract'
 const EXTRACT_TIMEOUT_MS = 70_000
 const EXTRACTING_NOTICE = 'Asking Gemini for a draft. This can take up to a minute.'
 
-export function Prepare(props: { onSetupMonitoring: (protocol: PreparedMonitorProtocol) => void }) {
-  const [view, setView] = useState<'edit' | 'library' | 'replication'>('edit')
-  const [replicationId, setReplicationId] = useState<string | null>(() => sessionStorage.getItem(OPEN_REPLICATION_KEY))
+export function Prepare(props: {
+  onSetupMonitoring: (protocol: PreparedMonitorProtocol) => void
+  onOpenLibrary: (experimentId?: string) => void
+}) {
   const [library, setLibrary] = useState(() => readLibrary(localStorage))
   const [protocolId, setProtocolId] = useState<string | null>(null)
   const [originVersion, setOriginVersion] = useState<number | null>(null)
@@ -223,29 +221,6 @@ export function Prepare(props: { onSetupMonitoring: (protocol: PreparedMonitorPr
     }
   }
 
-  if (view === 'library') {
-    return (
-      <section className="prepare-lab">
-        <button type="button" onClick={() => setView('edit')}>Back to the protocol</button>
-        <Library onOpenRun={(id) => {
-          sessionStorage.setItem(OPEN_REPLICATION_KEY, id)
-          setReplicationId(id)
-          setView('replication')
-        }} />
-      </section>
-    )
-  }
-
-  if (view === 'replication') {
-    return (
-      <section className="prepare-lab">
-        <button type="button" onClick={() => setView('library')}>Back to the experiment library</button>
-        <p>This is a replication record. A planned replication is not a performed monitor session.</p>
-        <Run replicationId={replicationId} />
-      </section>
-    )
-  }
-
   return (
     <section className="prepare-lab">
       <p className="app-kicker">ReproLab • Prepare</p>
@@ -398,7 +373,8 @@ export function Prepare(props: { onSetupMonitoring: (protocol: PreparedMonitorPr
           ) : null}
           <details className="prepare-extra">
             <summary>Publishing and library</summary>
-            <button type="button" onClick={() => setView('library')}>Experiment library</button>
+            <p>Versions in the side list are local drafts in this browser. Publishing copies an approved version into the shared experiment library. That library is not a public website and does not sign anyone in.</p>
+            <button type="button" onClick={() => props.onOpenLibrary()}>Open Library</button>
             {locked ? (
               <form onSubmit={(event) => { event.preventDefault(); void publishApproved() }}>
                 <h3>Publish this approved version</h3>
@@ -418,10 +394,15 @@ export function Prepare(props: { onSetupMonitoring: (protocol: PreparedMonitorPr
                 <button type="submit" disabled={publishing}>
                   {publishing ? 'Publishing…' : 'Publish'}
                 </button>
-                {publishedId ? <p role="status">Atlas saved this experiment as {publishedId}.</p> : null}
+                {publishedId ? (
+                  <div role="status">
+                    <p>The shared experiment library saved this publication as {publishedId}.</p>
+                    <button type="button" onClick={() => props.onOpenLibrary(publishedId)}>View in Library</button>
+                  </div>
+                ) : null}
               </form>
             ) : (
-              <p>Approve a version before publishing. The experiment library stays separate from monitor sessions.</p>
+              <p>Approve a version before publishing. A published protocol does not configure the six-well detector.</p>
             )}
           </details>
         </div>

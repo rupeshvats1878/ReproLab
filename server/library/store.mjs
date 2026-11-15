@@ -5,10 +5,13 @@ import { appendMonitorEvent, monitorSession, presentMonitorSession, presentMonit
 import {
   appendExecutionEvent,
   beginExecution,
+  compareExperiments,
   experimentRecord,
   experimentSummary,
+  experimentTitleFilter,
   finishExecution,
   COMPLETION_NOTE,
+  matchesExperimentTitle,
   presentReplication,
   replicationRecord,
 } from './records.mjs'
@@ -28,8 +31,8 @@ export function createMemoryStore({ now = () => new Date().toISOString(), ids = 
       experiments.push(record)
       return structuredClone(record)
     },
-    async list({ limit, offset }) {
-      const ordered = [...experiments].sort((a, b) => b.publishedAt.localeCompare(a.publishedAt) || a.id.localeCompare(b.id))
+    async list({ limit, offset, q = '', sort = 'newest' }) {
+      const ordered = experiments.filter((item) => matchesExperimentTitle(item, q)).sort(compareExperiments(sort))
       return {
         experiments: ordered.slice(offset, offset + limit).map((item) => experimentSummary(structuredClone(item))),
         limit,
@@ -202,13 +205,27 @@ export function createMongoStore({ client, dbName }) {
       }
       return record
     },
-    async list({ limit, offset }) {
+    async list({ limit, offset, q = '', sort = 'newest' }) {
       await requireDatabase()
       try {
-        const total = await experiments().countDocuments()
+        const filter = experimentTitleFilter(q)
+        const direction = sort === 'oldest' ? 1 : -1
+        const total = await experiments().countDocuments(filter)
         const docs = await experiments()
-          .find({}, { projection: { protocolSnapshot: 0, _id: 0 } })
-          .sort({ publishedAt: -1, id: 1 })
+          .find(filter, {
+            projection: {
+              _id: 0,
+              id: 1,
+              title: 1,
+              description: 1,
+              authorDisplayName: 1,
+              approvalAcknowledged: 1,
+              publishedAt: 1,
+              'protocolSnapshot.version': 1,
+              'protocolSnapshot.steps': 1,
+            },
+          })
+          .sort({ publishedAt: direction, id: 1 })
           .skip(offset)
           .limit(limit)
           .toArray()

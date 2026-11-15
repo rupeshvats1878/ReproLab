@@ -41,10 +41,11 @@ curl -s -X POST http://127.0.0.1:8788/experiments \
 
 ```bash
 curl -s 'http://127.0.0.1:8788/experiments?limit=20&offset=0'
+curl -s 'http://127.0.0.1:8788/experiments?q=dye&sort=oldest&limit=20&offset=0'
 curl -s http://127.0.0.1:8788/experiments/EXPERIMENT_ID
 ```
 
-The list returns summaries and `limit`, `offset`, and `total`. Summaries omit `protocolSnapshot`. Open returns the stored snapshot. Unknown ids return `404`. Invalid ids and query parameters return `400`.
+The list returns summaries and `limit`, `offset`, and `total`. `total` counts the publications matching the filter, not only the page. Optional `q` is a case-insensitive title search of at most 120 characters. The service escapes it before using it as a regular expression. Optional `sort` is `newest` or `oldest`; the default is newest. Unknown query keys, a longer `q`, and any other `sort` return `400`. Summaries omit `protocolSnapshot`. When the stored snapshot has a numeric `version` or a `steps` array, the summary adds `protocolVersion` or `stepCount`. Open returns the stored snapshot. Unknown ids return `404`. Invalid ids and query parameters return `400`. A list while the database is unavailable returns `503` and `{"error":"database_unavailable"}`.
 
 ```bash
 curl -s -X POST http://127.0.0.1:8788/replications \

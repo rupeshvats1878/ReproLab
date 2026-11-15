@@ -153,7 +153,7 @@ export function Results(props: { review: ReviewController; active: boolean }) {
 
       <section className="results-block">
         <h3>Replications</h3>
-        <p>Open a publication from Prepare, then Experiment library. Starting a replication records a plan. The execution screen stays on that record and is not mixed into the monitor results above.</p>
+        <p>Open a publication from Library. Starting a replication records a plan. The execution screen stays on that record and is not mixed into the monitor results above.</p>
       </section>
     </section>
   )
