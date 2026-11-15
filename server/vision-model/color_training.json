@@ -1,0 +1,22 @@
+{
+  "checkpoint": "thaitea/laya-vision",
+  "revision": "f2fe3c12cb6d04c59d8a190250bf3fb40fc828dc",
+  "code_revision": "9e1e2419d855ad3e1a2af4d4bd1ef6be5418842c",
+  "freeze": "head",
+  "steps": 40,
+  "max_steps": 200,
+  "batch_size": 2,
+  "max_batch_size": 4,
+  "max_minutes": 15,
+  "max_minutes_ceiling": 25,
+  "lr_head": 0.0001,
+  "lr_backbone": 0.00002,
+  "warmup": 2,
+  "min_real_train_images": 40,
+  "min_classes": 3,
+  "train_act": false,
+  "paid_compute": false,
+  "device": "auto",
+  "log_every": 5,
+  "note": "Local head-only budget. Loading this file does not start training."
+}

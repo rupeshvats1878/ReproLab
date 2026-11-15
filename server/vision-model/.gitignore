@@ -3,4 +3,21 @@
 __pycache__/
 *.pyc
 *.safetensors
+*.pt
+*.pth
+*.bin
+*.onnx
 sample-results.json
+
+# Local photographs, extracted archives, organized sets, and training outputs.
+data/
+
+# Image files stay out of git even if they land outside data/.
+*.jpg
+*.jpeg
+*.png
+*.webp
+*.gif
+*.tif
+*.tiff
+*.heic
