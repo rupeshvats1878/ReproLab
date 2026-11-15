@@ -164,6 +164,11 @@ export function sourceHashFromManifest(value: unknown): { ok: true; sha256: stri
     return { ok: false, error: 'The manifest was not a JSON object. No video was sent.' }
   }
   const record = value as Record<string, unknown>
+  for (const field of ['sourceSha256', 'sourceSha256AfterEncoding']) {
+    if (field in record && (typeof record[field] !== 'string' || !SHA256.test(record[field]))) {
+      return { ok: false, error: 'The manifest source hash is not a SHA-256 hex string. No video was sent.' }
+    }
+  }
   const primary = typeof record.sourceSha256 === 'string' ? record.sourceSha256 : null
   const encoded = typeof record.sourceSha256AfterEncoding === 'string' ? record.sourceSha256AfterEncoding : null
   if (primary && encoded && primary.toLowerCase() !== encoded.toLowerCase()) {

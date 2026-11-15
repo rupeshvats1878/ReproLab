@@ -75,7 +75,7 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
   }
 
   return (
-    <section className="monitor" aria-labelledby="monitor-title" data-debug={session.debugOverlay ? 'true' : 'false'} data-running={running ? 'true' : 'false'}>
+    <section className="monitor" aria-labelledby="monitor-title" data-procedure={session.procedureMode} data-debug={session.debugOverlay ? 'true' : 'false'} data-running={running ? 'true' : 'false'}>
       <div className="monitor-heading">
         <h2 id="monitor-title">Monitor</h2>
         {session.procedureMode === 'six-well' ? <p>Six-well order: A1, A2, A3, B1, B2, B3.</p> : null}
@@ -91,7 +91,7 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
           </button>
         </div>
         {session.procedureMode === 'three-cup' ? (
-          <p role="status">Capture mode — automatic checks not connected</p>
+          <p className="capture-intro">Your experiment, its procedure, and its evidence — together.</p>
         ) : null}
         {preparedProtocol && session.procedureMode === 'six-well' ? (
           <div>
@@ -110,6 +110,7 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
         ) : null}
       </div>
 
+      {session.procedureMode === 'three-cup' ? <CaptureToolbar session={session} /> : null}
       <div className="live-split">
         <div className="live-stage">
           <div className="stage" ref={session.bindStage} onPointerDown={session.onStagePointerDown}>
@@ -140,7 +141,14 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
           data-active={session.inputKind === 'synthetic'}
         />
         {session.inputKind === 'none' ? (
-          <p className="stage-placeholder">Camera is off.</p>
+          session.procedureMode === 'three-cup' ? (
+            <div className="capture-empty">
+              <span className="capture-kicker">Three-cup workspace</span>
+              <h3>Bring your experiment into focus.</h3>
+              <p>Choose a recording above to review its evidence,<br />or start the camera to capture a new run.</p>
+              <span className="capture-empty-note">Local footage · Physical cup identities · Human review</span>
+            </div>
+          ) : <p className="stage-placeholder">Camera is off.</p>
         ) : null}
         {session.procedureMode === 'six-well' ? (
         <RegionLayer
@@ -191,7 +199,7 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
         </div>
 
         <aside className="live-decisions" aria-label="Protocol decisions">
-          {session.procedureMode === 'three-cup' ? <CapturePanel session={session} running={running} /> : null}
+          {session.procedureMode === 'three-cup' ? <CapturePanel key={session.live.sessionId} session={session} running={running} /> : null}
           {session.procedureMode === 'six-well' ? (
           <>
           <ol className="well-progress" aria-label="Six-well progress">
@@ -341,7 +349,7 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
         open={setupOpen}
         onToggle={(event) => setSetupOpen(event.currentTarget.open)}
       >
-        <summary>Setup</summary>
+        <summary>{session.procedureMode === 'three-cup' ? 'Capture options and diagnostics' : 'Setup'}</summary>
         <CameraSetup
           session={session}
           wellSize={wellSize}
@@ -899,6 +907,40 @@ function setupPrompt(step: SetupStep, pictureReady: boolean): string {
   return 'Camera is on. Continue to the regions.'
 }
 
+function CaptureToolbar({ session }: { session: VisionSession }) {
+  const fileInput = useRef<HTMLInputElement>(null)
+  const running = session.localPhase === 'running'
+  return (
+    <section className="capture-toolbar" aria-label="Three-cup setup">
+      <label className="capture-procedure">
+        Approved procedure
+        <select value={session.captureProtocolId} disabled={session.protocolFrozen || running}
+          onChange={(event) => session.selectCaptureProtocol(captureProtocol(event.target.value).id)}>
+          {CAPTURE_PROTOCOLS.map((item, index) => <option key={item.id} value={item.id}>Recording {index + 1} · {item.title}</option>)}
+        </select>
+        <span>{session.protocolFrozen ? 'Locked for this session' : 'Choose before opening a recording or starting capture'}</span>
+      </label>
+      <div className="capture-actions">
+        <button type="button" onClick={session.startCamera} disabled={running || session.cameraPhase === 'starting' || session.cameraPhase === 'live'}>Start camera</button>
+        <input ref={fileInput} className="capture-file-input" type="file" aria-label="Review a local recording"
+          accept="video/mp4,video/webm,video/quicktime,.mov,.mp4,.webm" disabled={running}
+          onChange={(event) => {
+            const file = event.target.files?.[0]
+            if (file) session.openCaptureReview(file)
+            event.target.value = ''
+          }} />
+        <button type="button" className="primary-action" onClick={() => fileInput.current?.click()} disabled={running}>Open recording</button>
+        {session.reviewFile ? <button type="button" onClick={session.clearCaptureReview} disabled={running}>Clear review</button> : null}
+        {session.inputKind === 'live' ? <>
+          <label className="check-field"><input type="checkbox" checked={session.recordThisRun} disabled={running}
+            onChange={(event) => session.setRecordThisRun(event.target.checked)} />Record this run</label>
+          <button type="button" className="primary-action" onClick={session.startRun} disabled={!session.canStartRun}>Start capture</button>
+        </> : null}
+      </div>
+    </section>
+  )
+}
+
 function CapturePanel({ session, running }: { session: VisionSession; running: boolean }) {
   const previewUrl = useObjectUrl(session.localRecording)
   const previewRef = useRef<HTMLVideoElement>(null)
@@ -908,15 +950,18 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
   const [clipPhase, setClipPhase] = useState<'idle' | 'processing' | 'done' | 'error'>('idle')
   const [clipResult, setClipResult] = useState<ClipCheckResponse | null>(null)
   const [manifestSha256, setManifestSha256] = useState<string | null>(null)
+  const [manifestInvalid, setManifestInvalid] = useState(false)
   const [linkNotice, setLinkNotice] = useState('')
   const clipGeneration = useRef(0)
-  const reviewKey = session.reviewFile ? `${session.reviewFile.name}:${session.reviewFile.bytes}` : ''
+  // Each selection is a new object, even when two files share name and size.
+  const reviewKey = session.reviewFile
   const [clipReviewKey, setClipReviewKey] = useState(reviewKey)
   if (clipReviewKey !== reviewKey) {
     setClipReviewKey(reviewKey)
     setClipPhase('idle')
     setClipResult(null)
     setManifestSha256(null)
+    setManifestInvalid(false)
     setLinkNotice('')
     clipGeneration.current += 1
   }
@@ -1058,17 +1103,27 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
     }
   }
   async function loadRecordingManifest(file: File): Promise<void> {
+    const generation = ++clipGeneration.current
+    setClipPhase('processing')
+    setManifestInvalid(false)
+    setClipResult((current) => current ? { ...current, linked: false, association: null } : null)
     let parsed: unknown
     try {
       parsed = JSON.parse(await file.text())
     } catch {
+      if (clipGeneration.current !== generation) return
       setManifestSha256(null)
+      setManifestInvalid(true)
+      setClipPhase('done')
       setLinkNotice('The manifest was not valid JSON. No video was sent.')
       return
     }
+    if (clipGeneration.current !== generation) return
+    setClipPhase('done')
     const hash = sourceHashFromManifest(parsed)
     if (!hash.ok) {
       setManifestSha256(null)
+      setManifestInvalid(true)
       setLinkNotice(hash.error)
       return
     }
@@ -1078,7 +1133,7 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
       : 'This manifest has no source hash. Linking asks for confirmation.')
   }
   async function linkImportedResult(): Promise<void> {
-    if (!session.reviewFile || !clipResult?.raw || !clipResult.requestId) return
+    if (!session.reviewFile || !clipResult?.raw || !clipResult.requestId || manifestInvalid || clipPhase === 'processing') return
     const generation = clipGeneration.current
     const requestId = clipResult.requestId
     const recording = session.readReviewRecording()
@@ -1185,11 +1240,15 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
         </details>
       </section>
       <section className="protocol-compare" aria-label="Protocol comparison">
-        <h3>Expected</h3>
-        <p>{protocol.title}</p>
-        <ol className="plain-list">
-          {protocol.lines.map((line) => <li key={line}>{line}</li>)}
+        <h3>Approved procedure</h3>
+        <p className="capture-caption">Expected steps · not completed by a report</p>
+        <ol className="capture-steps">
+          {protocol.transfers.map(([source, destination], index) => <li key={index}>
+            <span className="capture-step-number">{index + 1}</span>
+            <strong>{source}</strong><span aria-hidden="true">→</span><strong>{destination}</strong>
+          </li>)}
         </ol>
+        <details><summary>Procedure details</summary><ul className="plain-list">{protocol.lines.map((line) => <li key={line}>{line}</li>)}</ul></details>
         {latest && latestComparison ? (
           <p data-relation={latestComparison.relation}>{latestComparison.relation}</p>
         ) : (
@@ -1202,8 +1261,33 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
           </details>
         ) : null}
       </section>
-      <section className="report-controls" aria-label="Person reports">
-        <h3>Report</h3>
+      <EvidenceStream
+        empty="No evidence yet. Person reports and linked model hypotheses will appear here."
+        items={[
+          ...session.markers.map((marker) => {
+            const comparison = compareHumanMarker(marker.marker, session.captureProtocolId)
+            return {
+              id: marker.id,
+              time: formatSeconds(marker.observationTimestamp),
+              source: 'Person',
+              title: marker.label,
+              detail: comparison.review,
+              onWatch: () => watch(marker.observationTimestamp),
+            }
+          }),
+          ...clipRailItems(clipResult, session.reviewFile ? localVideoId(session.reviewFile) : undefined).map((item) => ({
+            id: item.id,
+            time: item.time,
+            source: item.source,
+            title: item.title,
+            detail: item.detail,
+            onWatch: item.seekable ? () => watchMedia(item.mediaMs) : undefined,
+          })),
+        ]}
+      />
+      <details className="report-controls capture-person-report" aria-label="Person reports">
+        <summary>Add a person report</summary>
+        <p className="capture-caption">Records what you saw. Does not complete a step.</p>
         <div className="button-row">
           {CAPTURE_MARKERS.map((marker) => (
             <button key={marker.id} type="button" onClick={() => session.addMarker(marker.id)} disabled={!canReport}>
@@ -1211,10 +1295,11 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
             </button>
           ))}
         </div>
-      </section>
+      </details>
       {session.reviewFile ? (
-        <section className="report-controls" aria-label="Clip check">
-          <h3>Clip check</h3>
+        <details className="report-controls capture-import" aria-label="Clip check">
+          <summary>Import and link a saved result</summary>
+          <details className="capture-clip-check"><summary>Check clip availability</summary>
           <div className="clip-range">
             <label>
               Start (s)
@@ -1228,6 +1313,7 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
           <button type="button" onClick={() => void requestClipCheck()} disabled={clipPhase === 'processing'}>
             Check this clip
           </button>
+          </details>
           <label className="file-field">
             Import adapter result
             <input
@@ -1254,13 +1340,13 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
               }}
             />
           </label>
-          {manifestSha256 ? (
-            <button type="button" onClick={() => { setManifestSha256(null); setLinkNotice('The source hash was removed. Linking asks for confirmation.') }}>
+          {manifestSha256 || manifestInvalid ? (
+            <button type="button" onClick={() => { clipGeneration.current += 1; setManifestSha256(null); setManifestInvalid(false); setClipPhase('done'); setClipResult((current) => current ? { ...current, linked: false, association: null } : null); setLinkNotice('The manifest was removed. Linking asks for confirmation.') }}>
               Remove manifest
             </button>
           ) : null}
           {clipResult?.raw && clipResult.status !== 'rejected' && clipResult.linked !== true ? (
-            <button type="button" onClick={() => void linkImportedResult()} disabled={clipPhase === 'processing'}>
+            <button type="button" onClick={() => void linkImportedResult()} disabled={clipPhase === 'processing' || manifestInvalid}>
               Link this result to this recording
             </button>
           ) : null}
@@ -1275,33 +1361,10 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
               <p>{clipAssociationCopy(clipResult)}</p>
             </details>
           ) : null}
-        </section>
+        </details>
       ) : null}
       {seekNotice ? <p className="media-notice" role="alert">{seekNotice}</p> : null}
-      <EvidenceStream
-        empty="No person report yet."
-        items={[
-          ...session.markers.map((marker) => {
-            const comparison = compareHumanMarker(marker.marker, session.captureProtocolId)
-            return {
-              id: marker.id,
-              time: formatSeconds(marker.observationTimestamp),
-              source: 'Person',
-              title: marker.label,
-              detail: comparison.review,
-              onWatch: () => watch(marker.observationTimestamp),
-            }
-          }),
-          ...clipRailItems(clipResult, session.reviewFile ? localVideoId(session.reviewFile) : undefined).map((item) => ({
-            id: item.id,
-            time: item.time,
-            source: item.source,
-            title: item.title,
-            detail: item.detail,
-            onWatch: item.seekable ? () => watchMedia(item.mediaMs) : undefined,
-          })),
-        ]}
-      />
+
       {previewUrl ? (
         <video
           ref={previewRef}
@@ -1389,53 +1452,6 @@ function CameraSetup({
   if (session.procedureMode === 'three-cup') {
     return (
       <div className="camera-setup">
-        <button type="button" className="primary-action" onClick={session.startCamera} disabled={starting}>
-          Start camera
-        </button>
-        <label className="check-field">
-          <input
-            type="checkbox"
-            checked={session.recordThisRun}
-            disabled={session.localPhase === 'running'}
-            onChange={(event) => session.setRecordThisRun(event.target.checked)}
-          />
-          Record this run
-        </label>
-        <fieldset className="protocol-choice">
-          <legend>Approved procedure</legend>
-          {CAPTURE_PROTOCOLS.map((item) => (
-            <label key={item.id}>
-              <input
-                type="radio"
-                name="capture-protocol"
-                value={item.id}
-                checked={session.captureProtocolId === item.id}
-                disabled={session.protocolFrozen || session.localPhase === 'running'}
-                onChange={() => session.selectCaptureProtocol(item.id)}
-              />
-              {item.title}
-            </label>
-          ))}
-        </fieldset>
-        {session.protocolFrozen ? <p className="monitor-note">This session keeps the selected procedure.</p> : null}
-        <label className="file-field">
-          Review a local recording
-          <input
-            type="file"
-            accept="video/mp4,video/webm,video/quicktime,.mov,.mp4,.webm"
-            disabled={session.localPhase === 'running'}
-            onChange={(event) => {
-              const file = event.target.files?.[0]
-              if (file) session.openCaptureReview(file)
-              event.target.value = ''
-            }}
-          />
-        </label>
-        {session.reviewFile ? (
-          <button type="button" onClick={session.clearCaptureReview} disabled={session.localPhase === 'running'}>
-            Clear review file
-          </button>
-        ) : null}
         <p className="monitor-note">Records the camera without audio. Cup names stay the physical labels.</p>
         {session.captureProtocolId === DEFAULT_CAPTURE_PROTOCOL_ID ? (
           <details>
@@ -1443,9 +1459,6 @@ function CameraSetup({
             <p>{THREE_CUP_DEMO_PLAN}</p>
           </details>
         ) : null}
-        <button type="button" className="primary-action" onClick={session.startRun} disabled={!session.canStartRun || session.inputKind !== 'live'}>
-          Start capture
-        </button>
         <button type="button" onClick={session.startClockCheck} disabled={session.localPhase === 'running'}>
           Record 12-second timestamp check
         </button>

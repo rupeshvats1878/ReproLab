@@ -2,6 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { buildAdapterImport, buildClipCheckRequest, buildRecordingLink, clipHeadline, clipIdentityCopy, clipRailItems, clipStatusCopy, localVideoId, sourceHashFromManifest, shouldApplyClipResponse, type ClipCheckResponse } from './clipCheck.ts'
 
 describe('clip check requests', () => {
+  it('does not downgrade a malformed source hash to a confirmation-only link', () => {
+    for (const sourceSha256 of [null, 123, '', [], {}]) {
+      expect(sourceHashFromManifest({ sourceSha256 }).ok).toBe(false)
+      expect(sourceHashFromManifest({ sourceSha256AfterEncoding: sourceSha256 }).ok).toBe(false)
+    }
+    expect(sourceHashFromManifest({})).toEqual({ ok: true, sha256: null })
+  })
   it('sets the source offset from the clip start and rejects a window over 60 seconds', () => {
     const request = buildClipCheckRequest({
       sessionId: 'session_1',

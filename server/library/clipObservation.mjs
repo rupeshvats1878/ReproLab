@@ -3,7 +3,7 @@ import { LibraryError } from './errors.mjs'
 export const CLIP_OBSERVATION_SCHEMA = 'three-cup-gemini-observation/v0.1'
 export const CLIP_LIMIT_MS = 60_000
 export const CLIP_LIMIT_BYTES = 14 * 1024 * 1024
-export const ADAPTER_COMMIT = '119e048931069b817eb7e3a14b4f6d860a050ef5'
+export const ADAPTER_COMMIT = 'df58da202298bf1fccab60b72e675912978ca543'
 
 const SESSION_ID = /^[\w][\w.-]{0,159}$/
 const REQUEST_ID = /^request_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
