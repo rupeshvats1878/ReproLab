@@ -6,7 +6,7 @@ from pathlib import Path
 from .rules import CUPS, _time
 
 SCHEMA = 'three-cup-evaluation/v0.2'
-EVENT_TYPES = ('liquid_transfer', 'tool_cleaning_observed', 'possible_tool_cleaning_omission', 'spill_observed', 'unclear_activity')
+EVENT_TYPES = ('no_transfer', 'liquid_transfer', 'tool_cleaning_observed', 'possible_tool_cleaning_omission', 'spill_observed', 'unclear_activity')
 MARKERS = {10: 'RED', 20: 'GREEN', 30: 'BLUE'}
 
 
@@ -30,11 +30,14 @@ def pair(event):
 
 
 def normalize_predictions(value, run):
-    """Accept explicit events or provisional Cursor envelope; preserve raw inputs."""
+    """Accept explicit events or Cursor v0.1 envelope; preserve raw inputs."""
     envelope = value if isinstance(value, dict) else None
     if envelope is not None:
         binding(envelope, run)
         require(envelope.get('schemaVersion') == 'three-cup-gemini-observation/v0.1', 'Unknown adapter schema')
+        require(envelope.get('observationStatus') in ('observed', 'unclear', 'no_transfer', 'unavailable'), 'Invalid adapter observationStatus')
+        require(envelope.get('sourceOffsetMs') is None or _time(envelope['sourceOffsetMs']), 'Invalid sourceOffsetMs')
+        require(envelope.get('videoDurationMs') is None or _time(envelope['videoDurationMs']), 'Invalid videoDurationMs')
         value = envelope.get('events')
     require(isinstance(value, list), 'predictions must be a list or supported adapter envelope')
     result = []
@@ -47,11 +50,33 @@ def normalize_predictions(value, run):
             event.setdefault('eventId', f'adapter-event-{index + 1}')
         binding(event, run)
         require(text_id(event.get('eventId')), 'eventId required')
+        if event.get('observationStatus') == 'no_transfer':
+            require(event.get('eventType') in (None, 'no_transfer') and all(c in (None, 'unknown') for c in pair(event)), 'Contradictory no-transfer observation')
+            event['eventType'] = 'no_transfer'
         event.setdefault('eventType', 'liquid_transfer')
         require(event['eventType'] in EVENT_TYPES, 'Invalid eventType')
+        if event['eventType'] == 'no_transfer':
+            require(event.get('observationStatus') == 'no_transfer' and all(c in (None, 'unknown') for c in pair(event)), 'Contradictory no-transfer type')
         for key in ('sourceCupId', 'destinationCupId'):
             require(event.get(key) in (*CUPS, 'unknown', None), 'Invalid cup identity')
             event.setdefault(key, None)
+        event['normalizationIssues'] = []
+        if envelope is not None:
+            # Adapter retains invalid model estimates as unclear; never make them usable evidence.
+            start, end = event.get('eventStartMs'), event.get('eventEndMs')
+            offset = envelope.get('sourceOffsetMs') or 0
+            duration = envelope.get('videoDurationMs')
+            def valid_stamp(value):
+                return _time(value) and value >= offset and (duration is None or value <= offset + duration)
+            if not valid_stamp(start) or not valid_stamp(end) or start >= end:
+                event['normalizationIssues'].append('invalid_adapter_event_interval')
+                event['eventStartMs'] = event['eventEndMs'] = None
+            evidence = event.get('evidenceTimestampsMs', [])
+            require(isinstance(evidence, list), 'Adapter evidence must be array')
+            valid_evidence = [t for t in evidence if valid_stamp(t) and event['eventStartMs'] is not None and start <= t <= end]
+            if len(valid_evidence) != len(evidence):
+                event['normalizationIssues'].append('invalid_adapter_evidence_timestamps')
+            event['evidenceTimestampsMs'] = valid_evidence
         start, end = event.get('eventStartMs'), event.get('eventEndMs')
         require((start is None or _time(start)) and (end is None or _time(end)), 'Invalid event timestamps')
         require(start is None or end is None or start < end, 'Event interval must increase')
@@ -85,7 +110,7 @@ def assess_events(events, reviews, markers):
         require(type(marker.get('visible')) is bool and _time(marker.get('timeMs')), 'Invalid marker observation')
         require(type(marker.get('markerId')) is int, 'Invalid markerId')
     for event in events:
-        reasons = []
+        reasons = list(event.get('normalizationIssues', []))
         if event.get('adapterUnavailable'):
             reasons.append('adapter_unavailable_or_unclear')
         if not text_id(event.get('modelId')):
@@ -261,7 +286,7 @@ def evaluate(data):
         candidate_metrics, alignment_evidence = score(transfers, truth, data['alignments'])
         if not reasons: metrics = candidate_metrics
     status = 'NOT_EVALUATED' if reasons else ('SYNTHETIC_EVALUATION' if data['dataKind'] == 'synthetic' else 'EVALUATED')
-    return dict(schemaVersion=SCHEMA, status=status, dataKind=data['dataKind'], recordingId=run['videoId'], sessionId=run['sessionId'], protocolId=run['protocolId'], groundTruthEventCount=len(truth['events']) if truth else 0, modelPredictedEventCount=len(transfers), nonTransferObservationCount=len(events) - len(transfers), metrics=metrics, notEvaluatedReasons=reasons, events=events, perEventEvidence=alignment_evidence, protocolDecisions=compare_sequence(transfers, steps, data.get('coverageComplete', False)), compatibility='provisional_cursor_v0.1_mapping_not_end_to_end_verified', warnings=['Synthetic results are software tests, not real-world accuracy.' if data['dataKind'] == 'synthetic' else 'Review attestations and ground-truth provenance are caller supplied.', 'No authoritative step completion or automated alerts.', 'Explicit alignment is human supplied; no automatic event matching.'])
+    return dict(schemaVersion=SCHEMA, status=status, dataKind=data['dataKind'], recordingId=run['videoId'], sessionId=run['sessionId'], protocolId=run['protocolId'], groundTruthEventCount=len(truth['events']) if truth else 0, modelPredictedEventCount=len(transfers), nonTransferObservationCount=len(events) - len(transfers), metrics=metrics, notEvaluatedReasons=reasons, events=events, perEventEvidence=alignment_evidence, protocolDecisions=compare_sequence(transfers, steps, data.get('coverageComplete', False)), adapterObservation=copy.deepcopy(envelope), compatibility='cursor_v0.1_119e048_mocked_envelope_verified_no_live_inference', warnings=['Synthetic results are software tests, not real-world accuracy.' if data['dataKind'] == 'synthetic' else 'Review attestations and ground-truth provenance are caller supplied.', 'No authoritative step completion or automated alerts.', 'Explicit alignment is human supplied; no automatic event matching.'])
 
 
 def markdown_report(report):

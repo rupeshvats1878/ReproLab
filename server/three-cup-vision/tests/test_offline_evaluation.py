@@ -143,3 +143,53 @@ class EvaluationTests(unittest.TestCase):
     def test_ground_truth_unassigned_extra_event(self):
         b=self.truth_bundle(); b['groundTruth']['events'][0]['stepIndex']=None
         r=self.evaluate(b); self.assertEqual(r['metrics']['correctPairs'],2); self.assertEqual(r['metrics']['correctStepAssignments'],1); self.assertIsNone(r['perEventEvidence'][0]['stepCorrect'])
+
+    def adapter_bundle(self, pairs=None):
+        """Mock _envelope at Cursor 119e048; no SDK, network, or media."""
+        b=bundle(pairs)
+        events=[]
+        for p in b['predictions']:
+            events.append({key:p[key] for key in ('sourceCupId','destinationCupId','eventStartMs','eventEndMs','evidenceTimestampsMs','observationStatus','needsHumanVerification')})
+        b['predictions']=dict(schemaVersion='three-cup-gemini-observation/v0.1',sessionId=b['run']['sessionId'],videoId=b['run']['videoId'],events=events,appearances=[],observationStatus='observed',needsHumanVerification=True,modelId='synthetic-mocked-gemini',latencyMs=2,error=None,warnings=['timestamps_are_model_estimates'],videoDurationMs=1000,samplingFps=4,sourceOffsetMs=0,remoteCallMade=False)
+        for i, review in enumerate(b['reviews']): review['eventId']=f'adapter-event-{i+1}'
+        return b
+
+    def test_adapter_bad_times_normalize_to_review_with_raw_preserved(self):
+        for update in (dict(eventEndMs=100),dict(eventEndMs=90),dict(eventStartMs=-1),dict(evidenceTimestampsMs=[-10,1001]),dict(eventEndMs=1001),dict(eventStartMs=None)):
+            with self.subTest(update=update):
+                b=self.adapter_bundle(); raw=b['predictions']['events'][0]; raw.update(update); raw['observationStatus']='unclear'; b['predictions']['observationStatus']='unclear'
+                r=self.evaluate(b)
+                self.assertEqual(r['events'][0]['rawObservation'],raw)
+                self.assertEqual(r['protocolDecisions'][0]['decision'],'NEEDS_HUMAN_REVIEW')
+                self.assertEqual(r['status'],'NOT_EVALUATED')
+
+    def test_no_transfer_status_is_not_a_transfer(self):
+        b=bundle(); b['predictions'][0]['observationStatus']='no_transfer'; b['predictions'][0]['sourceCupId']=None; b['predictions'][0]['destinationCupId']=None; del b['predictions'][0]['eventType']
+        r=self.evaluate(b); self.assertEqual(r['modelPredictedEventCount'],1)
+        b=self.adapter_bundle([]); b['predictions']['observationStatus']='no_transfer'
+        r=self.evaluate(b); self.assertEqual(r['modelPredictedEventCount'],0); self.assertEqual(r['status'],'NOT_EVALUATED')
+
+    def test_adapter_metadata_preserved_and_source_offset_not_reapplied(self):
+        b=self.adapter_bundle(); b['predictions']['sourceOffsetMs']=100
+        r=self.evaluate(b); self.assertEqual(r['adapterObservation'],b['predictions']); self.assertEqual(r['events'][0]['eventStartMs'],100)
+
+    def test_mocked_cursor_envelope_cli_both_protocols(self):
+        for pairs, steps, expected in (
+            ([('RED','BLUE'),('GREEN','BLUE')],[('RED','BLUE'),('GREEN','RED')],['MATCH','POSSIBLE_WRONG_DESTINATION']),
+            ([('GREEN','BLUE'),('BLUE','RED')],[('BLUE','RED'),('GREEN','BLUE')],['POSSIBLE_WRONG_ORDER']*2)):
+            b=self.adapter_bundle(pairs); b['protocol']['steps']=[dict(sourceCupId=s,destinationCupId=d) for s,d in steps]
+            with tempfile.TemporaryDirectory() as directory:
+                root=Path(directory); source=root/'input.json'; source.write_text(json.dumps(b))
+                result=subprocess.run([sys.executable,'-m','offline.evaluation',str(source),'--json-output',str(root/'report.json'),'--markdown-output',str(root/'report.md')],capture_output=True,text=True)
+                self.assertEqual(result.returncode,0,result.stderr)
+                report=json.loads((root/'report.json').read_text()); self.assertEqual([d['decision'] for d in report['protocolDecisions']],expected); self.assertEqual(report['status'],'NOT_EVALUATED'); self.assertTrue((root/'report.md').exists())
+
+    def test_contradictory_no_transfer_cannot_hide_activity(self):
+        for explicit_type, source in ((False,'RED'),(True,None)):
+            b=bundle(); event=b['predictions'][0]; event['observationStatus']='no_transfer'; event['sourceCupId']=source; event['destinationCupId']=None
+            if not explicit_type: del event['eventType']
+            with self.assertRaises(ValueError): self.evaluate(b)
+
+    def test_no_transfer_type_cannot_hide_known_pair(self):
+        b=bundle(); b['predictions'][0]['eventType']='no_transfer'
+        with self.assertRaises(ValueError): self.evaluate(b)
