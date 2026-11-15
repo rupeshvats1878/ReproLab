@@ -124,7 +124,7 @@ async function route(req, res, store, mediaLimit) {
       return
     }
     if (req.method === 'POST' && monitorAction[2] === '/events') {
-      const input = validateMonitorEvent(await readJson(req))
+      const input = validateMonitorEvent(await readJson(req, MAX_EVENT_BYTES))
       await assertDatabase(store)
       const result = await store.appendMonitorEvent(sessionId, input)
       send(res, result.created ? 201 : 200, result.session)

@@ -16,6 +16,7 @@ export interface RecordingAnalysis {
   videoId: string
   durationMs: number
   sizeBytes: number
+  sourceSha256: string | null
   events: RecordingEvent[]
   appearanceCount: number
   warnings: string[]
@@ -44,6 +45,8 @@ export function parseRecordingAnalysis(value: unknown): RecordingAnalysis {
   const recording = object(raw.recording)
   const durationMs = time(recording.durationMs)
   const sizeBytes = time(recording.sizeBytes)
+  const sourceSha256 = recording.sha256 == null ? null : String(recording.sha256).toLowerCase()
+  if (sourceSha256 !== null && !/^[0-9a-f]{64}$/.test(sourceSha256)) throw new Error('Invalid recording source hash.')
   if (!durationMs || durationMs > 86_400_000 || !sizeBytes) throw new Error('Invalid recording metadata.')
   if (!Array.isArray(raw.segments) || !raw.segments.length) throw new Error('Missing analysis windows.')
   const warnings: string[] = []
@@ -94,10 +97,12 @@ export function parseRecordingAnalysis(value: unknown): RecordingAnalysis {
     if (!Array.isArray(appearance.evidenceTimestampsMs) || appearance.evidenceTimestampsMs.map(time).some((stamp) => stamp > durationMs)) throw new Error('Appearance evidence is outside the recording.')
   }
   warnings.push('Model hypotheses and supplied human confirmations remain separate. No protocol step is automatically completed.')
-  return { sessionId: id(raw.sessionId), videoId: id(raw.videoId), durationMs, sizeBytes, events,
+  return { sessionId: id(raw.sessionId), videoId: id(raw.videoId), durationMs, sizeBytes, sourceSha256, events,
     appearanceCount: timeline.appearances.length, warnings: [...new Set(warnings)], raw: structuredClone(value) }
 }
 export function recordingLinkError(analysis: RecordingAnalysis, bytes: number, durationMs: number, manifestHash: string | null, fileHash: string | null): string | null {
+  if (analysis.sourceSha256 && manifestHash && analysis.sourceSha256 !== manifestHash.toLowerCase()) return 'The supplied manifest hash contradicts the analysis source hash.'
+  if (analysis.sourceSha256 && fileHash?.toLowerCase() !== analysis.sourceSha256) return 'The selected recording does not match the analysis source hash.'
   if (bytes !== analysis.sizeBytes) return 'The recording size does not match this analysis.'
   // Demuxers can include different final audio/video tails; tolerate 250 ms, never shift events.
   if (!Number.isFinite(durationMs) || Math.abs(durationMs - analysis.durationMs) > 250) return 'The recording duration does not match this analysis (250 ms tolerance).'
@@ -116,7 +121,7 @@ export function recordingComparisons(events: RecordingEvent[], approved: readonl
     seen.add(step)
     const outOfOrder = step < highest || approved.slice(0, step).some((_, index) => !seen.has(index))
     highest = Math.max(highest, step)
-    return `Pair matches approved step ${step + 1}${outOfOrder ? ' · possible order difference' : ''} · not automatically completed`
+    return `${outOfOrder ? 'Possible wrong order · ' : ''}Pair matches approved step ${step + 1}${outOfOrder ? ' · possible order difference' : ''} · not automatically completed`
   })
 }
 

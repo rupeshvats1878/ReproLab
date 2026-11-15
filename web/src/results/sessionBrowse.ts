@@ -36,9 +36,11 @@ export function sessionChoiceLabel(session: {
   startedAtIso?: string | null
   recordedAt?: string | null
   blockedReason?: string | null
+  captureProtocolId?: string
   preparedProtocol?: { title?: string } | null
 }): string {
-  const title = session.preparedProtocol?.title || 'Protocol association not recorded'
+  const captureTitle = session.captureProtocolId === 'blue-red-then-green-blue' ? 'Recording 2 · BLUE → RED, then GREEN → BLUE' : session.captureProtocolId === 'red-blue-then-green-red' ? 'Recording 1 · RED → BLUE, then GREEN → RED' : null
+  const title = session.preparedProtocol?.title || captureTitle || 'Protocol association not recorded'
   const when = formatRecordedTime(session.startedAtIso || session.recordedAt)
   const status = session.blockedReason ? 'Blocked' : 'Status not recorded'
   return `${title} · ${when} · ${sourceLabel(session.sourceKind)} · ${status}`

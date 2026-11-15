@@ -1,3 +1,4 @@
+import { SavedRecordingEvidence } from '../capture/RecordingReview.tsx'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Run } from '../run/Run.tsx'
 import {
@@ -401,7 +402,7 @@ function RecordedSummary({ run }: { run: NonNullable<StoredExperiment['runRecord
   const markers = run.humanMarkers ?? []
   const capture = run.procedureId === 'three-cup-capture'
   const source = capture
-    ? 'Three-cup capture. Automatic checks are not connected.'
+    ? run.recordingAnalyses?.length ? 'Saved three-cup model hypotheses and separate human review. No automatic completion.' : 'Three-cup capture. Automatic checks are not connected.'
     : run.sourceKind === 'synthetic'
     ? 'Synthetic demonstration.'
     : run.sourceKind === 'prerecorded'
@@ -428,6 +429,7 @@ function RecordedSummary({ run }: { run: NonNullable<StoredExperiment['runRecord
       ) : (
         <p>No recording was included. A frame label is not footage.</p>
       )}
+      {run.recordingAnalyses?.length ? <SavedRecordingEvidence analyses={run.recordingAnalyses} reviews={run.recordingReviews} /> : null}
       {capture ? <p>RED, GREEN, and BLUE are physical cup labels. Operator markers are not model judgments.</p> : null}
       {markers.length > 0 ? (
         <ul>
@@ -457,7 +459,7 @@ function RecordedSummary({ run }: { run: NonNullable<StoredExperiment['runRecord
             )
           })}
         </ul>
-      ) : <p>No unresolved deviation was stored.</p>}
+      ) : <p>{run.recordingAnalyses?.length ? 'Imported model findings and human reviews remain separate above; no compliance verdict is implied.' : 'No unresolved deviation was stored.'}</p>}
       {reports.length > 0 ? (
         <ul>
           {reports.map((report) => (

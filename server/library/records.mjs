@@ -189,6 +189,8 @@ export function recordedExperimentRecord(session, notes, { id, publishedAt, shar
     startedAtIso: session.startedAtIso ?? null,
     finishedAt: session.finishedAt,
     notes,
+    recordingAnalyses: structuredClone(presented.recordingAnalyses ?? []),
+    recordingReviews: structuredClone(presented.recordingReviews ?? []),
     observationCount: presented.observations.length,
     observations: presented.observations.map((item) => ({
       id: item.id,

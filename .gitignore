@@ -31,3 +31,7 @@ pnpm-debug.log*
 *.njsproj
 *.sln
 *.sw?
+
+# Local integration scratch and private offline evidence (not app source).
+/work/
+/server/three-cup-vision/

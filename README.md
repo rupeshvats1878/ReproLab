@@ -40,7 +40,7 @@ A proposed transfer does not automatically complete a protocol step. Extra event
 | Six-well mode | An optional color-measurement demo using six manually positioned image regions and lighting/reference setup. It does not automatically find six containers. |
 | Experiment history | MongoDB-backed monitor sessions, experiment publication, and replication records. |
 
-**Current limits:** imported whole-recording analyses live in page memory and are not yet persisted into Results or Library. The local clip-check route does not initiate external video inference by default. Detection accuracy has not been established on an independently labeled evaluation set. Large recordings can be reviewed locally; publication retains the existing **80 MiB** media limit.
+**Current limits:** imported whole-recording analyses remain local until explicitly saved. After linking the original recording by SHA-256, a review session can save its frozen procedure, original analysis, association, and separate append-only human reviews for Results and Library publication. The persistence path has passed local in-memory API tests; MongoDB Atlas round-trip verification was skipped without configured credentials. Saving review JSON does not upload the original video. The local clip-check route does not initiate external video inference by default. Detection accuracy has not been established on an independently labeled evaluation set. Large recordings can be reviewed locally; publication retains the existing **80 MiB** media limit.
 
 ## Architecture
 
@@ -95,8 +95,9 @@ The interface can be explored without credentials, but persistent library operat
 1. Open **Monitor → Three-cup capture** and choose the approved procedure.
 2. Open the **original recording** with **Review a local recording**.
 3. Import the saved analysis JSON. Add a source-recording manifest when available.
-4. Verify or confirm the association with that recording.
+4. Verify or confirm the association with that recording. Saving a recording review requires SHA-256 verification against the source manifest.
 5. Use **Watch** on an event to inspect its evidence and retain human-review status.
+6. Save the review session, append any human confirmations or rejections, and finish the session to review or publish it from Results. The approved procedure stays fixed for that review; model hypotheses remain separate from human decisions.
 
 Use original-recording timestamps. Do not add a clip's source offset a second time or substitute the trimmed clip for the original media.
 

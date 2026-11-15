@@ -37,14 +37,18 @@ test('reports an occupied port without claiming the process was stopped', async 
   }
 })
 
-test('stops a child process tree on request', async () => {
+test('stops its spawned child on request', { timeout: 10_000 }, async (t) => {
   const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
     stdio: 'ignore',
     windowsHide: true,
     detached: process.platform !== 'win32',
   })
+  t.after(() => stopChild(child))
+  const exited = new Promise((resolve) => child.once('exit', (code, signal) => resolve({ code, signal })))
   await new Promise((resolve) => child.once('spawn', resolve))
   stopChild(child)
-  const code = await new Promise((resolve) => child.once('exit', resolve))
-  assert.notEqual(code, null)
+  const { code, signal } = await exited
+  // A signal-terminated child correctly reports code=null and signal=SIGTERM.
+  if (process.platform === 'win32') assert.equal(Number.isInteger(code), true)
+  else assert.equal(signal, 'SIGTERM')
 })
