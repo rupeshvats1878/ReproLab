@@ -15,6 +15,10 @@ import { useVisionSession, type VisionSession } from '../vision/useVisionSession
 import type { WellMeasurement } from '../vision/analyze.ts'
 import type { PixelRect } from '../vision/geometry.ts'
 import './Monitor.css'
+import { replayFullResultsEnabled } from '../capture/replay.ts'
+import { DemoCaption, DemoDashboard, type ReplaySource } from '../capture/DemoReplay.tsx'
+import { RecordingReviewCard } from '../capture/RecordingReview.tsx'
+import { createRecordingDraft, recordingAssociation, type RecordingDraft, type RecordingAssociation } from '../capture/recordingReview.ts'
 import { parseRecordingAnalysis, recordingComparisons, recordingLinkError, RECORDING_ANALYSIS_SCHEMA, type RecordingAnalysis } from '../capture/recordingAnalysis.ts'
 
 const STATE_LABEL: Record<WellState, string> = {
@@ -26,6 +30,20 @@ const STATE_LABEL: Record<WellState, string> = {
 export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonitorProtocol | null }) {
   const { protocol, preparedProtocol = null } = props
   const session = useVisionSession(props, preparedProtocol)
+  const [demoMode, setDemoMode] = useState(false)
+  const [replaySource, setReplaySource] = useState<ReplaySource | null>(null)
+  const [fullResultsState, setFullResultsState] = useState<{key:string|null;fileKey:object|null;value:boolean}>({key:null,fileKey:null,value:false})
+  const [replayNotes, setReplayNotes] = useState<Record<string, string>>({})
+  const [mediaClock, setMediaClock] = useState<{key: object | null; timeMs: number; playing: boolean}>({key:null,timeMs:0,playing:false})
+  const replay = session.procedureMode === 'three-cup' && session.inputKind === 'prerecorded' && replaySource?.fileKey === session.reviewFile ? replaySource : null
+  const fullResults = replayFullResultsEnabled(fullResultsState,replay?.draft.id??null,replay?.fileKey??null)
+  function setFullResults(value:boolean) { setFullResultsState({key:replay?.draft.id ?? null,fileKey:replay?.fileKey??null,value}) }
+  const replayActive = demoMode && replay !== null
+  const playbackMs = mediaClock.key === session.reviewFile ? mediaClock.timeMs : 0
+  const playbackPlaying = mediaClock.key === session.reviewFile && mediaClock.playing
+  function syncReplayClock(video: HTMLVideoElement) {
+    setMediaClock(current => current.key !== session.reviewFile ? current : {key:current.key,timeMs:Number.isFinite(video.currentTime)?video.currentTime*1000:0,playing:!video.paused&&!video.ended})
+  }
   const [wellSize, setWellSize] = useState(0.2)
   const [humanNote, setHumanNote] = useState('')
   const [reportedState, setReportedState] = useState<WellState>('filled')
@@ -76,7 +94,7 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
   }
 
   return (
-    <section className="monitor" aria-labelledby="monitor-title" data-procedure={session.procedureMode} data-debug={session.debugOverlay ? 'true' : 'false'} data-running={running ? 'true' : 'false'}>
+    <section className="monitor" aria-labelledby="monitor-title" data-procedure={session.procedureMode} data-debug={session.debugOverlay ? 'true' : 'false'} data-running={running ? 'true' : 'false'} data-demo={replayActive ? 'true' : 'false'}>
       <div className="monitor-heading">
         <h2 id="monitor-title">Monitor</h2>
         {session.procedureMode === 'six-well' ? <p>Six-well mode checks colored liquid in six fixed camera regions, A1–B3. For the RED / GREEN / BLUE cup experiment, choose Three-cup capture.</p> : null}
@@ -117,6 +135,7 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
       </div>
 
       {session.procedureMode === 'three-cup' ? <CaptureToolbar session={session} /> : null}
+      {session.procedureMode === 'three-cup' ? <section className="demo-mode-switch" aria-label="Demo visualization controls"><div><strong>Analysis Replay</strong><p>Watch saved observations unfold with the original recording. No live AI calls.</p></div><button type="button" className="primary-action" aria-pressed={replayActive} disabled={!replay && !demoMode} onClick={() => { setDemoMode(value => !value); setFullResults(false) }}>{replayActive ? 'Return to review tools' : 'Enter Demo Visualization Mode'}</button>{!replay ? <p>Import and link a saved analysis to enable replay.</p> : null}</section> : null}
       <div className="live-split">
         <div className="live-stage">
           <div className="stage" ref={session.bindStage} onPointerDown={session.onStagePointerDown}>
@@ -135,12 +154,21 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
           playsInline
           muted
           controls={session.inputKind === 'prerecorded'}
+          onLoadStart={() => setMediaClock({key:null,timeMs:0,playing:false})}
+          onLoadedMetadata={event => setMediaClock({key:session.reviewFile,timeMs:event.currentTarget.currentTime*1000,playing:!event.currentTarget.paused})}
+          onTimeUpdate={event => syncReplayClock(event.currentTarget)}
+          onSeeking={event => syncReplayClock(event.currentTarget)}
+          onSeeked={event => syncReplayClock(event.currentTarget)}
+          onPlay={event => syncReplayClock(event.currentTarget)}
+          onPause={event => syncReplayClock(event.currentTarget)}
+          onEnded={event => syncReplayClock(event.currentTarget)}
           onError={() => {
             if (session.inputKind === 'prerecorded') {
               session.reportPlaybackError('This browser could not play that file. The original file was not changed.')
             }
           }}
         />
+        {replayActive && replay ? <DemoCaption draft={replay.draft} timeMs={playbackMs} /> : null}
         <canvas
           ref={session.bindCanvas}
           className="stage-media"
@@ -173,7 +201,7 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
         />
         ) : null}
           </div>
-          <p className="live-clock" role="status">
+          {!replayActive ? <p className="live-clock" role="status">
             {session.inputKind === 'none' ? '' : `${sourceLabel(session.inputKind)} · `}
             {session.observationStatus} · {formatSeconds(session.localElapsedMs)}
             {session.cameraPhase === 'live' || session.cameraPhase === 'starting' ? (
@@ -187,7 +215,7 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
                 Finish session
               </button>
             ) : null}
-          </p>
+          </p> : null}
           {session.mediaNotice ? <p className="media-notice">{session.mediaNotice}</p> : null}
           {session.playbackNotice ? (
             <p className="media-notice" role="alert">{session.playbackNotice}</p>
@@ -205,7 +233,8 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
         </div>
 
         <aside className="live-decisions" aria-label="Protocol decisions">
-          {session.procedureMode === 'three-cup' ? <CapturePanel key={session.live.sessionId} session={session} running={running} /> : null}
+          {replayActive && replay ? <DemoDashboard key={replay.draft.id} source={replay} timeMs={playbackMs} playing={playbackPlaying} fullResults={fullResults} onFullResults={setFullResults} onSeek={ms => session.seekStage(ms)} notes={replayNotes[replay.draft.id] ?? ''} onNotes={value => setReplayNotes(current => ({...current,[replay.draft.id]:value}))} /> : null}
+          {session.procedureMode === 'three-cup' ? <div hidden={replayActive}><CapturePanel key={session.live.sessionId} session={session} running={running} onReplaySource={setReplaySource} /></div> : null}
           {session.procedureMode === 'six-well' ? (
           <>
           <ol className="well-progress" aria-label="Six-well progress">
@@ -950,7 +979,7 @@ function CaptureToolbar({ session }: { session: VisionSession }) {
   )
 }
 
-function CapturePanel({ session, running }: { session: VisionSession; running: boolean }) {
+function CapturePanel({ session, running, onReplaySource }: { session: VisionSession; running: boolean; onReplaySource: (source: ReplaySource | null) => void }) {
   const previewUrl = useObjectUrl(session.localRecording)
   const previewRef = useRef<HTMLVideoElement>(null)
   const [seekNotice, setSeekNotice] = useState('')
@@ -958,8 +987,17 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
   const [clipEnd, setClipEnd] = useState('10')
   const [clipPhase, setClipPhase] = useState<'idle' | 'processing' | 'done' | 'error'>('idle')
   const [clipResult, setClipResult] = useState<ClipCheckResponse | null>(null)
+  const [recordingDrafts, setRecordingDrafts] = useState<RecordingDraft[]>([])
+  const [activeDraftId, setActiveDraftId] = useState<string | null>(null)
+  const [wholeAssociation, setWholeAssociation] = useState<RecordingAssociation | null>(null)
+  const [importDataKind, setImportDataKind] = useState<'real' | 'synthetic'>('real')
+  const activeDraft = recordingDrafts.find(draft => draft.id === activeDraftId) ?? null
   const [wholeAnalysis, setWholeAnalysis] = useState<RecordingAnalysis | null>(null)
   const [wholeLinked, setWholeLinked] = useState<'hash-verified' | 'user-confirmed' | null>(null)
+  useEffect(() => {
+    onReplaySource(activeDraft && wholeLinked && session.reviewFile ? {draft:activeDraft,fileKey:session.reviewFile,association:wholeLinked} : null)
+    return () => onReplaySource(null)
+  }, [activeDraft, wholeLinked, session.reviewFile, onReplaySource])
   const [manifestSha256, setManifestSha256] = useState<string | null>(null)
   const [manifestInvalid, setManifestInvalid] = useState(false)
   const [manifestNote, setManifestNote] = useState('')
@@ -973,6 +1011,8 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
     setClipPhase('idle')
     setClipResult(null)
     setWholeAnalysis(null)
+    setActiveDraftId(null)
+    setWholeAssociation(null)
     setWholeLinked(null)
     setManifestSha256(null)
     setManifestInvalid(false)
@@ -980,7 +1020,7 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
     setLinkNotice('')
     clipGeneration.current += 1
   }
-  const protocol = captureProtocol(session.captureProtocolId)
+  const protocol = captureProtocol(activeDraft?.captureProtocolId ?? session.captureProtocolId)
   const latest = session.markers.at(-1) ?? null
   const latestComparison = latest ? compareHumanMarker(latest.marker, session.captureProtocolId) : null
   const namedCups = latest ? markerCups(latest.marker) : []
@@ -1046,6 +1086,8 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
     setClipPhase('processing')
     setClipResult(null)
     setWholeAnalysis(null)
+    setActiveDraftId(null)
+    setWholeAssociation(null)
     setWholeLinked(null)
     try {
       const response = await fetch('/library/clip-observations', {
@@ -1077,6 +1119,8 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
     setClipPhase('processing')
     setClipResult(null)
     setWholeAnalysis(null)
+    setActiveDraftId(null)
+    setWholeAssociation(null)
     setWholeLinked(null)
     let parsed: unknown
     try {
@@ -1090,7 +1134,14 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
     if (clipGeneration.current !== generation) return
     if (parsed && typeof parsed === 'object' && 'schemaVersion' in parsed && parsed.schemaVersion === RECORDING_ANALYSIS_SCHEMA) {
       try {
-        setWholeAnalysis(parseRecordingAnalysis(parsed))
+        const analysis = parseRecordingAnalysis(parsed)
+        const existing = recordingDrafts.find(draft => draft.parsed.sessionId === analysis.sessionId && draft.parsed.videoId === analysis.videoId)
+        if (existing && JSON.stringify(existing.analysis) !== JSON.stringify(analysis.raw)) throw new Error('This recording already has a different imported analysis. Its original record is retained; use a distinct source session for another analysis.')
+        const draft = existing ?? createRecordingDraft(analysis, session.captureProtocolId, importDataKind)
+        if (!existing) setRecordingDrafts(current => [...current, draft])
+        setActiveDraftId(draft.id)
+        setWholeAssociation(null)
+        setWholeAnalysis(analysis)
         setClipPhase('done')
         setLinkNotice('Recording analysis loaded locally. Link it to the original recording before showing events.')
       } catch (error) {
@@ -1138,6 +1189,7 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
     setClipPhase('processing')
     setManifestInvalid(false)
     setManifestNote('')
+    setWholeAssociation(null)
     setWholeLinked(null)
     setClipResult((current) => current ? { ...current, linked: false, association: null } : null)
     let parsed: unknown
@@ -1175,10 +1227,12 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
       if (!recording.blob || recording.durationMs == null) { setLinkNotice('Wait for recording metadata to load.'); return }
       setClipPhase('processing')
       try {
-        const hash = manifestSha256 ? await sha256Hex(recording.blob) : null
+        const expectedHash = manifestSha256 ?? wholeAnalysis.sourceSha256
+        const hash = expectedHash ? await sha256Hex(recording.blob) : null
         if (clipGeneration.current !== generation) return
-        const error = recordingLinkError(wholeAnalysis, session.reviewFile.bytes, recording.durationMs, manifestSha256, hash)
-        setWholeLinked(error ? null : manifestSha256 ? 'hash-verified' : 'user-confirmed')
+        const error = recordingLinkError(wholeAnalysis, session.reviewFile.bytes, recording.durationMs, expectedHash, hash)
+        setWholeLinked(error ? null : expectedHash ? 'hash-verified' : 'user-confirmed')
+        setWholeAssociation(!error && expectedHash && hash ? recordingAssociation(wholeAnalysis, expectedHash, hash, session.reviewFile.bytes, recording.durationMs) : null)
         setLinkNotice(error ?? 'Linked locally. Original model and human-confirmation records are preserved; steps remain incomplete.')
       } catch { if (clipGeneration.current === generation) setLinkNotice('Unable to read the selected recording hash.') }
       if (clipGeneration.current === generation) setClipPhase('done')
@@ -1269,6 +1323,7 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
   }
   return (
     <>
+      {recordingDrafts.length ? <section aria-label="Imported recording sessions"><h3>Recording reviews</h3><p>Each recording retains its own approved procedure and saved session. Select its original video and verify the hash before seeking or saving.</p><div className="recording-session-list">{recordingDrafts.map(draft => <button key={draft.id} aria-pressed={activeDraftId === draft.id} onClick={() => { clipGeneration.current += 1; setActiveDraftId(draft.id); setWholeAnalysis(draft.parsed); setWholeLinked(null); setWholeAssociation(null); setManifestSha256(draft.association?.sourceSha256 ?? null); setManifestInvalid(false); setClipPhase('done'); setLinkNotice('Selected saved analysis. Verify this video before seeking.'); }}><strong>{draft.parsed.videoId}</strong><br/>{captureProtocol(draft.captureProtocolId).title}<br/>{draft.saved ? 'Saved separately' : 'Local import · not saved'}</button>)}</div></section> : null}
       <section className="decision-now" aria-label="Current observation">
         <p className="state-badge" data-tone="pending">{wholeAnalysis ? 'Saved recording analysis · needs review' : clipBadge(clipPhase, clipResult)}</p>
         {latest && latestComparison ? (
@@ -1315,6 +1370,7 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
           <summary>{wholeLinked || clipResult?.linked ? 'Analysis loaded · manage' : 'Load analysis'}</summary>
           <p className="capture-caption">Choose the saved JSON, then link it to this recording. No AI call is made.</p>
 
+          <label>Observation origin <select value={importDataKind} disabled={clipPhase === 'processing'} onChange={event => setImportDataKind(event.target.value === 'synthetic' ? 'synthetic' : 'real')}><option value="real">Genuine saved model response</option><option value="synthetic">Synthetic software fixture</option></select></label>
           <label className="file-field">
             Analysis JSON
             <input
@@ -1387,7 +1443,7 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
       <EvidenceStream
         empty="Load an analysis or add a person report to see evidence here."
         items={[
-          ...(wholeAnalysis && wholeLinked ? wholeAnalysis.events.map((event, index) => ({
+          ...(wholeAnalysis && wholeLinked && !activeDraft ? wholeAnalysis.events.map((event, index) => ({
             id: event.id,
             time: `${(event.startMs / 1000).toFixed(2)}–${(event.endMs / 1000).toFixed(2)} s`,
             source: 'Model hypothesis',
@@ -1417,6 +1473,7 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
           })),
         ]}
       />
+      {activeDraft && wholeLinked ? <RecordingReviewCard key={activeDraft.id} draft={activeDraft} association={wholeAssociation} onWatch={watchMedia} onChange={updated => setRecordingDrafts(current => current.map(draft => draft.id === updated.id ? updated : draft))} /> : null}
       {wholeAnalysis && wholeLinked ? <section className="whole-analysis-summary">
         <details><summary>Appearance and provenance</summary>
           <p>{wholeAnalysis.appearanceCount} appearance entries retained in the original document. They refer to different times and are not a single pre-transfer verdict.</p>
