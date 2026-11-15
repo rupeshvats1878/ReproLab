@@ -1123,11 +1123,6 @@ function CapturePanel({ session, running, playbackMs, onReplaySource }: { sessio
     clipGeneration.current = generation
     const requestId = `request_${crypto.randomUUID()}`
     setClipPhase('processing')
-    setClipResult(null)
-    setWholeAnalysis(null)
-    setActiveDraftId(null)
-    setWholeAssociation(null)
-    setWholeLinked(null)
     let parsed: unknown
     try {
       parsed = JSON.parse(await file.text())
@@ -1138,6 +1133,16 @@ function CapturePanel({ session, running, playbackMs, onReplaySource }: { sessio
       return
     }
     if (clipGeneration.current !== generation) return
+    if (parsed && typeof parsed === 'object' && !('schemaVersion' in parsed) &&
+      ('sourceSha256' in parsed || 'sourceSha256AfterEncoding' in parsed || 'originalRecordingSha256' in parsed)) {
+      await loadRecordingManifest(file)
+      return
+    }
+    setClipResult(null)
+    setWholeAnalysis(null)
+    setActiveDraftId(null)
+    setWholeAssociation(null)
+    setWholeLinked(null)
     if (parsed && typeof parsed === 'object' && 'schemaVersion' in parsed && parsed.schemaVersion === RECORDING_ANALYSIS_SCHEMA) {
       try {
         const analysis = parseRecordingAnalysis(parsed)
@@ -1223,7 +1228,7 @@ function CapturePanel({ session, running, playbackMs, onReplaySource }: { sessio
       setManifestNote(parsed.reconstructionNote)
     }
     setLinkNotice(hash.sha256
-      ? 'A source hash is loaded. Linking checks it against this recording.'
+      ? 'Verification file loaded, not an analysis. Load the Analysis JSON if needed, then link again to check the recording.'
       : 'This manifest has no source hash. Linking asks for confirmation.')
   }
   async function linkImportedResult(): Promise<void> {
@@ -1600,10 +1605,6 @@ function CameraSetup({
             <p>{THREE_CUP_DEMO_PLAN}</p>
           </details>
         ) : null}
-        <button type="button" onClick={session.startClockCheck} disabled={session.localPhase === 'running'}>
-          Record 12-second timestamp check
-        </button>
-        <p className="monitor-note">The timestamp check draws a changing clock into a test recording. It is not a cup reading.</p>
       </div>
     )
   }
