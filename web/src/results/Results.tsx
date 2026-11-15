@@ -108,6 +108,15 @@ export function Results(props: { review: ReviewController; active: boolean; onOp
         <p className="results-eyebrow">Experiment record</p>
         <h2>From observation to evidence.</h2>
         <p>Review what happened. Keep uncertainty visible. Share the finished record.</p>
+        <details className="results-workflow">
+          <summary>What happens after recording?</summary>
+          <ol>
+            <li><strong>Finish the session in Monitor.</strong> Stopping the camera alone does not finish the saved record.</li>
+            <li><strong>Review the saved evidence here.</strong> Check recorded flags and person reports; a finished run does not mean it succeeded.</li>
+            <li><strong>Publish when ready.</strong> Save the finished experiment to Library, with an optional recording within the upload limit.</li>
+          </ol>
+          <p>A local video or imported Gemini hypothesis remains in Monitor until it is included in a supported saved workflow. Results does not automatically analyze new footage.</p>
+        </details>
       </header>
 
       <section className="results-block" aria-labelledby="monitor-results">

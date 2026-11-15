@@ -4,6 +4,21 @@
   color: var(--ink);
 }
 
+.camera-setup { display: grid; gap: 1.1rem; padding: 0.5rem 0 1rem; align-items: start; }
+.camera-setup > button { justify-self: start; }
+.camera-setup > .button-row { gap: 0.65rem; }
+.camera-setup [aria-label='Setup steps'] { padding-bottom: 1rem; border-bottom: 1px solid #435363; }
+.camera-setup .file-field { gap: 0.7rem; max-width: 44rem; width: 100%; }
+.camera-setup .color-row { gap: 0.65rem; }
+.monitor .camera-setup button .swatch { margin-right: 0.45rem; }
+.setup-explanation { display: grid; gap: 0.65rem; max-width: 48rem; padding: 0.4rem 0; }
+.monitor .setup-explanation h3 { margin: 0; font-size: 1.4rem; font-weight: 550; letter-spacing: -0.025em; }
+.monitor .setup-explanation p { line-height: 1.65; color: #c4d0d9; }
+.monitor .fold p.attention-note { background: #382f20; color: #f5deb0; border: 1px solid #8a7146; padding: 0.9rem 1rem; line-height: 1.6; }
+.monitor .camera-setup .monitor-note { line-height: 1.65; }
+.monitor .camera-setup input[type='range'] { padding-block: 0.8rem; }
+.monitor-heading > p { max-width: 65rem; line-height: 1.6; margin-block: 0.7rem; }
+
 .monitor-advanced > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 1rem; }
 .monitor-advanced > summary::before { content: '+'; color: #a7c6b2; }
 .monitor-advanced[open] > summary::before { content: '−'; }

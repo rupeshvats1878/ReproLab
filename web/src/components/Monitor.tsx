@@ -78,7 +78,7 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
     <section className="monitor" aria-labelledby="monitor-title" data-procedure={session.procedureMode} data-debug={session.debugOverlay ? 'true' : 'false'} data-running={running ? 'true' : 'false'}>
       <div className="monitor-heading">
         <h2 id="monitor-title">Monitor</h2>
-        {session.procedureMode === 'six-well' ? <p>Six-well order: A1, A2, A3, B1, B2, B3.</p> : null}
+        {session.procedureMode === 'six-well' ? <p>Six-well mode checks colored liquid in six fixed camera regions, A1–B3. For the RED / GREEN / BLUE cup experiment, choose Three-cup capture.</p> : null}
         {session.localPhase === 'completed' ? (
           <p>Stopping the camera does not finish the record. Finish session closes it, and finished does not mean the run succeeded.</p>
         ) : null}
@@ -91,7 +91,7 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
           </button>
         </div>
         {session.procedureMode === 'three-cup' ? (
-          <p className="capture-intro">Your experiment, its procedure, and its evidence — together.</p>
+          <p className="capture-intro">Record your webcam or review a video. No six-well calibration needed. Saved model results can be imported for human review.</p>
         ) : null}
         {preparedProtocol && session.procedureMode === 'six-well' ? (
           <div>
@@ -349,7 +349,7 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
         open={setupOpen}
         onToggle={(event) => setSetupOpen(event.currentTarget.open)}
       >
-        <summary>{session.procedureMode === 'three-cup' ? 'Capture options and diagnostics' : 'Setup'}</summary>
+        <summary>{session.procedureMode === 'three-cup' ? 'Capture options and diagnostics' : 'Camera setup · six-well detector'}</summary>
         <CameraSetup
           session={session}
           wellSize={wellSize}
@@ -1491,6 +1491,11 @@ function CameraSetup({
           </button>
         ))}
       </div>
+      <div className="setup-explanation">
+        <span className="capture-kicker">Step {SETUP_STEPS.findIndex((item) => item.id === step) + 1} of 5</span>
+        <h3>{({ camera: 'Frame the experiment.', position: 'Tell the camera where to look.', calibrate: 'Teach it what empty and filled look like.', preview: 'Check the readings before you begin.', monitor: 'Ready to record the procedure.' })[step]}</h3>
+        <p>{({ camera: 'Point the webcam at all six containers and keep it steady. The large picture above is your live view.', position: 'A well is a container location. Place one labeled region over each container so the detector samples the right area.', calibrate: 'Lighting changes how colors look. Use an empty reference from this setup, then select or sample the dye you will add. This configures a visual check, not a chemical test.', preview: 'Confirm that the six labels agree with what you can see. Unknown means there is not enough visual evidence.', monitor: 'Start monitoring to record stable readings and possible skipped steps. Review any flag against the video.' })[step]}</p>
+      </div>
       {session.cameraPhase === 'live' ? (
         <button type="button" onClick={session.stopCamera}>Stop camera</button>
       ) : null}
@@ -1513,7 +1518,7 @@ function CameraSetup({
         <>
           <p className="monitor-note">Drag A1, A2, A3, B1, B2, and B3 onto the six containers. Arrow keys nudge the focused label. Shift moves farther.</p>
           <label className="file-field">
-            Well size
+            Size of each camera region
             <input
               type="range"
               min={0.08}
@@ -1536,7 +1541,7 @@ function CameraSetup({
           >
             Reset positions
           </button>
-          <button type="button" onClick={() => setStep('calibrate')}>Calibrate</button>
+          <button type="button" className="primary-action" onClick={() => setStep('calibrate')}>Next: set reference and color</button>
         </>
       ) : null}
       {step === 'calibrate' ? (
@@ -1553,11 +1558,11 @@ function CameraSetup({
           </div>
           <p className="monitor-note">{session.referenceLabel}</p>
           {calibrationMissing ? (
-            <p className="attention-note" role="status">Calibration is missing. Capture an empty reference or sample the dye color. An open camera is not a ready reading.</p>
+            <p className="attention-note" role="status">No empty reference captured yet. Use an empty view for the reference; sample the dye from a filled region. Until the visual evidence is sufficient, readings can remain unknown.</p>
           ) : null}
           <div className="color-row">
             <span className="swatch" style={{ background: rgbToCss(session.expectedColor) }} />
-            <span>Dye: {session.expectedLabel} ({formatRgb(session.expectedColor)})</span>
+            <span>Color to look for: {session.expectedLabel}</span>
           </div>
           <div className="button-row" role="group" aria-label="Expected dye color">
             {COLOR_PRESETS.map((preset) => (
@@ -1572,7 +1577,7 @@ function CameraSetup({
               </button>
             ))}
           </div>
-          <button type="button" onClick={() => setStep('preview')}>Preview</button>
+          <button type="button" className="primary-action" onClick={() => setStep('preview')}>Next: check readings</button>
         </>
       ) : null}
       {step === 'preview' ? (

@@ -1,5 +1,13 @@
 # Monitor polish and recording-link verification
 
+Latest presentation pass: six-well setup now explains each step, gives controls
+consistent spacing, and fixes the inherited pale-on-pale calibration notice.
+Mode descriptions distinguish fixed-region color checks from three-cup capture.
+Results explains finish → review → publish, including the local-import limitation.
+116 tests and production build pass. Calibration was visually checked using local
+playback, without camera access, at desktop and 390px width (no horizontal overflow).
+No detector behavior, inference connection, or storage workflow was changed.
+
 ## Follow-up simplification and manifest support
 
 Monitor now groups diagnostic sections under Advanced details. Results leads

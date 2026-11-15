@@ -17,6 +17,9 @@
 .results button.primary-action { background: var(--teal-bg); border-color: var(--teal); font-weight: 750; }
 .results select { width: 100%; }
 .results :focus-visible { outline: 3px solid var(--teal); outline-offset: 3px; }
+.results-workflow { margin-top: 1.2rem; padding: 0.7rem 1rem; border: 1px solid var(--line); border-radius: 0.7rem; }
+.results-workflow li { padding: 0.4rem 0; line-height: 1.6; }
+.results-workflow p { color: var(--muted); font-size: 0.85rem; max-width: 48rem; }
 
 .results-heading { padding: 0.4rem 0 1rem; }
 .results-heading h2 { max-width: 40rem; font-size: clamp(1.8rem, 3.5vw, 2.7rem); letter-spacing: -0.045em; line-height: 1.15; }
