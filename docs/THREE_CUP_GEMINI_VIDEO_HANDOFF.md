@@ -140,7 +140,7 @@ Request shape, matching that guide and this repo's existing Interactions client 
 
 - `POST https://generativelanguage.googleapis.com/v1beta/interactions`
 - Header `x-goog-api-key`
-- Body fields: `model`, `input`, `response_format`
+- Body fields: `model`, `store` set to `false`, `input`, `response_format`
 - `response_format` is `{ "type": "text", "mime_type": "application/json" }`
 - The video part comes first. The text prompt comes after it.
 - No tools, thinking level, or output-token cap are sent.

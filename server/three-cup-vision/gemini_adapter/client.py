@@ -24,6 +24,7 @@ def build_request(*, model_id, mime_type, video_bytes, video_fps, api_key, timeo
         },
         "body": {
             "model": model_id,
+            "store": False,
             "input": [
                 video_part,
                 {"type": "text", "text": OBSERVATION_PROMPT},

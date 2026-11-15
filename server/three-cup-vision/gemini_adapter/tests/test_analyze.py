@@ -148,6 +148,7 @@ class AnalyzeVideoTest(unittest.TestCase):
             "https://generativelanguage.googleapis.com/v1beta/interactions",
         )
         self.assertEqual(request["body"]["model"], "gemini-4-hydrogen")
+        self.assertIs(request["body"]["store"], False)
         self.assertEqual(request["headers"]["x-goog-api-key"], "test-key-should-not-leak")
         self.assertNotIn("test-key-should-not-leak", json.dumps(request["body"]))
         self.assertNotIn("test-key-should-not-leak", json.dumps(result))
