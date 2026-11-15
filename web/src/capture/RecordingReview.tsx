@@ -28,7 +28,8 @@ export function RecordingReviewCard({draft,association,onChange,onWatch}:{draft:
   <h3>{draft.parsed.videoId} · {draft.dataKind==='synthetic'?'Synthetic software fixture':'Saved model hypotheses'}</h3>
   <p>{draft.parsed.sessionId} · Frozen procedure: {captureProtocol(draft.captureProtocolId).title}</p>
   <p>No automatic completion or compliance verdict. Physical cup IDs remain unchanged after mixing.</p>
-  {!draft.saved?<button onClick={()=>void save()} disabled={busy||!association}>Save separate review session</button>:<p>Saved session {draft.sessionId}</p>}
+  {!draft.saved && !association ? <p role="status">To save: open Analysis loaded · manage, add the original recording manifest under Verify source file, then link again. Local playback alone does not save a session.</p> : null}
+  {!draft.saved?<button onClick={()=>void save()} disabled={busy||!association}>Save analysis for Results</button>:<p>Saved session {draft.sessionId}</p>}
   {draft.saved&&!draft.finished?<label>Reviewer <input value={reviewer} onChange={e=>setReviewer(e.target.value)} /></label>:null}
   <RecordingEvidence analyses={[draft]} reviews={draft.reviews} onWatch={onWatch} onReview={draft.saved&&!draft.finished?(id,action)=>void review(id,action):undefined} busy={busy}/>
   {draft.saved&&!draft.finished?<button onClick={()=>void finish()} disabled={busy}>Finish review for Results</button>:null}

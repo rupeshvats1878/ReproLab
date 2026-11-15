@@ -1,3 +1,4 @@
+import { parseRecordingAnalysis } from '../capture/recordingAnalysis.ts'
 import { SavedRecordingEvidence } from '../capture/RecordingReview.tsx'
 import { useEffect, useState, type FormEvent } from 'react'
 import { Review } from '../components/Review.tsx'
@@ -201,14 +202,15 @@ function MonitorResult({ session, onOpenLibrary }: { session: RetrievedMonitor; 
   const reports = session.humanReports ?? []
   const evidence = session.evidence ?? []
   const observations = session.observations ?? []
+  const importedCount = (session.recordingAnalyses ?? []).reduce((count, entry) => { try { return count + parseRecordingAnalysis(entry.analysis).events.length } catch { return count } }, 0)
   const [copyNote, setCopyNote] = useState('')
   return (
     <div className="result-record">
       <div className="result-metrics" aria-label="Stored evidence summary">
         <div><span>Session</span><strong>{session.finishedAt ? 'Finished' : 'In progress'}</strong></div>
-        <div><span>Recorded flags</span><strong>{alerts.length}</strong></div>
+        <div><span>{session.recordingAnalyses?.length ? 'Other detector flags' : 'Recorded flags'}</span><strong>{alerts.length}</strong></div>
         <div><span>Person reports</span><strong>{reports.length}</strong></div>
-        <div><span>Observations</span><strong>{observations.length}</strong></div>
+        <div><span>{session.recordingAnalyses?.length ? 'Transfer hypotheses' : 'Observations'}</span><strong>{session.recordingAnalyses?.length ? importedCount : observations.length}</strong></div>
       </div>
       <p className="results-small">A finished session is not a verified successful experiment. Flags require review.</p>
       <p role="status">Retrieved from the library.</p>
@@ -380,7 +382,7 @@ function PublishRun({ session, onOpenLibrary }: { session: RetrievedMonitor; onO
           {session.protocol.approvedSteps.map((instruction) => <li key={instruction}>{instruction}</li>)}
         </ol>
       ) : null}
-      <p>{session.observations?.length ?? 0} recorded observations. {alerts.length} deviations. {corrections} observed corrections. {reports.length} human reports.</p>
+      {session.recordingAnalyses?.length ? <p>The imported analysis and its review history will be included below the saved procedure.</p> : <p>{session.observations?.length ?? 0} recorded observations. {alerts.length} deviations. {corrections} observed corrections. {reports.length} human reports.</p>}
       {unresolved.length > 0 ? (
         <ul>
           {unresolved.map((alert) => (

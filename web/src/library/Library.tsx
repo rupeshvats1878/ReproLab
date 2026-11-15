@@ -418,7 +418,7 @@ function RecordedSummary({ run }: { run: NonNullable<StoredExperiment['runRecord
   }
   return (
     <div>
-      <p>{source} {run.observationCount ?? run.observations?.length ?? 0} observations. {alerts.length} deviations. {corrections} observed corrections. {reports.length} human reports.</p>
+      {run.recordingAnalyses?.length ? <p>{source} Transfer findings and their evidence are listed below.</p> : <p>{source} {run.observationCount ?? run.observations?.length ?? 0} observations. {alerts.length} deviations. {corrections} observed corrections. {reports.length} human reports.</p>}
       {shared?.sharedMediaId ? (
         <div>
           <video ref={videoRef} className="library-recording" src={sharedRecordingUrl(shared.sharedMediaId)} controls playsInline />
