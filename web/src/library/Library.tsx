@@ -82,8 +82,7 @@ export function Library(props: { onOpenRun: (id: string) => void }) {
       <p className="app-kicker">ReproLab • Library</p>
       <h2>Browse published experiments.</h2>
       <p>
-        Each card is an approved protocol snapshot stored by the library service. Starting a replication records a plan.
-        It does not run the experiment or mark it complete.
+        Open a published experiment. Starting a replication only records a plan.
       </p>
       <p role="status">{notice}</p>
       {error ? <p role="alert" className="library-warning">{error}</p> : null}

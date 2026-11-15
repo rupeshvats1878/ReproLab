@@ -184,9 +184,7 @@ export function Prepare() {
       <p className="app-kicker">ReproLab • Prepare</p>
       <h2>Turn a written protocol into an approved draft.</h2>
       <p>
-        The reference lab measures spatial color dispersion in a selected frame. It does not establish chemical success
-        or a validated mixing endpoint. Only a step that asks someone to look at color, dye, or dispersion in a frame
-        can use supported vision. This page does not connect a protocol to a Monitor or Review run.
+        Approve a written protocol here. This page does not run the six-well monitor.
       </p>
       <div className="prepare-layout">
         <div>

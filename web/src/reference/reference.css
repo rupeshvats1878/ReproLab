@@ -11,7 +11,7 @@
 .reference-player video { width:100%; background:#111; display:block }
 .reference-crop { display:grid; grid-template-columns:repeat(4,1fr); gap:.5rem; margin:1rem 0 }
 .reference-crop input { width:100% }
-.reference-warning { color:#942c20; font-weight:600 }
+.reference-warning { color:#ffb4a8; font-weight:600 }
 .reference-evidence { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:1rem }
 .reference-evidence article { padding:.75rem; border:1px solid var(--line); border-radius:.6rem }
 .reference-evidence img { width:100%; max-width:240px }

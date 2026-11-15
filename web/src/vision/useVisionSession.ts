@@ -109,6 +109,8 @@ export interface VisionSession {
   traces: ObservationTrace[]
   live: LiveMonitorState
   saveStatus: SaveStatus
+  syntheticPace: 1 | 2 | 4
+  setSyntheticPace: (pace: 1 | 2 | 4) => void
   sampleMs: number
   lastProcessingMs: number
   monitorGeneration: number
@@ -204,6 +206,8 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
     finalStageRef.current = node
   }, [])
   const syntheticTimer = useRef<number | null>(null)
+  const syntheticPaceRef = useRef<1 | 2 | 4>(4)
+  const [syntheticPace, setSyntheticPaceState] = useState<1 | 2 | 4>(4)
   const syntheticFrames = useRef<SyntheticFrame[]>([])
   const syntheticIndex = useRef(0)
   const inputKindRef = useRef<VisionSession['inputKind']>('none')
@@ -589,31 +593,43 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
     }
   }
 
-  function playSynthetic(): void {
+  function tickSynthetic(): void {
+    if (!runningRef.current) return
+    const frames = syntheticFrames.current
+    const index = syntheticIndex.current
+    const frame = frames[index]
+    if (!frame) {
+      stopSyntheticClock()
+      holdRef.current = true
+      if (mounted.current) {
+        setPlaybackNote('Synthetic sequence ended. Observations stopped on the last drawn frame. This was not a camera.')
+      }
+      return
+    }
+    if (pausedRef.current) return
+    syntheticIndex.current = index + 1
+    const canvas = canvasRef.current
+    if (canvas) drawSyntheticFrame(canvas, frame)
+    mediaSizeRef.current = { w: frame.width, h: frame.height }
+    ingest(frame.data, frame.width, frame.height, frame.label)
+    publishRef.current((index + 1) * SYNTHETIC_FRAME_MS)
+  }
+
+  function scheduleSynthetic(): void {
     stopSyntheticClock()
+    syntheticTimer.current = window.setInterval(tickSynthetic, SYNTHETIC_FRAME_MS * syntheticPaceRef.current)
+  }
+
+  function playSynthetic(): void {
     syntheticIndex.current = 0
     holdRef.current = false
-    syntheticTimer.current = window.setInterval(() => {
-      if (!runningRef.current) return
-      const frames = syntheticFrames.current
-      const index = syntheticIndex.current
-      const frame = frames[index]
-      if (!frame) {
-        stopSyntheticClock()
-        holdRef.current = true
-        if (mounted.current) {
-          setPlaybackNote('Synthetic sequence ended. Observations stopped on the last drawn frame. This was not a camera.')
-        }
-        return
-      }
-      if (pausedRef.current) return
-      syntheticIndex.current = index + 1
-      const canvas = canvasRef.current
-      if (canvas) drawSyntheticFrame(canvas, frame)
-      mediaSizeRef.current = { w: frame.width, h: frame.height }
-      ingest(frame.data, frame.width, frame.height, frame.label)
-      publishRef.current((index + 1) * SYNTHETIC_FRAME_MS)
-    }, SYNTHETIC_FRAME_MS)
+    scheduleSynthetic()
+  }
+
+  function setSyntheticPace(pace: 1 | 2 | 4): void {
+    syntheticPaceRef.current = pace
+    if (mounted.current) setSyntheticPaceState(pace)
+    if (syntheticTimer.current != null) scheduleSynthetic()
   }
 
   function resetDetector(): void {
@@ -1402,6 +1418,8 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
     traces,
     live,
     saveStatus,
+    syntheticPace,
+    setSyntheticPace,
     sampleMs: SAMPLE_MS,
     lastProcessingMs,
     monitorGeneration,

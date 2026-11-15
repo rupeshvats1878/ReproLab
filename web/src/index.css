@@ -1,19 +1,22 @@
 :root {
   color: var(--ink);
   background: var(--bg);
+  color-scheme: dark;
   font-family: 'Segoe UI', sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
-  --bg: #efe8dc;
-  --panel: #fffdf8;
-  --ink: #1d2430;
-  --muted: #5d6673;
-  --line: #d9d0c3;
-  --teal: #0e6b66;
-  --teal-bg: #e5f3f1;
-  --filled: #1f7a4d;
-  --filled-bg: #d7efe4;
-  --unknown-bg: #efe6d6;
+  --bg: #12181f;
+  --panel: #1b242e;
+  --card: #24303c;
+  --ink: #e7eef2;
+  --muted: #b7c4d0;
+  --line: #3a4a5a;
+  --teal: #8ee0d4;
+  --teal-bg: #1a3332;
+  --amber: #e0a15a;
+  --filled: #8ee0b5;
+  --filled-bg: #16332c;
+  --unknown-bg: #2c2820;
 }
 
 * {
@@ -24,6 +27,16 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  background: var(--bg);
+}
+
+a {
+  color: var(--teal);
+}
+
+:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
 }
 
 h1,

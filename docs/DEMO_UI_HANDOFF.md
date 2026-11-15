@@ -1,0 +1,38 @@
+# Demo UI handoff
+
+Branch `demo-ui`. Presentation only. Detection rules, server files, and the monitor-session API were not changed.
+
+## What changed
+
+The app shell, navigation, and existing screens use the Monitor’s dark slate background, teal accents, and amber for issues. Each tab has a short label and one sentence. Prepare, Monitor, Review, Footage, Library, and Record stay separate. The six-well Monitor still runs only the fixed colored-water order. A prepared or Gemini-extracted protocol does not drive it.
+
+Monitor changes:
+
+- **Start demo** plays “A2 skipped, then filled.” After the first start, the same button is **Replay demo** and opens a new monitoring session.
+- Synthetic playback defaults to Slow, four times the original 220 ms frame interval. Medium is twice as slow. Original keeps the 220 ms interval. The published timestamp remains `(frame index + 1) * 220 ms`, so slower playback does not add observations or change camera timing.
+- A six-step progress row highlights the current well and an open issue.
+- While the sequence runs, the panel shows the current action, one issue, and one next step.
+- When it ends, the panel shows issues detected, issues corrected by a later observation, unresolved issues, and human reports. A human report is not counted as an observed correction.
+- Save status stays `Saving. Not stored yet.`, `Saved.`, or `Save failed. Unsent events are not stored.`
+- The session ID and retrieved storage text are under Storage, with Copy session ID.
+
+## Demo walkthrough
+
+1. Open the app and stay on Monitor.
+2. Leave Synthetic speed on Slow.
+3. Press Start demo. The synthetic label stays on the picture.
+4. Watch the progress row and the panel move from Fill A1 to Fill A2.
+5. When A3 is filled and A2 is still empty, the panel says A2 appears empty and Check A2. A2 is highlighted.
+6. After the later fill, the warning clears and the action advances.
+7. At the end, read the summary: one issue detected, one corrected by a later observation, none unresolved, and no human reports unless you pressed Acknowledge or Report what you saw.
+8. Press Replay demo. The session ID changes and the old alert is gone until the new sequence raises it again.
+9. Open Setup for camera, file upload, other synthetic sequences, and calibration.
+10. Use Prepare, Review, Footage, Library, and Record from the top navigation. Storage stays collapsed unless you open it.
+
+## Where a future model assessment fits
+
+Ryan’s vision service can add one short assessment line inside the decision panel, directly under the current issue. Show it only when that service returns a judgment for the same session, well, and frame. Do not replace the existing action, issue, or next step, and do not invent a judgment while the service is absent. Human acknowledgement stays a separate report and must not mark the well corrected.
+
+## Remaining limitations
+
+Real camera footage has not been validated. Slow playback changes only the synthetic wall clock; the on-screen run clock still ends at 3.5 s because that is the source timestamp. A synthetic run stores frame metadata on the alert and does not store a recording or a data URL. A high mix score still means unknown, not a hand or pipette. The production build does not proxy `/library`; use the Vite dev server with the library on `127.0.0.1:8788`.

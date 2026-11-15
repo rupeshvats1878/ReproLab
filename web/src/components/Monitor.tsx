@@ -39,6 +39,7 @@ export function Monitor(props: MonitorProps) {
   const guide = guideCopy(session, expected, selected)
   const issueActive = selected != null && selected.status !== 'corrected'
   const highlightedWell = issueActive ? selected.wellId : expected
+  const demoEnded = session.inputKind === 'synthetic' && session.playbackNote.includes('ended')
 
   function startSkipDemo(): void {
     session.useSynthetic('skip-a2-then-fill')
@@ -49,7 +50,7 @@ export function Monitor(props: MonitorProps) {
     <section className="monitor" aria-labelledby="monitor-title" data-debug={session.debugOverlay ? 'true' : 'false'}>
       <div className="monitor-heading">
         <h2 id="monitor-title">Monitor</h2>
-        <p>Six locations, in order. This screen does not run a Prepare protocol.</p>
+        <p>Fixed order A1, A2, A3, B1, B2, B3. A prepared protocol does not run here.</p>
       </div>
 
       <div className="live-split">
@@ -102,27 +103,56 @@ export function Monitor(props: MonitorProps) {
         </div>
 
         <aside className="live-decisions" aria-label="Protocol decisions">
+          <ol className="well-progress" aria-label="Six-well progress">
+            {PROTOCOL_ORDER.map((wellId) => (
+              <li
+                key={wellId}
+                data-state={session.stableStates[wellId]}
+                data-current={highlightedWell === wellId ? 'true' : 'false'}
+                data-issue={issueActive && selected?.wellId === wellId ? 'true' : 'false'}
+              >
+                {wellId}
+              </li>
+            ))}
+          </ol>
           <section className="guide" data-attention={issueActive ? 'true' : 'false'} aria-live="polite">
             <p className="save-status" data-save-status={session.saveStatus.phase}>
               {session.saveStatus.detail}
             </p>
-            <h3>Now</h3>
-            <p className="guide-line">{guide.action}</p>
-            {issueActive ? (
+            {demoEnded ? (
+              <DemoSummary session={session} />
+            ) : (
               <>
-                <h3>Issue</h3>
-                <p className="guide-line">{guide.issue}</p>
+                <h3>Now</h3>
+                <p className="guide-line">{guide.action}</p>
+                {issueActive ? (
+                  <>
+                    <h3>Issue</h3>
+                    <p className="guide-line">{guide.issue}</p>
+                  </>
+                ) : null}
+                {guide.next ? (
+                  <>
+                    <h3>Next</h3>
+                    <p className="guide-line">{guide.next}</p>
+                  </>
+                ) : null}
               </>
-            ) : null}
-            {guide.next ? (
-              <>
-                <h3>Next</h3>
-                <p className="guide-line">{guide.next}</p>
-              </>
-            ) : null}
+            )}
             <button type="button" className="demo-start" onClick={startSkipDemo}>
-              Start demo
+              {session.monitorGeneration > 0 ? 'Replay demo' : 'Start demo'}
             </button>
+            <label className="file-field">
+              Synthetic speed
+              <select
+                value={session.syntheticPace}
+                onChange={(event) => session.setSyntheticPace(Number(event.target.value) as 1 | 2 | 4)}
+              >
+                <option value={4}>Slow</option>
+                <option value={2}>Medium</option>
+                <option value={1}>Original</option>
+              </select>
+            </label>
             {selected && selected.status !== 'corrected' ? (
               <>
                 <div className="button-row">
@@ -796,8 +826,25 @@ function decisionLabel(entry: LiveDecisionEntry): string {
   return `${entry.wellId} appears empty`
 }
 
+function DemoSummary({ session }: { session: VisionSession }) {
+  const detected = session.live.alerts.length
+  const corrected = session.live.alerts.filter((alert) => alert.correction).length
+  const unresolved = session.live.alerts.filter((alert) => alert.status !== 'corrected').length
+  const humanReports = session.live.timeline.filter((entry) => entry.source === 'human').length
+  return (
+    <div className="demo-summary">
+      <h3>Summary</h3>
+      <p>Issues detected: {detected}.</p>
+      <p>Corrected by a later observation: {corrected}.</p>
+      <p>Unresolved: {unresolved}.</p>
+      <p>Human reports: {humanReports}. A report is not an observed correction.</p>
+    </div>
+  )
+}
+
 function StoredSession({ sessionId, phase }: { sessionId: string; phase: string }) {
   const [text, setText] = useState('No saved session has been retrieved.')
+  const [copyNote, setCopyNote] = useState('')
   useEffect(() => {
     const id = sessionStorage.getItem('reprolab-monitor-session-id')
     if (!id) return
@@ -810,9 +857,23 @@ function StoredSession({ sessionId, phase }: { sessionId: string; phase: string 
       cancel = true
     }
   }, [sessionId, phase])
+  async function copySessionId(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(sessionId)
+      setCopyNote('Session ID copied.')
+    } catch {
+      setCopyNote('Copy failed. Select the ID and copy it manually.')
+    }
+  }
   return (
     <details className="fold">
       <summary>Storage</summary>
+      <p className="monitor-note">Session ID</p>
+      <p className="session-id">{sessionId}</p>
+      <button type="button" onClick={() => void copySessionId()}>
+        Copy session ID
+      </button>
+      {copyNote ? <p className="monitor-note">{copyNote}</p> : null}
       <p className="monitor-note" data-retrieved-session>
         {text}
       </p>

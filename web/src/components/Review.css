@@ -35,7 +35,8 @@
 .review-error {
   padding: 0.75rem 0.9rem;
   border-radius: 0.75rem;
-  background: #f8e4e0;
+  background: #3a2422;
+  color: #ffb4a8;
 }
 
 .fixture-banner {

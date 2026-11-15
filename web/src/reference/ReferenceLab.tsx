@@ -54,7 +54,7 @@ export function ReferenceLab() {
   return <section className="reference-lab">
     <p className="app-kicker">ReproLab • Reference footage</p>
     <h2>Inspect the experiment. Keep the evidence.</h2>
-    <p>MIT dye-dispersion experiments: rotating versus non-rotating water. These are external references, not successful and failed replications.</p>
+    <p>These MIT recordings are external references, not a replication result.</p>
     <p><a href={SOURCE} target="_blank" rel="noreferrer">Original footage and experiment context ↗</a></p>
     <div className="reference-tools">
       <label>Recording <select value={clipId} onChange={e => { setClipId(e.target.value); setError('') }}>

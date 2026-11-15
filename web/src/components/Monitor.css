@@ -1,11 +1,7 @@
 .monitor {
   display: grid;
   gap: 0.85rem;
-  margin: -1.25rem;
-  padding: 1.25rem;
-  border-radius: 1rem;
-  background: #1b242e;
-  color: #e7eef2;
+  color: var(--ink);
 }
 
 .monitor-heading h2,
@@ -237,6 +233,56 @@
 
 .save-status[data-save-status='saved'] {
   color: #8ee0d4;
+}
+
+.monitor .well-progress {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.35rem;
+  margin: 0 0 0.35rem;
+  padding: 0;
+  list-style: none;
+}
+
+.well-progress li {
+  padding: 0.35rem 0.1rem;
+  border: 1px solid #3a4a5a;
+  border-radius: 0.45rem;
+  color: #b7c4d0;
+  font-size: 0.75rem;
+  font-weight: 750;
+  text-align: center;
+}
+
+.well-progress li[data-state='filled'] {
+  border-color: #8ee0d4;
+  color: #e7eef2;
+}
+
+.well-progress li[data-current='true'] {
+  background: #1a3332;
+}
+
+.well-progress li[data-issue='true'] {
+  border-color: #e0a15a;
+  background: #2c2820;
+  color: #f0d48a;
+}
+
+.demo-summary {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.demo-summary p {
+  margin: 0;
+}
+
+.session-id {
+  margin: 0.2rem 0;
+  overflow-wrap: anywhere;
+  font-family: Consolas, monospace;
+  font-size: 0.85rem;
 }
 
 .monitor .demo-start {

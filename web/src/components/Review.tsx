@@ -137,8 +137,7 @@ export function Review(props: ReviewProps) {
       <div className="review-heading">
         <h2 id="review-title">Review</h2>
         <p>
-          Possible omissions, human responses, and evidence timestamps for one six-well colored-water
-          run. A flag is a possible skip, not a confirmed cause.
+          Read the colored-water alerts and human reports. A flag is not a confirmed cause.
         </p>
       </div>
 

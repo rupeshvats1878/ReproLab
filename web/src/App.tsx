@@ -10,13 +10,13 @@ import { Run } from './run/Run.tsx'
 
 type TabId = 'prepare' | 'monitor' | 'review' | 'reference' | 'library' | 'run'
 
-const TABS: readonly { id: TabId; label: string }[] = [
-  { id: 'prepare', label: 'Prepare' },
-  { id: 'monitor', label: 'Monitor' },
-  { id: 'review', label: 'Review' },
-  { id: 'reference', label: 'Reference lab' },
-  { id: 'library', label: 'Library' },
-  { id: 'run', label: 'Run' },
+const TABS: readonly { id: TabId; label: string; line: string }[] = [
+  { id: 'prepare', label: 'Prepare', line: 'Draft and approve a protocol. It does not control the six-well monitor.' },
+  { id: 'monitor', label: 'Monitor', line: 'Watch the fixed six-well colored-water sequence.' },
+  { id: 'review', label: 'Review', line: 'Compare observations, alerts, and human reports from a colored-water run.' },
+  { id: 'reference', label: 'Footage', line: 'Inspect external dye-dispersion recordings. They are not a replication result.' },
+  { id: 'library', label: 'Library', line: 'Browse experiments that have been published.' },
+  { id: 'run', label: 'Record', line: 'Record events for one published replication.' },
 ]
 const OPEN_REPLICATION_KEY = 'reprolab-open-replication-id'
 
@@ -31,7 +31,7 @@ export default function App() {
         <div>
           <p className="app-kicker">Prototype</p>
           <h1>ReproLab</h1>
-          <p className="app-subtitle">Prepare, observe, and compare experiments with traceable evidence.</p>
+          <p className="app-subtitle">Prepare a protocol, monitor the six-well sequence, then review what was stored.</p>
         </div>
         <nav className="app-tabs" aria-label="Primary">
           {TABS.map((item) => (
@@ -48,6 +48,7 @@ export default function App() {
       </header>
 
       <main className="app-main">
+        <p className="app-screen-line">{TABS.find((item) => item.id === tab)?.line}</p>
         <div hidden={tab !== 'monitor'}>
           <Monitor
             protocol={review.protocol}

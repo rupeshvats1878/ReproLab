@@ -15,6 +15,6 @@
 .run-steps button[aria-pressed="true"] { border-color: var(--teal) }
 .run-events { display: grid; gap: .75rem }
 .run-events img, .run-preview img { width: 100%; max-width: 240px }
-.run-warning { color: #942c20; font-weight: 600 }
+.run-warning { color: #ffb4a8; font-weight: 600 }
 .run-finish { margin: 1rem 0 }
 @media (max-width: 800px) { .run-layout, .run-crop { grid-template-columns: 1fr } }
