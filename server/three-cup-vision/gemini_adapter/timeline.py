@@ -45,7 +45,11 @@ def _same_pour(left, right):
         return False
     if left.get("sourceCupId") not in CUP_IDS or right.get("destinationCupId") not in CUP_IDS:
         return False
-    return _near(left, right)
+    if not _near(left, right):
+        return False
+    left_segment = left.get("segmentIndex")
+    right_segment = right.get("segmentIndex")
+    return left_segment is None or right_segment is None or left_segment != right_segment
 
 
 def _near(left, right):
@@ -79,7 +83,23 @@ def _collapse(group):
         kept["dataKind"] = "real"
     elif "dataKind" not in kept:
         kept["dataKind"] = "model"
+    if len(group) > 1:
+        kept["candidateObservations"] = [_candidate(item) for item in group]
     return kept
+
+
+def _candidate(event):
+    return {
+        "eventId": event.get("eventId"),
+        "sourceCupId": event.get("sourceCupId"),
+        "destinationCupId": event.get("destinationCupId"),
+        "eventStartMs": event.get("eventStartMs"),
+        "eventEndMs": event.get("eventEndMs"),
+        "evidenceTimestampsMs": list(event.get("evidenceTimestampsMs") or []),
+        "segmentIndex": event.get("segmentIndex"),
+        "humanConfirmed": bool(event.get("humanConfirmed")),
+        "dataKind": event.get("dataKind"),
+    }
 
 
 def _prefer(left, right):

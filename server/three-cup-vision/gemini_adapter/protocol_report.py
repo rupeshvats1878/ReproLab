@@ -4,6 +4,10 @@ RECORDING_1_STEPS = (
     {"index": 1, "sourceCupId": "RED", "destinationCupId": "BLUE"},
     {"index": 2, "sourceCupId": "GREEN", "destinationCupId": "RED"},
 )
+RECORDING_2_STEPS = (
+    {"index": 1, "sourceCupId": "BLUE", "destinationCupId": "RED"},
+    {"index": 2, "sourceCupId": "GREEN", "destinationCupId": "BLUE"},
+)
 CUP_IDS = {"RED", "GREEN", "BLUE"}
 
 
@@ -65,6 +69,24 @@ def evaluate_protocol(events, steps, *, coverage_complete):
                 "decision": "MATCH",
                 "confirmed": match["confirmed"],
                 "eventId": match["eventId"],
+            })
+            continue
+        reordered = next(
+            (
+                item["decision"]
+                for item in assigned
+                if item["step"] == step["index"] and item["decision"]["decision"] == "POSSIBLE_WRONG_ORDER"
+            ),
+            None,
+        )
+        if reordered is not None:
+            step_rows.append({
+                "index": step["index"],
+                "sourceCupId": step["sourceCupId"],
+                "destinationCupId": step["destinationCupId"],
+                "decision": "POSSIBLE_WRONG_ORDER",
+                "confirmed": False,
+                "eventId": reordered["eventId"],
             })
             continue
         deviation = next(

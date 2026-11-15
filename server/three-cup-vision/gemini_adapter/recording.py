@@ -12,7 +12,7 @@ from pathlib import Path
 
 from gemini_adapter.analyze import analyze_video
 from gemini_adapter.constants import MAX_DURATION_MS, MAX_INLINE_VIDEO_BYTES
-from gemini_adapter.protocol_report import RECORDING_1_STEPS, evaluate_protocol
+from gemini_adapter.protocol_report import RECORDING_1_STEPS, RECORDING_2_STEPS, evaluate_protocol
 from gemini_adapter.timeline import merge_appearances, merge_observations
 from gemini_adapter.video_file import movie_duration_ms
 
@@ -23,6 +23,16 @@ EDGE_MS = 500
 COMPRESSION_PRESETS = ("Preset960x540", "Preset640x480", "PresetLowQuality")
 INPUT_USD_PER_MILLION = 1.5
 OUTPUT_USD_PER_MILLION = 7.5
+# Token counts from Recording 1's completed 4 FPS windows. Video tokens scale with duration.
+MEASURED_VIDEO_TOKENS_AT_60000_MS = 18600
+MEASURED_TEXT_TOKENS = 964
+MEASURED_LOW_OUTPUT_TOKENS = 2165
+MEASURED_HIGH_OUTPUT_TOKENS_AT_45433_MS = 5391
+MEASURED_HIGH_OUTPUT_DURATION_MS = 45433
+APPROVED_PROTOCOLS = {
+    "recording-1": ("recording-1-approved", RECORDING_1_STEPS),
+    "recording-2": ("recording-2-approved", RECORDING_2_STEPS),
+}
 
 
 @dataclass(frozen=True)
@@ -121,6 +131,43 @@ def estimate_inference(segments, confirmed, fps=4):
     }
 
 
+def estimate_from_recording1_measurements(segments, fps=4):
+    """Estimate another recording from Recording 1's completed window token counts."""
+    rows = []
+    input_tokens = 0
+    low_output = 0
+    high_output = 0
+    for segment in segments:
+        duration_ms = segment.duration_ms
+        video_tokens = MEASURED_VIDEO_TOKENS_AT_60000_MS * duration_ms * fps // (60000 * 4)
+        high = MEASURED_HIGH_OUTPUT_TOKENS_AT_45433_MS * duration_ms // MEASURED_HIGH_OUTPUT_DURATION_MS
+        rows.append({
+            "startMs": segment.start_ms,
+            "durationMs": duration_ms,
+            "videoTokens": video_tokens,
+            "textTokens": MEASURED_TEXT_TOKENS,
+            "lowOutputTokens": MEASURED_LOW_OUTPUT_TOKENS,
+            "highOutputTokens": high,
+        })
+        input_tokens += video_tokens + MEASURED_TEXT_TOKENS
+        low_output += MEASURED_LOW_OUTPUT_TOKENS
+        high_output += high
+    low_usd = _usd(input_tokens, INPUT_USD_PER_MILLION) + _usd(low_output, OUTPUT_USD_PER_MILLION)
+    high_usd = _usd(input_tokens, INPUT_USD_PER_MILLION) + _usd(high_output, OUTPUT_USD_PER_MILLION)
+    return {
+        "callCount": len(segments),
+        "fps": fps,
+        "segments": rows,
+        "lowUsd": round(low_usd, 4),
+        "highUsd": round(high_usd, 4),
+        "price": {
+            "inputUsdPerMillion": INPUT_USD_PER_MILLION,
+            "outputUsdPerMillion": OUTPUT_USD_PER_MILLION,
+        },
+        "basis": "Scaled from Recording 1's completed 4 FPS windows: 18600 video tokens at 60000 ms, 964 text tokens per call, and output-plus-thinking of 2165 or 5391.",
+    }
+
+
 def load_confirmed_observation(video_id):
     path = Path(__file__).resolve().parent / "real_observations" / f"{video_id}-green-red.json"
     if not path.is_file():
@@ -145,7 +192,13 @@ def analyze_recording(
     protocol=None,
 ):
     """Plan a whole recording. Segments are encoded and sent only when authorize_remote is true."""
-    steps = list(protocol) if protocol is not None else (list(RECORDING_1_STEPS) if video_id == "recording-1" else None)
+    if protocol is not None:
+        protocol_id, steps = None, list(protocol)
+    elif video_id in APPROVED_PROTOCOLS:
+        protocol_id, steps = APPROVED_PROTOCOLS[video_id]
+        steps = list(steps)
+    else:
+        protocol_id, steps = None, None
     confirmed = load_confirmed_observation(video_id)
     if steps is None:
         return {
@@ -167,21 +220,24 @@ def analyze_recording(
 
     probed = probe(path) if probe is not None else probe_video(path)
     planned = plan_segments(probed["durationMs"])
-    estimate = estimate_inference(planned, confirmed, fps=video_fps) if confirmed is not None else None
+    if confirmed is not None:
+        estimate = estimate_inference(planned, confirmed, fps=video_fps)
+    else:
+        estimate = estimate_from_recording1_measurements(planned, fps=video_fps)
     if not authorize_remote:
         timeline = _timeline_from_confirmed(confirmed)
-        return _analysis(
+        return _attach_annotations(_analysis(
             session_id,
             video_id,
             probed,
             [_planned_segment(item) for item in planned],
             timeline,
-            evaluate_protocol(timeline["events"], steps, coverage_complete=False),
+            _protocol_report(timeline["events"], steps, False, protocol_id),
             estimate,
             remote_call_count=0,
             coverage_complete=False,
             error=None,
-        )
+        ), video_id)
 
     directory = Path(segment_dir) if segment_dir else Path(tempfile.mkdtemp(prefix="three-cup-segments-"))
     directory.mkdir(parents=True, exist_ok=True)
@@ -239,18 +295,39 @@ def analyze_recording(
         "appearances": merge_appearances(appearances),
     }
     coverage = _coverage_complete(prepared, probed["durationMs"])
-    return _analysis(
+    return _attach_annotations(_analysis(
         session_id,
         video_id,
         probed,
         prepared,
         timeline,
-        evaluate_protocol(timeline["events"], steps, coverage_complete=coverage),
+        _protocol_report(timeline["events"], steps, coverage, protocol_id),
         estimate,
         remote_call_count=remote_calls,
         coverage_complete=coverage,
         error=None,
-    )
+    ), video_id)
+
+
+def load_provisional_annotations(video_id):
+    path = Path(__file__).resolve().parent / "annotations" / f"{video_id}-provisional.json"
+    if not path.is_file():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _protocol_report(events, steps, coverage_complete, protocol_id):
+    report = evaluate_protocol(events, steps, coverage_complete=coverage_complete)
+    if protocol_id is not None:
+        report["protocolId"] = protocol_id
+    return report
+
+
+def _attach_annotations(result, video_id):
+    notes = load_provisional_annotations(video_id)
+    if notes is not None:
+        result["provisionalAnnotations"] = notes
+    return result
 
 
 def probe_video(path):

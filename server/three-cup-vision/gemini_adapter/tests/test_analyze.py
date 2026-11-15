@@ -22,8 +22,14 @@ FORBIDDEN_PROMPT_FRAGMENTS = (
     "green → red",
     "green -> blue",
     "green → blue",
+    "blue -> red",
+    "blue → red",
     "step 1",
     "step 2",
+    "spill",
+    "fork",
+    "wipe",
+    "contamination",
 )
 
 

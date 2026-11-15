@@ -53,7 +53,7 @@ cd server/three-cup-vision
 ./gemini_adapter/.venv/bin/python -m unittest discover -s gemini_adapter/tests -v
 ```
 
-Python 3.10+ standard library only. Nothing to pip install. 50 tests passed on 15 Nov 2026. Fourteen of those cover whole-recording planning, merging, and protocol comparison with fake HTTP responses. None of them contact Google.
+Python 3.10+ standard library only. Nothing to pip install. 54 tests passed on 15 Nov 2026. They cover whole-recording planning, merging, and protocol comparison with fake HTTP responses. None of them contact Google.
 
 Input constraints for a live call:
 
@@ -80,6 +80,34 @@ It records absolute `87500–89500` ms, from clip time `3500–5500` plus `sourc
 The protocol report is a separate object, `three-cup-protocol-report/v0.1`. Recording 1's card is RED → BLUE, then GREEN → RED. Recording 2 does not inherit that card. Clear model events can be `MATCH`, `POSSIBLE_WRONG_DESTINATION`, `POSSIBLE_WRONG_SOURCE`, `POSSIBLE_WRONG_ORDER`, `POSSIBLE_EXTRA_TRANSFER`, or `POSSIBLE_MISSING_TRANSFER`. `confirmed` is true only for the human-confirmed observation. Uncertain events are `NEEDS_HUMAN_REVIEW`. Every decision has `requiresHumanReview: true` and `automaticAlertEligible: false`. A missing step is `POSSIBLE_MISSING_TRANSFER` only after every window succeeded. Until then it stays `NEEDS_HUMAN_REVIEW`, so the saved second pour is not treated as out of order.
 
 Rupesh can read one JSON object: `recording`, `segments` (offset, duration, sha256, capture paths), `timeline.events`, and `protocolReport`. No frontend file changes in this branch.
+
+## Recording 2
+
+Recording 2 is a separate video and needs its own session. Its approved card is `recording-2-approved`: step 1 BLUE → RED, step 2 GREEN → BLUE. It does not use Recording 1's card or the confirmed GREEN → RED event. The probed file is 104831 ms and 153475988 bytes. The plan is two windows, `0–60000` ms and `52000–104831` ms. Local `Preset960x540` compression produced 1146506 bytes at exactly 60000 ms and 1019535 bytes at exactly 52831 ms. Both are under the 14680064-byte cap, so the authorized run is two calls and does not need a third segment.
+
+Two clear transfers in the researcher-reported order, GREEN → BLUE and then BLUE → RED, are `POSSIBLE_WRONG_ORDER` on both events and both steps. They are not marked compliant and they are not labeled wrong-destination. Same-response pours are not deduplicated even when their times overlap. A duplicate of one pour across two windows still collapses, and the retained event keeps every candidate's evidence list.
+
+Researcher reports for spills, dye, fork mixing, and a possible missed wipe are provisional annotations in `server/three-cup-vision/gemini_adapter/annotations/recording-2-provisional.json`. Every time is null. Contamination is not established. The handling categories are an optional extension the current prompt does not request and the model has not detected. The observation prompt stays limited to visible transfers and appearance.
+
+No Recording 2 request has been sent. Scaled from Recording 1's completed 4 FPS windows, two calls are about **$0.09 to $0.16**. This command is the one to run later. It was not run for this preparation:
+
+```bash
+cd /Users/ryanzheng/labbench-three-cup-vision/server/three-cup-vision
+set -a
+source /Users/ryanzheng/labbench-three-cup-vision/server/.env
+set +a
+export THREE_CUP_GEMINI_VIDEO_ENABLED=1
+./gemini_adapter/.venv/bin/python -m gemini_adapter.recording \
+  --video "/Users/ryanzheng/labbench-three-cup-vision/recordings/recording 2.mov" \
+  --session-id pilot-session-002 \
+  --video-id recording-2 \
+  --authorize \
+  --fps 4 \
+  --capture-dir "/Users/ryanzheng/labbench-three-cup-vision/recordings/gemini-captures"
+unset GEMINI_API_KEY THREE_CUP_GEMINI_VIDEO_ENABLED
+```
+
+The Monitor still needs a second session binding, the `recording-2-approved` card, display for `POSSIBLE_WRONG_ORDER`, and a place for provisional notes that is separate from model transfers. This branch does not change that frontend.
 
 No whole-recording request has been sent. From the measured 8-second call (2480 video tokens, 444 text tokens, 268 output tokens, 1230 thought tokens) at the published rates of $1.50 / 1M input and $7.50 / 1M output including thinking, the two planned calls are about **$0.07 to $0.20**. The low figure keeps output tokens at the measured call. The high figure scales them with duration. A failed compression that splits a window adds calls.
 

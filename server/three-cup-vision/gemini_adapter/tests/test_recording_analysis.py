@@ -4,17 +4,20 @@ import unittest
 from pathlib import Path
 
 from gemini_adapter.constants import MAX_INLINE_VIDEO_BYTES
+from gemini_adapter.prompt import OBSERVATION_PROMPT
+from gemini_adapter.protocol_report import RECORDING_1_STEPS, RECORDING_2_STEPS, evaluate_protocol
 from gemini_adapter.recording import (
     COMPRESSION_PRESETS,
     analyze_recording,
     avconvert_command,
     encode_segment,
+    estimate_from_recording1_measurements,
     estimate_inference,
     load_confirmed_observation,
+    load_provisional_annotations,
     plan_segments,
 )
 from gemini_adapter.timeline import merge_observations
-from gemini_adapter.protocol_report import RECORDING_1_STEPS, evaluate_protocol
 
 
 def _box(box_type, payload):
@@ -132,6 +135,23 @@ class TimelineTest(unittest.TestCase):
         self.assertEqual(green["eventId"], "recording-1-confirmed-green-red")
         self.assertEqual(green["evidenceTimestampsMs"], [87750, 88250, 88750, 89250])
         self.assertIn(1, green["segmentIndexes"])
+        evidence = [item["evidenceTimestampsMs"] for item in green["candidateObservations"]]
+        self.assertIn([87750, 88250, 88750, 89250], evidence)
+        self.assertIn([88250], evidence)
+
+    def test_same_response_keeps_distinct_pours(self):
+        first = _event("one", "GREEN", "BLUE", 1000, 2000)
+        second = _event("two", "GREEN", "BLUE", 1500, 2500)
+        first["segmentIndex"] = 0
+        second["segmentIndex"] = 0
+        different = _event("three", "BLUE", "RED", 1800, 2200)
+        different["segmentIndex"] = 0
+        merged = merge_observations([first, second, different])
+        self.assertEqual(len(merged), 3)
+        self.assertEqual(
+            [(item["sourceCupId"], item["destinationCupId"], item["eventStartMs"]) for item in merged],
+            [("GREEN", "BLUE", 1000), ("GREEN", "BLUE", 1500), ("BLUE", "RED", 1800)],
+        )
 
 
 class ProtocolReportTest(unittest.TestCase):
@@ -170,6 +190,29 @@ class ProtocolReportTest(unittest.TestCase):
             [item["decision"] for item in report["events"]],
             ["POSSIBLE_WRONG_ORDER", "POSSIBLE_WRONG_ORDER"],
         )
+        self.assertEqual(
+            [step["decision"] for step in report["steps"]],
+            ["POSSIBLE_WRONG_ORDER", "POSSIBLE_WRONG_ORDER"],
+        )
+
+    def test_recording_2_reversed_pairs_are_order_deviations(self):
+        events = [
+            _event("reported-first", "GREEN", "BLUE", 1000, 2000),
+            _event("reported-second", "BLUE", "RED", 3000, 4000),
+        ]
+        report = evaluate_protocol(events, RECORDING_2_STEPS, coverage_complete=True)
+        self.assertEqual(
+            [item["decision"] for item in report["events"]],
+            ["POSSIBLE_WRONG_ORDER", "POSSIBLE_WRONG_ORDER"],
+        )
+        self.assertFalse(any(item["decision"] == "POSSIBLE_WRONG_DESTINATION" for item in report["events"]))
+        self.assertFalse(any(item["decision"] == "MATCH" for item in report["events"]))
+        self.assertEqual(
+            [step["decision"] for step in report["steps"]],
+            ["POSSIBLE_WRONG_ORDER", "POSSIBLE_WRONG_ORDER"],
+        )
+        self.assertEqual([step["sourceCupId"] for step in RECORDING_2_STEPS], ["BLUE", "GREEN"])
+        self.assertNotEqual(list(RECORDING_2_STEPS), list(RECORDING_1_STEPS))
 
     def test_complete_coverage_without_the_first_pair_is_a_missing_transfer(self):
         confirmed = load_confirmed_observation("recording-1")["event"]
@@ -339,16 +382,64 @@ class AnalyzeRecordingTest(unittest.TestCase):
         self.assertEqual(covered[0][0], 0)
         self.assertEqual(covered[-1][1], 97434)
 
-    def test_recording_2_does_not_inherit_the_recording_1_card(self):
+    def test_recording_1_plan_still_uses_its_own_card_and_confirmed_pour(self):
+        confirmed = load_confirmed_observation("recording-1")
+        result = analyze_recording(
+            "recordings/recording 1.mov",
+            session_id="pilot-session-001",
+            video_id="recording-1",
+            authorize_remote=False,
+            probe=lambda _path: confirmed["recording"],
+        )
+        self.assertEqual(result["protocolReport"]["protocolId"], "recording-1-approved")
+        self.assertEqual(
+            [(step["sourceCupId"], step["destinationCupId"]) for step in result["protocolReport"]["steps"]],
+            [("RED", "BLUE"), ("GREEN", "RED")],
+        )
+        self.assertEqual(result["timeline"]["events"][0]["eventId"], "recording-1-confirmed-green-red")
+        self.assertNotIn("provisionalAnnotations", result)
+        self.assertNotIn("spill", json.dumps(result["timeline"]))
+
+    def test_recording_2_uses_its_own_protocol_and_provisional_notes(self):
+        calls = {"transport": 0}
+
+        def transport(_request):
+            calls["transport"] += 1
+            raise AssertionError("transport should not run")
+
         result = analyze_recording(
             "recordings/recording 2.mov",
-            session_id="pilot-session-001",
+            session_id="pilot-session-002",
             video_id="recording-2",
             authorize_remote=False,
+            transport=transport,
             probe=lambda _path: {"filename": "recording 2.mov", "durationMs": 104831, "sizeBytes": 153475988},
         )
-        self.assertEqual(result["error"]["category"], "missing_protocol")
+        self.assertEqual(calls["transport"], 0)
+        self.assertIsNone(result["error"])
+        self.assertEqual(result["sessionId"], "pilot-session-002")
+        self.assertEqual(result["protocolReport"]["protocolId"], "recording-2-approved")
+        self.assertEqual(
+            [(step["sourceCupId"], step["destinationCupId"]) for step in result["protocolReport"]["steps"]],
+            [("BLUE", "RED"), ("GREEN", "BLUE")],
+        )
         self.assertEqual(result["timeline"]["events"], [])
+        self.assertEqual(
+            [(item.start_ms, item.end_ms) for item in plan_segments(104831)],
+            [(0, 60000), (52000, 104831)],
+        )
+        self.assertEqual(result["inferenceEstimate"]["callCount"], 2)
+        notes = result["provisionalAnnotations"]
+        self.assertEqual(notes["dataKind"], "provisional-human-annotation")
+        self.assertFalse(notes["verified"])
+        self.assertFalse(notes["contaminationEstablished"])
+        self.assertTrue(all(item["eventStartMs"] is None for item in notes["otherReports"]))
+        self.assertFalse(notes["handlingExtension"]["detectedByCurrentVideoModel"])
+        self.assertFalse(notes["handlingExtension"]["sentToModel"])
+        self.assertNotIn("recording-1-confirmed-green-red", json.dumps(result["timeline"]))
+        self.assertNotIn("spill", OBSERVATION_PROMPT.lower())
+        self.assertNotIn("fork", OBSERVATION_PROMPT.lower())
+        self.assertEqual(load_provisional_annotations("recording-1"), None)
 
 
 class InferenceEstimateTest(unittest.TestCase):
@@ -362,6 +453,15 @@ class InferenceEstimateTest(unittest.TestCase):
         self.assertLess(estimate["lowUsd"], estimate["highUsd"])
         self.assertEqual(estimate["price"]["inputUsdPerMillion"], 1.5)
         self.assertEqual(estimate["price"]["outputUsdPerMillion"], 7.5)
+
+    def test_recording_2_estimate_uses_the_completed_window_measurements(self):
+        segments = plan_segments(104831)
+        estimate = estimate_from_recording1_measurements(segments)
+        self.assertEqual([(item.start_ms, item.duration_ms) for item in segments], [(0, 60000), (52000, 52831)])
+        self.assertEqual(estimate["callCount"], 2)
+        self.assertEqual(estimate["segments"][0]["videoTokens"], 18600)
+        self.assertEqual(estimate["segments"][1]["videoTokens"], 18600 * 52831 // 60000)
+        self.assertLess(estimate["lowUsd"], estimate["highUsd"])
 
 
 def _event(event_id, source, destination, start, end, status="observed"):

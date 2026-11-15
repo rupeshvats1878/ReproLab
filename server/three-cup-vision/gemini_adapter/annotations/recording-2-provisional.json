@@ -1,0 +1,39 @@
+{
+  "dataKind": "provisional-human-annotation",
+  "videoId": "recording-2",
+  "separateFromModelOutput": true,
+  "verified": false,
+  "contaminationEstablished": false,
+  "timestampsVerified": false,
+  "approvedProtocolId": "recording-2-approved",
+  "approvedSteps": [
+    {"index": 1, "sourceCupId": "BLUE", "destinationCupId": "RED"},
+    {"index": 2, "sourceCupId": "GREEN", "destinationCupId": "BLUE"}
+  ],
+  "reportedTransferOrder": [
+    {"order": 1, "sourceCupId": "GREEN", "destinationCupId": "BLUE", "eventStartMs": null, "eventEndMs": null, "verified": false},
+    {"order": 2, "sourceCupId": "BLUE", "destinationCupId": "RED", "eventStartMs": null, "eventEndMs": null, "verified": false}
+  ],
+  "reportedOrderRelation": "The researcher reports the approved pairs in reverse chronological order. That is an order question, not by itself a wrong-destination finding.",
+  "otherReports": [
+    {"kind": "spill", "detail": "Initial clear-water spill near the beginning.", "eventStartMs": null, "eventEndMs": null, "verified": false},
+    {"kind": "dye_added", "detail": "Red, blue, and green dye added to their respective cups. Color is liquid appearance. The physical cups remain RED, GREEN, and BLUE.", "eventStartMs": null, "eventEndMs": null, "verified": false},
+    {"kind": "fork_mixing", "detail": "RED mixed with a fork, followed by wiping the fork.", "eventStartMs": null, "eventEndMs": null, "verified": false},
+    {"kind": "fork_mixing", "detail": "BLUE mixed with the fork.", "eventStartMs": null, "eventEndMs": null, "verified": false},
+    {"kind": "possible_fork_wipe_omission", "detail": "Fork was not wiped between mixing BLUE and subsequently mixing GREEN. A missed wipe is a possible omission. Chemical cross-contamination is not established.", "eventStartMs": null, "eventEndMs": null, "verified": false, "contaminationEstablished": false},
+    {"kind": "fork_mixing", "detail": "GREEN mixed.", "eventStartMs": null, "eventEndMs": null, "verified": false},
+    {"kind": "transfer_report", "detail": "GREEN poured into BLUE, producing a blue-green mixture.", "eventStartMs": null, "eventEndMs": null, "verified": false},
+    {"kind": "fork_wipe", "detail": "Mixture stirred, and the fork was wiped afterward.", "eventStartMs": null, "eventEndMs": null, "verified": false},
+    {"kind": "transfer_report", "detail": "The BLUE cup's blue-green mixture was poured into RED.", "eventStartMs": null, "eventEndMs": null, "verified": false},
+    {"kind": "fork_mixing", "detail": "Mixture stirred.", "eventStartMs": null, "eventEndMs": null, "verified": false},
+    {"kind": "spill", "detail": "A later blue-green liquid spill.", "eventStartMs": null, "eventEndMs": null, "verified": false}
+  ],
+  "handlingExtension": {
+    "schemaVersion": "three-cup-handling-extension/v0.1",
+    "optional": true,
+    "detectedByCurrentVideoModel": false,
+    "sentToModel": false,
+    "categories": ["spill_observed", "fork_mixing_observed", "fork_wipe_observed", "possible_fork_wipe_omission"],
+    "note": "The current Gemini prompt asks only for visible liquid transfers and visual appearance. It does not detect spills, fork contact, or wipe omissions. These categories are an optional extension for a later observer. A missed fork wipe does not establish chemical contamination."
+  }
+}
