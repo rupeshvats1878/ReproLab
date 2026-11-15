@@ -1,3 +1,4 @@
+import { handlingAnnotations } from './handlingAnnotations.ts'
 import { useEffect, useRef, useState } from 'react'
 import { postMonitor, RESULTS_SELECTION_KEY } from '../monitor/saveSession.ts'
 import { sha256Hex } from './clipCheck.ts'
@@ -43,6 +44,7 @@ export function RecordingEvidence({analyses,reviews=[],onWatch,onReview,busy=fal
   const findings=recordingComparisons(parsed.events,captureProtocol(entry.captureProtocolId).transfers)
   return <section key={entry.id}><h4>{parsed.videoId} · {captureProtocol(entry.captureProtocolId).title}</h4>
    <p>{entry.dataKind==='synthetic'?'Synthetic demonstration · ':''}Model observations, not verified ground truth. No chemical homogeneity or contamination claim.</p>
+   {handlingAnnotations(entry.analysis,parsed.durationMs).length ? <section aria-label="Handling procedure concerns"><h4>Handling procedure concerns</h4><p>Team annotations · possible deviations requiring review, separate from model transfer hypotheses.</p><ul>{handlingAnnotations(entry.analysis,parsed.durationMs).map(item=><li key={item.timestampMs}><strong>{(item.timestampMs/1000).toFixed(0)} s · {item.message}</strong>{onWatch ? <button onClick={()=>onWatch(item.timestampMs)}>Watch handling moment</button> : null}</li>)}</ul></section> : null}
    <ol>{parsed.events.map((event,index)=>{const review=reviews.filter(r=>r.analysisId===entry.id&&r.eventId===event.id).at(-1);return <li key={event.id}>
     <strong>{event.source} → {event.destination}</strong> · {(event.startMs/1000).toFixed(2)}–{(event.endMs/1000).toFixed(2)} s
     <p>{findings[index]}</p><p>{review?`Human ${review.action==='confirm'?'confirmation':'rejection'} by ${review.reviewer}. Original hypothesis retained.`:'Unconfirmed · researcher review required.'}</p>
