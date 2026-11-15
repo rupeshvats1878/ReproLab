@@ -1,5 +1,12 @@
 # Monitor polish and recording-link verification
 
+Three-cup capture is now the initial Monitor mode, with recording enabled for a
+started capture (camera access still requires Start camera). Six-well monitoring
+remains explicitly selectable under Experiment mode. Capture diagnostics start
+collapsed. Lighting/reference controls belong only to the optional six-well mode.
+A fresh browser visit verified the default: no calibration panel or six-region
+overlay. 116 tests and production build pass. This does not enable live Gemini.
+
 Latest presentation pass: six-well setup now explains each step, gives controls
 consistent spacing, and fixes the inherited pale-on-pale calibration notice.
 Mode descriptions distinguish fixed-region color checks from three-cup capture.

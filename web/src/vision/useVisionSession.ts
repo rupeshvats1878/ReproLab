@@ -238,8 +238,8 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
   const recorderMime = useRef<string | undefined>(undefined)
   const recordingMediaId = useRef<string | null>(null)
   const recordingSettled = useRef(false)
-  const recordThisRunRef = useRef(false)
-  const procedureRef = useRef<'six-well' | 'three-cup'>('six-well')
+  const recordThisRunRef = useRef(true)
+  const procedureRef = useRef<'six-well' | 'three-cup'>('three-cup')
   const recordingStartedAt = useRef(0)
   const recordingDurationRef = useRef<number | null>(null)
   const clockFrameRef = useRef<number | null>(null)
@@ -321,8 +321,8 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
     phase: 'idle',
     detail: 'Not recording.',
   })
-  const [recordThisRun, setRecordThisRunState] = useState(false)
-  const [procedureMode, setProcedureModeState] = useState<'six-well' | 'three-cup'>('six-well')
+  const [recordThisRun, setRecordThisRunState] = useState(true)
+  const [procedureMode, setProcedureModeState] = useState<'six-well' | 'three-cup'>('three-cup')
   const [captureProtocolId, setCaptureProtocolId] = useState<CaptureProtocolId>(DEFAULT_CAPTURE_PROTOCOL_ID)
   const captureProtocolRef = useRef<CaptureProtocolId>(DEFAULT_CAPTURE_PROTOCOL_ID)
   const [protocolFrozen, setProtocolFrozen] = useState(false)

@@ -82,6 +82,9 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
         {session.localPhase === 'completed' ? (
           <p>Stopping the camera does not finish the record. Finish session closes it, and finished does not mean the run succeeded.</p>
         ) : null}
+        <span className="monitor-mode-label">{session.procedureMode === 'three-cup' ? 'Three-cup experiment' : 'Six-well color check'}</span>
+        <details className="monitor-mode-picker">
+          <summary>Experiment mode</summary>
         <div className="button-row" role="group" aria-label="Procedure">
           <button type="button" aria-pressed={session.procedureMode === 'six-well'} onClick={() => session.setProcedureMode('six-well')} disabled={running}>
             Six-well monitoring
@@ -90,8 +93,10 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
             Three-cup capture
           </button>
         </div>
+        <p>Three-cup capture is for the webcam experiment. Six-well monitoring is an optional fixed-region color detector.</p>
+        </details>
         {session.procedureMode === 'three-cup' ? (
-          <p className="capture-intro">Record your webcam or review a video. No six-well calibration needed. Saved model results can be imported for human review.</p>
+          <p className="capture-intro">Capture the experiment. Review the evidence. Keep every decision traceable.</p>
         ) : null}
         {preparedProtocol && session.procedureMode === 'six-well' ? (
           <div>
@@ -346,8 +351,8 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
 
       <details
         className="fold"
-        open={setupOpen}
-        onToggle={(event) => setSetupOpen(event.currentTarget.open)}
+        open={session.procedureMode === 'six-well' ? setupOpen : undefined}
+        onToggle={(event) => { if (session.procedureMode === 'six-well') setSetupOpen(event.currentTarget.open) }}
       >
         <summary>{session.procedureMode === 'three-cup' ? 'Capture options and diagnostics' : 'Camera setup · six-well detector'}</summary>
         <CameraSetup
@@ -896,7 +901,7 @@ type SetupStep = 'camera' | 'position' | 'calibrate' | 'preview' | 'monitor'
 const SETUP_STEPS: { id: SetupStep; label: string }[] = [
   { id: 'camera', label: 'Start camera' },
   { id: 'position', label: 'Position regions' },
-  { id: 'calibrate', label: 'Calibrate' },
+  { id: 'calibrate', label: 'Lighting & reference' },
   { id: 'preview', label: 'Preview' },
   { id: 'monitor', label: 'Start monitoring' },
 ]
@@ -1244,7 +1249,7 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
         )}
         <details>
           <summary>Status</summary>
-          <p>{clipPhase === 'idle' ? 'No observation request is in flight. A missing result is not a verdict.' : clipStatusCopy(clipResult?.status ?? (clipPhase === 'processing' ? 'processing' : undefined), clipResult?.message, clipResult?.reason, clipResult?.remoteCallMade)}</p>
+          <p>{clipPhase === 'idle' ? 'The webcam captures video. Automatic three-cup analysis is not connected; import a saved model result to review its evidence. A missing result is not a verdict.' : clipStatusCopy(clipResult?.status ?? (clipPhase === 'processing' ? 'processing' : undefined), clipResult?.message, clipResult?.reason, clipResult?.remoteCallMade)}</p>
           {clipResult ? <p>{clipIdentityCopy(clipResult)}</p> : null}
         </details>
       </section>
