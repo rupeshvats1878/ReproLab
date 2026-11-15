@@ -44,6 +44,17 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
   const replayActive = demoMode && replay !== null
   const playbackMs = mediaClock.key === session.reviewFile ? mediaClock.timeMs : 0
   const playbackPlaying = mediaClock.key === session.reviewFile && mediaClock.playing
+  const [replayControlsRecent, setReplayControlsRecent] = useState(true)
+  const replayControlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  function revealReplayControls() {
+    setReplayControlsRecent(true)
+    if (replayControlsTimer.current) clearTimeout(replayControlsTimer.current)
+    replayControlsTimer.current = setTimeout(() => setReplayControlsRecent(false), 2500)
+  }
+  useEffect(() => {
+    revealReplayControls()
+    return () => { if (replayControlsTimer.current) clearTimeout(replayControlsTimer.current) }
+  }, [playbackPlaying, replayActive, session.reviewFile])
   function syncReplayClock(video: HTMLVideoElement) {
     setMediaClock(current => current.key !== session.reviewFile ? current : {key:current.key,timeMs:Number.isFinite(video.currentTime)?video.currentTime*1000:0,playing:!video.paused&&!video.ended})
   }
@@ -141,7 +152,7 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
       {session.procedureMode === 'three-cup' ? <section className="demo-mode-switch" aria-label="Demo visualization controls"><div><strong>Analysis Replay</strong></div><button type="button" className="primary-action" aria-pressed={replayActive} disabled={!replay && !demoMode} onClick={() => { setDemoMode(value => !value); setFullResults(false) }}>{replayActive ? 'Return to review tools' : 'Enter Demo Visualization Mode'}</button>{!replay ? <p>Import and link a saved analysis to enable replay.</p> : null}</section> : null}
       <div className="live-split">
         <div className="live-stage">
-          <div className="stage" ref={session.bindStage} onPointerDown={session.onStagePointerDown}>
+          <div className="stage" ref={session.bindStage} data-replay-controls={!playbackPlaying || replayControlsRecent ? "visible" : "idle"} onPointerMove={revealReplayControls} onKeyDown={revealReplayControls} onFocus={revealReplayControls} onPointerDown={event => { revealReplayControls(); session.onStagePointerDown(event) }}>
             {session.inputKind === 'synthetic' ? (
               <p className="synthetic-flag" role="status">
                 Synthetic demonstration
