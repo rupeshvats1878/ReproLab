@@ -1,7 +1,10 @@
+import hashlib
 import json
+import stat
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from gemini_adapter.analyze import analyze_video
 from gemini_adapter.prompt import OBSERVATION_PROMPT
@@ -499,6 +502,129 @@ class AnalyzeVideoTest(unittest.TestCase):
         result = analyze(path, transport)
         self.assertEqual(transport.calls, [])
         self.assertEqual(result["error"]["category"], "video_invalid")
+
+    def test_saves_exact_raw_response_before_parsing(self):
+        payload = {"transfers": [], "noVisibleTransfer": True, "appearances": []}
+        raw = json.dumps(interaction(payload)).encode("utf-8")
+        transport = RecordingTransport({"status": 200, "body": raw})
+        capture_dir = Path(self.temp.name) / "captures"
+        result = analyze(
+            self.video,
+            transport,
+            capture_dir=str(capture_dir),
+            source_offset_ms=84000,
+        )
+
+        self.assertIsNone(result["error"])
+        self.assertEqual(result["observationStatus"], "no_transfer")
+        self.assertTrue(result["capture"]["rawResponseSaved"])
+        self.assertTrue(result["capture"]["metadataSaved"])
+        raw_path = Path(result["capture"]["rawResponsePath"])
+        meta_path = Path(result["capture"]["metadataPath"])
+        self.assertEqual(raw_path.read_bytes(), raw)
+        self.assertEqual(stat.S_IMODE(raw_path.stat().st_mode), 0o600)
+        self.assertEqual(stat.S_IMODE(meta_path.stat().st_mode), 0o600)
+        self.assertEqual(stat.S_IMODE(capture_dir.stat().st_mode), 0o700)
+        metadata = json.loads(meta_path.read_text(encoding="utf-8"))
+        self.assertEqual(metadata["model"], "gemini-4-hydrogen")
+        self.assertEqual(metadata["sessionId"], "pilot-session-001")
+        self.assertEqual(metadata["videoId"], "take-001")
+        self.assertEqual(metadata["sourceOffsetMs"], 84000)
+        self.assertEqual(metadata["clipDurationMs"], 8000)
+        self.assertEqual(metadata["filename"], "clip.mp4")
+        self.assertEqual(metadata["sha256"], hashlib.sha256(self.video.read_bytes()).hexdigest())
+        self.assertEqual(metadata["latencyMs"], result["latencyMs"])
+        self.assertIs(metadata["remoteCallMade"], True)
+        self.assertIs(metadata["rawResponseSaved"], True)
+        self.assertNotIn(b"test-key-should-not-leak", raw_path.read_bytes())
+        self.assertNotIn("test-key-should-not-leak", meta_path.read_text(encoding="utf-8"))
+
+    def test_saves_error_response_body(self):
+        raw = b'{"error":{"message":"slow down","status":"RESOURCE_EXHAUSTED"}}'
+        transport = RecordingTransport({"status": 429, "body": raw})
+        capture_dir = Path(self.temp.name) / "captures"
+        result = analyze(self.video, transport, capture_dir=str(capture_dir))
+
+        self.assertEqual(result["error"]["category"], "rate_limited")
+        self.assertTrue(result["remoteCallMade"])
+        self.assertIsInstance(result["latencyMs"], int)
+        self.assertTrue(result["capture"]["rawResponseSaved"])
+        self.assertEqual(Path(result["capture"]["rawResponsePath"]).read_bytes(), raw)
+        metadata = json.loads(Path(result["capture"]["metadataPath"]).read_text(encoding="utf-8"))
+        self.assertEqual(metadata["httpStatus"], 429)
+        self.assertIs(metadata["remoteCallMade"], True)
+        self.assertEqual(metadata["latencyMs"], result["latencyMs"])
+
+    def test_key_in_an_error_body_is_not_written(self):
+        raw = b'{"error":"rejected test-key-should-not-leak"}'
+        transport = RecordingTransport({"status": 401, "body": raw})
+        capture_dir = Path(self.temp.name) / "captures"
+        result = analyze(self.video, transport, capture_dir=str(capture_dir))
+
+        saved = Path(result["capture"]["rawResponsePath"]).read_bytes()
+        self.assertNotIn(b"test-key-should-not-leak", saved)
+        self.assertIn(b"[redacted]", saved)
+        metadata = json.loads(Path(result["capture"]["metadataPath"]).read_text(encoding="utf-8"))
+        self.assertIs(metadata["apiKeyRedacted"], True)
+        self.assertNotIn("test-key-should-not-leak", json.dumps(metadata))
+
+    def test_unwritable_capture_directory_is_not_reported_as_saved(self):
+        payload = {
+            "transfers": [transfer("RED", "BLUE", 1200, 3400, [1500])],
+            "noVisibleTransfer": False,
+        }
+        raw = json.dumps(interaction(payload)).encode("utf-8")
+        transport = RecordingTransport({"status": 200, "body": raw})
+        blocker = Path(self.temp.name) / "not-a-directory"
+        blocker.write_text("x", encoding="utf-8")
+        result = analyze(self.video, transport, capture_dir=str(blocker / "captures"))
+
+        self.assertEqual(result["error"]["category"], "response_not_saved")
+        self.assertFalse(result["capture"]["rawResponseSaved"])
+        self.assertFalse(result["capture"]["metadataSaved"])
+        self.assertIsNone(result["capture"]["rawResponsePath"])
+        self.assertIsNone(result["capture"]["metadataPath"])
+        self.assertFalse((blocker / "captures").exists())
+        self.assertEqual(result["events"][0]["sourceCupId"], "RED")
+
+    def test_connection_failure_records_that_no_body_was_saved(self):
+        transport = RecordingTransport(error=TimeoutError("slow"))
+        capture_dir = Path(self.temp.name) / "captures"
+        result = analyze(self.video, transport, capture_dir=str(capture_dir))
+
+        self.assertEqual(result["error"]["category"], "timeout")
+        self.assertFalse(result["capture"]["rawResponseSaved"])
+        self.assertIsNone(result["capture"]["rawResponsePath"])
+        self.assertTrue(result["capture"]["metadataSaved"])
+        self.assertEqual(list(capture_dir.glob("*-raw.json")), [])
+        metadata = json.loads(Path(result["capture"]["metadataPath"]).read_text(encoding="utf-8"))
+        self.assertIs(metadata["rawResponseSaved"], False)
+        self.assertIs(metadata["remoteCallMade"], True)
+        self.assertIsInstance(metadata["latencyMs"], int)
+        self.assertIsNone(metadata["httpStatus"])
+
+    def test_metadata_write_failure_does_not_claim_a_metadata_path(self):
+        payload = {"transfers": [], "noVisibleTransfer": True, "appearances": []}
+        raw = json.dumps(interaction(payload)).encode("utf-8")
+        transport = RecordingTransport({"status": 200, "body": raw})
+        capture_dir = Path(self.temp.name) / "captures"
+        from gemini_adapter.capture import _write_private as original
+
+        def fail_metadata(path, data):
+            if str(path).endswith("-meta.json"):
+                raise OSError("disk full")
+            return original(path, data)
+
+        with mock.patch("gemini_adapter.capture._write_private", side_effect=fail_metadata):
+            result = analyze(self.video, transport, capture_dir=str(capture_dir))
+
+        self.assertEqual(result["error"]["category"], "metadata_not_saved")
+        self.assertTrue(result["capture"]["rawResponseSaved"])
+        self.assertFalse(result["capture"]["metadataSaved"])
+        self.assertIsNone(result["capture"]["metadataPath"])
+        self.assertEqual(Path(result["capture"]["rawResponsePath"]).read_bytes(), raw)
+        self.assertEqual(list(capture_dir.glob("*-meta.json")), [])
+        self.assertEqual(result["observationStatus"], "no_transfer")
 
 
 if __name__ == "__main__":

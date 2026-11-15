@@ -4,6 +4,7 @@ import math
 import os
 import time
 
+from gemini_adapter.capture import record_capture
 from gemini_adapter.client import (
     build_request,
     classify_status,
@@ -36,6 +37,8 @@ _MESSAGES = {
     "model_response_rejected": "The Gemini response was not a usable observation.",
     "invalid_sampling": f"video_fps must be a number greater than 0 and at most {MAX_STATIC_FPS}.",
     "invalid_source_offset": "source_offset_ms must be an integer of 0 or greater.",
+    "response_not_saved": "The raw HTTP response was not saved.",
+    "metadata_not_saved": "The metadata record was not saved.",
 }
 
 
@@ -54,6 +57,7 @@ def analyze_video(
     max_bytes=MAX_INLINE_VIDEO_BYTES,
     max_duration_ms=MAX_DURATION_MS,
     source_offset_ms=0,
+    capture_dir=None,
 ):
     """Return a video observation. Network access happens only when both gates are open."""
     if isinstance(source_offset_ms, bool) or not isinstance(source_offset_ms, int) or source_offset_ms < 0:
@@ -131,26 +135,26 @@ def analyze_video(
     try:
         response = sender(request)
     except TimeoutError:
-        return _call_failure(
-            session_id, video_id, model_id, video, video_fps, started, "timeout", source_offset_ms
+        return _captured_failure(
+            capture_dir, path, session_id, video_id, model_id, video, video_fps,
+            started, "timeout", source_offset_ms, key, None, None,
         )
     except OSError:
-        return _call_failure(
-            session_id,
-            video_id,
-            model_id,
-            video,
-            video_fps,
-            started,
-            "model_unavailable",
-            source_offset_ms,
+        return _captured_failure(
+            capture_dir, path, session_id, video_id, model_id, video, video_fps,
+            started, "model_unavailable", source_offset_ms, key, None, None,
         )
 
     latency_ms = _latency(started)
     status = response.get("status") if isinstance(response, dict) else None
+    raw_body = response.get("body") if isinstance(response, dict) else None
+    capture = _store_capture(
+        capture_dir, path, session_id, video_id, model_id, video, source_offset_ms,
+        latency_ms, key, raw_body, status,
+    )
     if status != 200:
         category = classify_status(status if isinstance(status, int) else 0)
-        return _envelope(
+        return _apply_capture(_envelope(
             session_id,
             video_id,
             model_id=model_id,
@@ -161,15 +165,15 @@ def analyze_video(
             sampling_fps=video_fps,
             remote_call_made=True,
             source_offset_ms=source_offset_ms,
-        )
+        ), capture)
 
     try:
-        payload = decode_response_body(response.get("body"))
+        payload = decode_response_body(raw_body)
         text = interaction_text(payload)
         parsed = parse_observation_text(text, video.duration_ms)
         _apply_source_offset(parsed, source_offset_ms)
     except (ObservationParseError, ValueError, TypeError, KeyError):
-        return _envelope(
+        return _apply_capture(_envelope(
             session_id,
             video_id,
             model_id=model_id,
@@ -180,9 +184,9 @@ def analyze_video(
             sampling_fps=video_fps,
             remote_call_made=True,
             source_offset_ms=source_offset_ms,
-        )
+        ), capture)
 
-    return _envelope(
+    return _apply_capture(_envelope(
         session_id,
         video_id,
         model_id=model_id,
@@ -195,7 +199,7 @@ def analyze_video(
         sampling_fps=video_fps,
         remote_call_made=True,
         source_offset_ms=source_offset_ms,
-    )
+    ), capture)
 
 
 def _apply_source_offset(parsed, source_offset_ms):
@@ -234,19 +238,58 @@ def _sampling_error(video_fps):
     return None
 
 
-def _call_failure(session_id, video_id, model_id, video, video_fps, started, category, source_offset_ms):
-    return _envelope(
+def _store_capture(
+    capture_dir, path, session_id, video_id, model_id, video, source_offset_ms,
+    latency_ms, api_key, raw_body, http_status,
+):
+    if capture_dir is None:
+        return None
+    return record_capture(
+        directory=capture_dir,
+        video_path=path,
+        video_id=video_id,
+        session_id=session_id,
+        model=model_id,
+        source_offset_ms=source_offset_ms,
+        clip_duration_ms=video.duration_ms,
+        latency_ms=latency_ms,
+        remote_call_made=True,
+        raw_body=raw_body,
+        api_key=api_key,
+        http_status=http_status,
+    )
+
+
+def _captured_failure(
+    capture_dir, path, session_id, video_id, model_id, video, video_fps,
+    started, category, source_offset_ms, api_key, raw_body, http_status,
+):
+    latency_ms = _latency(started)
+    capture = _store_capture(
+        capture_dir, path, session_id, video_id, model_id, video, source_offset_ms,
+        latency_ms, api_key, raw_body, http_status,
+    )
+    return _apply_capture(_envelope(
         session_id,
         video_id,
         model_id=model_id,
         observation_status="unavailable",
         error=_failure(category),
-        latency_ms=_latency(started),
+        latency_ms=latency_ms,
         duration_ms=video.duration_ms,
         sampling_fps=video_fps,
         remote_call_made=True,
         source_offset_ms=source_offset_ms,
-    )
+    ), capture)
+
+
+def _apply_capture(result, capture):
+    if capture is None:
+        return result
+    result["capture"] = capture
+    if capture.get("error") and result.get("error") is None:
+        result["error"] = capture["error"]
+    return result
 
 
 def _latency(started):

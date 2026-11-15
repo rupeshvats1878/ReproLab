@@ -8,9 +8,9 @@ This adapter reports visible liquid transfers. It does not decide whether a proc
 
 ## Rupesh: integrate this
 
-Real Gemini inference is **unavailable**. No recording was uploaded. No API latency was measured. The JSON examples further down that come from the unit tests are mocked. Do not use their `latencyMs` values.
+One authorized `gemini-4-hydrogen` request completed, and its Terminal output was lost. That request used `store: false`, so Google does not retain the interaction and it cannot be fetched back. No observation JSON from that call exists. The JSON examples further down that come from the unit tests are mocked. Do not use their `latencyMs` values.
 
-Call `analyze_video` or the CLI. Both stay offline unless `authorize_remote` / `--authorize` is set and `THREE_CUP_GEMINI_VIDEO_ENABLED=1`. That authorization has not been given.
+Call `analyze_video` or the CLI. Both stay offline unless `authorize_remote` / `--authorize` is set and `THREE_CUP_GEMINI_VIDEO_ENABLED=1`.
 
 The two full files are too large for the inline request, so the first live test must use the short local clip below. Clip-relative model times are shifted onto the original recording when `--source-offset-ms 84000` is passed. `videoDurationMs` stays the duration of the file that was opened.
 
@@ -24,10 +24,13 @@ First test clip, already trimmed locally and not committed:
 - Size: 12622296 bytes
 - A pour is visible inside this window. The source cup, destination cup, and exact event interval are **not** marked.
 
+The CLI writes two private files under `recordings/gemini-captures/` before it parses the HTTP body: `*-raw.json` is the response bytes, and `*-meta.json` records the model, session, video, source offset, clip duration, filename, SHA-256, latency, and `remoteCallMade`. Both files are mode `0600`. The directory is already covered by the root `recordings/` gitignore. `capture.rawResponseSaved` is true only after the raw file is on disk and matches the body. A save failure sets `error.category` to `response_not_saved` or `metadata_not_saved` and the process exits non-zero. An error response body is saved when the server returned one. A timeout writes metadata with `rawResponseSaved: false` and does not create an empty raw file. The API key is not written; if a body contains it, that value is replaced with `[redacted]`.
+
 ```bash
 cd /Users/ryanzheng/labbench-three-cup-vision/server/three-cup-vision
-read -rs GEMINI_API_KEY
-export GEMINI_API_KEY
+set -a
+source /Users/ryanzheng/labbench-three-cup-vision/server/.env
+set +a
 export THREE_CUP_GEMINI_VIDEO_ENABLED=1
 ./gemini_adapter/.venv/bin/python -m gemini_adapter \
   --video "/Users/ryanzheng/labbench-three-cup-vision/recordings/clips/recording-1-review-84000-92000.mov" \
@@ -36,9 +39,10 @@ export THREE_CUP_GEMINI_VIDEO_ENABLED=1
   --source-offset-ms 84000 \
   --authorize \
   --fps 4
+unset GEMINI_API_KEY THREE_CUP_GEMINI_VIDEO_ENABLED
 ```
 
-Do not run that until Ryan explicitly authorizes this clip. Google's free tier says prompts are used to improve its products. Use a paid key unless that term is acceptable.
+Run that once. Confirm `capture.rawResponseSaved` is true and both printed paths exist before trusting the parsed events. `store` stays `false`. TLS verification stays on. Google's free tier says prompts are used to improve its products. Use a paid key unless that term is acceptable.
 
 Startup and tests, with no network:
 
@@ -49,7 +53,7 @@ cd server/three-cup-vision
 ./gemini_adapter/.venv/bin/python -m unittest discover -s gemini_adapter/tests -v
 ```
 
-Python 3.10+ standard library only. Nothing to pip install. 30 tests passed on 15 Nov 2026.
+Python 3.10+ standard library only. Nothing to pip install. 36 tests passed on 15 Nov 2026. The six new tests use fake HTTP responses and do not contact Google.
 
 Input constraints for a live call:
 
@@ -252,7 +256,7 @@ When a clip is approved for upload:
 ```bash
 cd /Users/ryanzheng/labbench-three-cup-vision/server/three-cup-vision
 export THREE_CUP_GEMINI_VIDEO_ENABLED=1
-# GEMINI_API_KEY must already be exported
+# GEMINI_API_KEY must already be in the environment. Do not put it on the command line.
 ./gemini_adapter/.venv/bin/python -m gemini_adapter \
   --video /absolute/path/to/clip.mp4 \
   --session-id pilot-session-001 \
@@ -260,6 +264,8 @@ export THREE_CUP_GEMINI_VIDEO_ENABLED=1
   --authorize \
   --fps 4
 ```
+
+That writes `recordings/gemini-captures/*-raw.json` and `*-meta.json` at mode `0600`. Exit code 0 requires both a parsed result with no error and a capture record whose own error is empty.
 
 `--fps 4` is a reasonable first setting for a short pour because the documented default is 1 FPS. It has not been measured on these cups. Omit `--fps` to use the API default. `--authorize` alone does nothing until the environment variable is also set.
 

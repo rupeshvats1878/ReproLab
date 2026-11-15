@@ -5,6 +5,7 @@ import json
 import sys
 
 from gemini_adapter.analyze import analyze_video
+from gemini_adapter.capture import default_capture_dir
 from gemini_adapter.constants import DEFAULT_TIMEOUT_S, MAX_DURATION_MS, MAX_INLINE_VIDEO_BYTES
 
 
@@ -35,6 +36,11 @@ def main(argv=None):
         default=0,
         help="Milliseconds to add so clip-relative model times map back onto the original recording.",
     )
+    parser.add_argument(
+        "--capture-dir",
+        default=None,
+        help="Private directory for the raw response and metadata. Defaults to recordings/gemini-captures.",
+    )
     args = parser.parse_args(argv)
     result = analyze_video(
         args.video,
@@ -46,10 +52,12 @@ def main(argv=None):
         max_bytes=args.max_bytes,
         max_duration_ms=args.max_duration_ms,
         source_offset_ms=args.source_offset_ms,
+        capture_dir=args.capture_dir or str(default_capture_dir()),
     )
     json.dump(result, sys.stdout, indent=2)
     sys.stdout.write("\n")
-    return 0 if result["error"] is None else 1
+    saved = (result.get("capture") or {}).get("error")
+    return 1 if result["error"] is not None or saved else 0
 
 
 if __name__ == "__main__":
