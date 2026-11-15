@@ -133,13 +133,8 @@ export function Review(props: ReviewProps) {
   const groups = groupAlerts(protocol.alerts)
 
   return (
-    <section className="review" aria-labelledby="review-title">
-      <div className="review-heading">
-        <h2 id="review-title">Review</h2>
-        <p>
-          Read the colored-water alerts and human reports. A flag is not a confirmed cause.
-        </p>
-      </div>
+    <section className="review" aria-label="Review">
+      <p>A flag is not a confirmed cause.</p>
 
       <p className="review-live">
         Phase <strong>{protocol.phase}</strong>
@@ -193,7 +188,7 @@ export function Review(props: ReviewProps) {
 
       <div className="review-block">
         <h3>Saved in this browser</h3>
-        <p>JSON stays in IndexedDB. Video and image bytes are a separate store and are not uploaded.</p>
+        <p>Saved only in this browser. Media bytes are not uploaded.</p>
         <button type="button" onClick={() => void saveCurrent()} disabled={!record}>
           Save current run
         </button>
@@ -256,8 +251,11 @@ export function Review(props: ReviewProps) {
             </li>
           ))}
         </ul>
-        <p className="review-kicker">Live model explanation</p>
-        <p>The explanation is requested only for these colored-water review records. It is not created for a monitor session or a replication.</p>
+        <p className="review-kicker">Explanation</p>
+        <details>
+          <summary>What this request covers</summary>
+          <p>Only these review records. Not a monitor session or a replication.</p>
+        </details>
         <button type="button" onClick={() => void requestExplanation()} disabled={aiState === 'loading' || comparisonRecords.length === 0}>
           Request an evidence-backed explanation
         </button>

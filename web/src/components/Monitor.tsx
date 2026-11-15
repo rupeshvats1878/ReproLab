@@ -76,7 +76,7 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
     <section className="monitor" aria-labelledby="monitor-title" data-debug={session.debugOverlay ? 'true' : 'false'} data-running={running ? 'true' : 'false'}>
       <div className="monitor-heading">
         <h2 id="monitor-title">Monitor</h2>
-        <p>Six-well colored-water procedure. Fixed order A1, A2, A3, B1, B2, B3.</p>
+        <p>Six-well order: A1, A2, A3, B1, B2, B3.</p>
         {preparedProtocol ? (
           <div>
             <p>
@@ -116,7 +116,7 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
           data-active={session.inputKind === 'synthetic'}
         />
         {session.inputKind === 'none' ? (
-          <p className="stage-placeholder">Start the camera. The picture stays on this computer.</p>
+          <p className="stage-placeholder">Camera is off.</p>
         ) : null}
         <RegionLayer
           regions={session.regions}
@@ -165,6 +165,7 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
                 data-issue={issueActive && selected?.wellId === wellId ? 'true' : 'false'}
               >
                 {wellId}
+                {issueActive && selected?.wellId === wellId ? <span className="well-flag">Check</span> : null}
               </li>
             ))}
           </ol>
@@ -189,7 +190,7 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
               ) : session.summaryHeld ? (
                 <>
                   <h3>Observed correction</h3>
-                  <p className="correction-line">{session.correctionNote}</p>
+                  <p className="correction-line" role="status">Corrected. {session.correctionNote}</p>
                 </>
               ) : (
                 <DecisionGuide guide={guide} issueActive={issueActive} correctionNote={correctionHidden ? null : session.correctionNote} />
@@ -799,7 +800,7 @@ function DecisionGuide({
     <>
       <h3>Now</h3>
       <p className="guide-line">{guide.action}</p>
-      {correctionNote ? <p className="correction-line">{correctionNote}</p> : null}
+      {correctionNote ? <p className="correction-line" role="status">Corrected. {correctionNote}</p> : null}
       {issueActive ? (
         <>
           <h3>Issue</h3>
@@ -876,6 +877,7 @@ function CameraSetup({
           <button type="button" className="primary-action" onClick={session.startCamera} disabled={starting}>
             Start camera
           </button>
+          <p className="monitor-note">The picture stays on this computer.</p>
           <p className="monitor-note" role={cameraFailed(session) ? 'alert' : 'status'}>
             {session.inputKind === 'prerecorded' ? session.inputLabel : session.cameraMessage}
             {session.cameraPhase === 'live' ? ' The camera is open. That is not a calibrated reading.' : ''}

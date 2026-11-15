@@ -13,11 +13,16 @@
 .prepare-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin: .75rem 0 }
 .prepare-entries { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; margin: .75rem 0 1rem }
 .prepare-entry {
-  display: grid; gap: .35rem; text-align: left; padding: .9rem 1rem;
-  border: 1px solid var(--teal); border-radius: .75rem; background: var(--card); color: var(--ink); cursor: pointer;
+  text-align: left; padding: .85rem 1rem;
+  border: 1px solid var(--line); border-radius: .75rem; background: var(--card); color: var(--ink); cursor: pointer;
+  font-weight: 700;
 }
-.prepare-entry strong { font-size: 1.05rem }
-.prepare-entry span { color: var(--muted); line-height: 1.4 }
+.prepare-lab button.primary-action,
+.prepare-entry.primary-action {
+  background: var(--teal-bg);
+  border-color: var(--teal);
+  font-weight: 750;
+}
 .prepare-extra { margin: 1rem 0; padding: .75rem; border: 1px solid var(--line); border-radius: .6rem }
 .prepare-lab input[type='file'] { color: var(--ink) }
 .prepare-lab input[type='file']::file-selector-button {

@@ -102,11 +102,10 @@ export function Results(props: { review: ReviewController; active: boolean }) {
   return (
     <section className="results">
       <h2>Results</h2>
-      <p>Monitor sessions, colored-water review records, and replications are separate. A planned replication is not a performed monitor session.</p>
+      <p>Saved monitor sessions and review records stay separate.</p>
 
       <section className="results-block" aria-labelledby="monitor-results">
         <h3 id="monitor-results">Monitor sessions</h3>
-        <p>Saved sessions come from the shared library. A published protocol does not configure them.</p>
         {summaries.length > 0 ? (
           <label>
             Previous sessions
@@ -123,19 +122,25 @@ export function Results(props: { review: ReviewController; active: boolean }) {
             Open by session ID
             <input value={lookup} onChange={(event) => setLookup(event.target.value)} spellCheck={false} />
           </label>
-          <button type="submit">Open session</button>
+          <button type="submit" className="primary-action">Open session</button>
         </form>
         {props.active && listKind !== 'ready' ? <p role="status">{listMessage(listKind)}</p> : null}
         {props.active && (sessionKind === 'loading' || sessionKind === 'missing' || sessionKind === 'invalid' || sessionKind === 'unavailable' || sessionKind === 'unreachable') ? (
           <p role="status">{sessionMessage(sessionKind)}</p>
         ) : null}
         {props.active && session && sessionKind === 'ready' ? <MonitorResult session={session} /> : null}
-        <p>No Gemini explanation is requested for a monitor session. The explanation endpoint accepts a colored-water review record, which is a different document.</p>
+        <details>
+          <summary>About these sessions</summary>
+          <p>A published protocol does not configure them. No explanation is requested for a monitor session.</p>
+        </details>
       </section>
 
       <section className="results-block" aria-labelledby="review-results">
-        <h3 id="review-results">Colored-water review records</h3>
-        <p>This visit’s review record is filled by the monitor while it runs. Saved copies stay in this browser. They are not Atlas monitor sessions and they are not replication records.</p>
+        <h3 id="review-results">Review records</h3>
+        <details>
+          <summary>About these records</summary>
+          <p>This visit’s record is filled while Monitor runs. Saved copies stay in this browser. They are not monitor sessions or replications.</p>
+        </details>
         <Review
           protocol={props.review.protocol}
           onAcknowledgeOmission={props.review.acknowledgeOmission}
@@ -151,10 +156,10 @@ export function Results(props: { review: ReviewController; active: boolean }) {
         <ReferenceLab />
       </details>
 
-      <section className="results-block">
-        <h3>Replications</h3>
-        <p>Open a publication from Library. Starting a replication records a plan. The execution screen stays on that record and is not mixed into the monitor results above.</p>
-      </section>
+      <details className="results-block">
+        <summary>Replications</summary>
+        <p>Open a publication from Library. A planned replication is not a performed monitor session.</p>
+      </details>
     </section>
   )
 }
@@ -178,7 +183,7 @@ function MonitorResult({ session }: { session: RetrievedMonitor }) {
       <p>{session.startedAtIso ? `Started ${session.startedAtIso}` : 'Start time not recorded.'}</p>
       {session.preparedProtocol ? (
         <div>
-          <p>This is not a library replication.</p>
+          <p>Copied for this session. Not a library replication.</p>
           <ol>
             {session.preparedProtocol.steps.map((instruction) => (
               <li key={instruction}>{instruction}</li>

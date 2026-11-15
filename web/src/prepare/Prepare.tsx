@@ -11,7 +11,7 @@ import './prepare.css'
 const TEXT_FILE_LIMIT = 200_000
 const EXTRACT_URL = 'http://127.0.0.1:8787/protocols/extract'
 const EXTRACT_TIMEOUT_MS = 70_000
-const EXTRACTING_NOTICE = 'Asking Gemini for a draft. This can take up to a minute.'
+const EXTRACTING_NOTICE = 'Extracting a draft. This can take up to a minute. Nothing is saved yet.'
 
 export function Prepare(props: {
   onSetupMonitoring: (protocol: PreparedMonitorProtocol) => void
@@ -25,7 +25,7 @@ export function Prepare(props: {
   const [title, setTitle] = useState('')
   const [sourceText, setSourceText] = useState('')
   const [steps, setSteps] = useState<ProtocolStep[]>([])
-  const [notice, setNotice] = useState('Paste a protocol, extract a draft, or write the steps yourself.')
+  const [notice, setNotice] = useState('Nothing is saved yet.')
   const [error, setError] = useState('')
   const [extracting, setExtracting] = useState(false)
   const [publishTitle, setPublishTitle] = useState('')
@@ -60,7 +60,7 @@ export function Prepare(props: {
       const category = isRecord(body) && typeof body.error === 'string' ? body.error : ''
       const categoryMessage = extractionMessage(category)
       if (categoryMessage) {
-        setNotice('Paste a protocol, extract a draft, or write the steps yourself.')
+        setNotice('Nothing is saved yet.')
         setError(categoryMessage)
         return
       }
@@ -68,13 +68,13 @@ export function Prepare(props: {
         const details = isRecord(body) && Array.isArray(body.details)
           ? body.details.filter((item): item is string => typeof item === 'string').join(' ')
           : ''
-        setNotice('Paste a protocol, extract a draft, or write the steps yourself.')
+        setNotice('Nothing is saved yet.')
         setError(`Gemini extraction was rejected. ${details || 'The server did not return a usable draft.'} Add the steps manually. No generated protocol was substituted.`)
         return
       }
       const extracted = readExtractedSteps(sourceText, body)
       if (!extracted || extracted.length === 0) {
-        setNotice('Paste a protocol, extract a draft, or write the steps yourself.')
+        setNotice('Nothing is saved yet.')
         setError('The extraction did not match the supplied text. No draft was applied.')
         return
       }
@@ -82,7 +82,7 @@ export function Prepare(props: {
       setNotice(`Extracted ${extracted.length} steps. Check every quote before saving. This draft is not saved yet.`)
     } catch (error) {
       const timedOut = error instanceof DOMException && (error.name === 'TimeoutError' || error.name === 'AbortError')
-      setNotice('Paste a protocol, extract a draft, or write the steps yourself.')
+      setNotice('Nothing is saved yet.')
       setError(
         timedOut
           ? 'Gemini extraction timed out. Add the steps manually. No generated protocol was substituted.'
@@ -159,7 +159,7 @@ export function Prepare(props: {
     setSourceText(draft.sourceText)
     setSteps(draft.steps)
     setError('')
-    setNotice('Six-well procedure loaded. This draft is supported for camera monitoring. Save and approve it before monitoring. Nothing is saved yet, and the camera has not started.')
+    setNotice('Six-well draft loaded. Not saved. Approve it before monitoring. The camera has not started.')
   }
 
   function loadTextFile(file: File) {
@@ -223,17 +223,14 @@ export function Prepare(props: {
 
   return (
     <section className="prepare-lab">
-      <p className="app-kicker">ReproLab • Prepare</p>
       <h2>Prepare a protocol.</h2>
-      <p>Start with the procedure the camera can monitor, or write a different protocol.</p>
+      <p>Start from the six-well procedure, or write a different one.</p>
       <div className="prepare-entries">
-        <button type="button" className="prepare-entry" onClick={useSixWell}>
-          <strong>Use six-well procedure</strong>
-          <span>Supported for camera monitoring. Loads Fill A1 through Fill B3 as an editable draft.</span>
+        <button type="button" className="prepare-entry primary-action" onClick={useSixWell}>
+          Six-well procedure
         </button>
         <button type="button" className="prepare-entry" onClick={() => document.getElementById('protocol-text')?.focus()}>
-          <strong>Write or upload a protocol</strong>
-          <span>Paste text or choose a .txt file. This does not configure the camera detector.</span>
+          Write a protocol
         </button>
       </div>
       <div className="prepare-layout">
@@ -266,10 +263,10 @@ export function Prepare(props: {
               onClick={() => void extract()}
               disabled={locked || extracting || title.trim() === '' || sourceText.trim() === ''}
             >
-              {extracting ? 'Asking Gemini…' : 'Extract steps with Gemini'}
+              {extracting ? 'Extracting…' : 'Extract steps'}
             </button>
             <button type="button" disabled={locked} onClick={() => updateSteps([...steps, blankStep()])}>
-              Add a step manually
+              Add step
             </button>
           </div>
           <p role="status">{notice}</p>
@@ -347,12 +344,12 @@ export function Prepare(props: {
           <div className="prepare-actions">
             {locked ? (
               <button type="button" onClick={() => { setRevising(true); setPublishedId(null); setNotice('Editing creates a new draft. The approved version stays unchanged.') }}>
-                Revise as a new draft
+                Revise
               </button>
             ) : (
               <>
                 <button type="button" disabled={problems.length > 0} onClick={() => save('draft')}>Save draft</button>
-                <button type="button" disabled={problems.length > 0} onClick={() => save('approved')}>Approve protocol</button>
+                <button type="button" className="primary-action" disabled={problems.length > 0} onClick={() => save('approved')}>Approve</button>
               </>
             )}
           </div>
@@ -361,24 +358,24 @@ export function Prepare(props: {
               <div className="prepare-actions">
                 <button
                   type="button"
+                  className="primary-action"
                   onClick={() => props.onSetupMonitoring(preparedMonitorProtocol(protocolId, originVersion, title, steps))}
                 >
                   Set up monitoring
                 </button>
-                <p>Opens Monitor with this approved version. It does not start the camera or a run.</p>
+                <p>The camera has not started.</p>
               </div>
             ) : (
               <p>Automatic monitoring is unavailable for this version. The steps are not the supported six-well procedure.</p>
             )
           ) : null}
           <details className="prepare-extra">
-            <summary>Publishing and library</summary>
-            <p>Versions in the side list are local drafts in this browser. Publishing copies an approved version into the shared experiment library. That library is not a public website and does not sign anyone in.</p>
-            <button type="button" onClick={() => props.onOpenLibrary()}>Open Library</button>
+            <summary>Publishing</summary>
+            <p>The side list is local to this browser. Publishing copies an approved version into the shared library. That library is not a public website and does not sign anyone in.</p>
             {locked ? (
               <form onSubmit={(event) => { event.preventDefault(); void publishApproved() }}>
-                <h3>Publish this approved version</h3>
-                <p>Publishing sends this approved version only. A draft is not published, and later local edits do not change the saved snapshot.</p>
+                <h3>Publish this version</h3>
+                <p>Only this approved version is copied. Later edits do not change it.</p>
                 <label>
                   Display title
                   <input value={publishTitle} onChange={(event) => setPublishTitle(event.target.value)} maxLength={120} />
@@ -408,7 +405,7 @@ export function Prepare(props: {
         </div>
         <aside>
           <h3>Saved in this browser</h3>
-          <p>Versions stay in local storage. Approving one version does not change an older approval.</p>
+          <p>Saved only in this browser. Approving one version does not change an older one.</p>
           {library.protocols.length === 0 ? <p>No protocols saved yet.</p> : null}
           {library.protocols.map((protocol) => (
             <article key={protocol.id}>

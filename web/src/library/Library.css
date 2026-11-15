@@ -1,7 +1,7 @@
 .library-lab h2 { font-size: 1.6rem; margin: 0 0 .4rem }
 .library-lab h3 { margin: 0 0 .35rem }
 .library-lab p, .library-lab li { line-height: 1.5 }
-.library-note { color: var(--muted) }
+.library-note { color: var(--muted); margin: 0.4rem 0 0.8rem }
 .library-toolbar {
   display: flex; flex-wrap: wrap; gap: .6rem; align-items: end; margin: 1rem 0
 }
@@ -14,6 +14,7 @@
   font: inherit; padding: .55rem .75rem; border: 1px solid var(--line); border-radius: .4rem;
   background: var(--panel); color: var(--ink); cursor: pointer
 }
+.library-lab button.primary-action { background: var(--teal-bg); border-color: var(--teal); font-weight: 750 }
 .library-lab button:disabled { opacity: .5; cursor: default }
 .library-lab :focus-visible { outline: 3px solid var(--teal); outline-offset: 3px }
 .library-warning { color: #ffb4a8 }

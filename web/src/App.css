@@ -32,9 +32,14 @@
   text-transform: uppercase;
 }
 
-.app-subtitle {
-  margin-top: 0.35rem;
-  color: var(--muted);
+.app-main h2 {
+  margin: 0 0 0.35rem;
+  font-size: 1.7rem;
+  letter-spacing: -0.02em;
+}
+
+.app-main h3 {
+  margin: 0.2rem 0 0.4rem;
 }
 
 .app-tabs {
@@ -62,9 +67,11 @@
   color: var(--panel);
 }
 
-.app-screen-line {
-  margin: 0 0 1rem;
-  color: var(--muted);
+button.primary-action {
+  background: var(--teal-bg);
+  border-color: var(--teal);
+  color: var(--ink);
+  font-weight: 750;
 }
 
 .app-main {

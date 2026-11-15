@@ -9,11 +9,11 @@ import { Results } from './results/Results.tsx'
 
 type TabId = 'prepare' | 'monitor' | 'results' | 'library'
 
-const TABS: readonly { id: TabId; label: string; line: string }[] = [
-  { id: 'prepare', label: 'Prepare', line: 'Write a protocol, approve a version, and publish it when you choose.' },
-  { id: 'monitor', label: 'Monitor', line: 'Watch the six-well colored-water procedure with the camera.' },
-  { id: 'results', label: 'Results', line: 'Inspect a saved monitor session, a review record, or an optional reference comparison.' },
-  { id: 'library', label: 'Library', line: 'Browse published procedures and start a replication.' },
+const TABS: readonly { id: TabId; label: string }[] = [
+  { id: 'prepare', label: 'Prepare' },
+  { id: 'monitor', label: 'Monitor' },
+  { id: 'results', label: 'Results' },
+  { id: 'library', label: 'Library' },
 ]
 
 export default function App() {
@@ -34,7 +34,6 @@ export default function App() {
         <div>
           <p className="app-kicker">Prototype</p>
           <h1>ReproLab</h1>
-          <p className="app-subtitle">Prepare a protocol, notice visible deviations, and keep the evidence others can inspect.</p>
         </div>
         <nav className="app-tabs" aria-label="Primary">
           {TABS.map((item) => (
@@ -51,7 +50,6 @@ export default function App() {
       </header>
 
       <main className="app-main">
-        <p className="app-screen-line">{TABS.find((item) => item.id === tab)?.line}</p>
         <div hidden={tab !== 'prepare'}>
           <Prepare
             onSetupMonitoring={(protocol) => {

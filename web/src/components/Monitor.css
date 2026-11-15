@@ -290,6 +290,13 @@
   color: #f0d48a;
 }
 
+.well-flag {
+  display: block;
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .demo-summary {
   display: grid;
   gap: 0.25rem;
@@ -297,8 +304,12 @@
 
 .correction-line {
   margin: 0;
-  color: #8ee0d4;
-  font-weight: 700;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--filled);
+  border-radius: 0.45rem;
+  background: var(--filled-bg);
+  color: var(--filled);
+  font-weight: 650;
 }
 
 .demo-paused {

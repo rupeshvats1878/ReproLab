@@ -142,9 +142,10 @@ export function Library(props: {
     <section className="library-lab">
       <h2>Experiment library</h2>
       <p>Browse published procedures and start a replication.</p>
-      <p className="library-note">
-        This is the shared experiment library on this network. Local drafts stay in Prepare. Publishing does not make a protocol public, and this screen does not sign anyone in.
-      </p>
+      <details className="library-note">
+        <summary>About this library</summary>
+        <p>Shared on this network. Local drafts stay in Prepare. Publishing does not make a protocol public, and this screen does not sign anyone in.</p>
+      </details>
       <form
         className="library-toolbar"
         onSubmit={(event) => {
@@ -164,7 +165,7 @@ export function Library(props: {
             maxLength={120}
           />
         </label>
-        <button type="submit">Search</button>
+        <button type="submit" className="primary-action">Search</button>
         <label>
           Sort
           <select
@@ -181,15 +182,15 @@ export function Library(props: {
           </select>
         </label>
         <button type="button" onClick={() => { setStatus('loading'); setError(''); setReload((value) => value + 1) }}>Refresh</button>
-        <button type="button" onClick={props.onOpenPrepare}>Publish from Prepare</button>
+        <button type="button" onClick={props.onOpenPrepare}>Publish in Prepare</button>
       </form>
       {error ? <p role="alert" className="library-warning">{error}</p> : null}
       {notice ? <p role="status">{notice}</p> : null}
 
       {runId ? (
         <div className="library-record">
-          <button type="button" onClick={() => setRunId(null)}>Back to the publication</button>
-          <p>This is the replication record. It stays planned until you start it here. It is not a monitor session, and it does not configure the six-well detector.</p>
+          <button type="button" onClick={() => setRunId(null)}>Back</button>
+          <p>This record stays planned until you start it here. It is not a monitor session.</p>
           <Run replicationId={runId} />
         </div>
       ) : opened ? (
@@ -243,7 +244,7 @@ function Browser(props: {
     return (
       <div role="status">
         <p>{props.searching ? `No publications match “${props.query}”.` : 'No publications yet.'}</p>
-        <button type="button" onClick={props.onOpenPrepare}>Publish an approved version from Prepare</button>
+        <button type="button" className="primary-action" onClick={props.onOpenPrepare}>Publish in Prepare</button>
       </div>
     )
   }
@@ -317,7 +318,6 @@ function Publication(props: {
       <button type="button" onClick={props.onBack}>Back to the list</button>
       <h3>{props.record.title}</h3>
       <p>Frozen protocol {versionLabel(typeof snapshot.version === 'number' ? snapshot.version : undefined)}.</p>
-      <p>A published protocol does not configure the six-well detector. A planned replication is not a monitor session.</p>
       {steps.length === 0 ? <p>No steps were stored in this snapshot.</p> : (
         <ol>
           {steps.map((step, index) => (
@@ -343,18 +343,19 @@ function Publication(props: {
       ) : null}
       <details>
         <summary>Details</summary>
+        <p>A published protocol does not configure the six-well detector. A planned replication is not a monitor session.</p>
         <p>Publication id {props.record.id}</p>
         <button type="button" onClick={props.onCopy}>Copy</button>
         {props.copyNote ? <p role="status">{props.copyNote}</p> : null}
         {props.record.description ? <p>{props.record.description}</p> : null}
         {props.record.publishedAt ? <p>Published {publishedLabel(props.record.publishedAt)}</p> : null}
       </details>
-      <button type="button" onClick={props.onReplicate} disabled={props.busy}>Start replication</button>
+      <button type="button" className="primary-action" onClick={props.onReplicate} disabled={props.busy}>Start replication</button>
       {props.replication ? (
         <div>
           <p>Replication status: {props.replication.status === 'planned' ? 'Planned' : props.replication.status}.</p>
           <p>{props.replication.note}</p>
-          <button type="button" onClick={() => props.onOpenRun(props.replication!.id)}>Open replication record</button>
+          <button type="button" onClick={() => props.onOpenRun(props.replication!.id)}>Open record</button>
         </div>
       ) : null}
     </div>
