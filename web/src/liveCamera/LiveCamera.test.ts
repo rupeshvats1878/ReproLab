@@ -31,7 +31,7 @@ afterEach(async()=>{await act(async()=>root.unmount());container.remove();vi.res
 it('default offline capture cannot send a clip; stop disposes camera',async()=>{
  await click(button('Start Live AI Monitoring'));await emit();expect(button('Analyze recent clip').disabled).toBe(true)
  expect(fetchMock.mock.calls.some(c=>String(c[0]).endsWith('/clips'))).toBe(false)
- await click(button('Stop Live AI Monitoring'));expect(trackStop).toHaveBeenCalled();expect(mocks.cancel).toHaveBeenCalled()
+ await click(button('Stop Live AI Monitoring'));expect(trackStop).toHaveBeenCalled();expect(button('Start Live AI Monitoring').disabled).toBe(false)
 })
 it('manual mocked flow produces wrong-order finding and independent human review',async()=>{
  await click(checkbox('Enable Real Gemini Analysis'));await click(button('Start Live AI Monitoring'));await emit();await click(button('Analyze recent clip'))
@@ -40,30 +40,50 @@ it('manual mocked flow produces wrong-order finding and independent human review
  await click(button('Reject observation'));expect(container.textContent).toContain('Human verification: rejected')
  expect(container.textContent).toContain('MODEL HYPOTHESIS');expect(fetchMock.mock.calls.filter(c=>String(c[0]).endsWith('/clips'))).toHaveLength(1)
 })
-it('automatic mode skips busy clips and stop ignores delayed response',async()=>{
+it('automatic mode bounds its queue, reports overflow and stop ignores delayed response',async()=>{
  let release!:(r:Response)=>void;pendingResponse=new Promise(r=>release=r)
- await click(checkbox('Enable Real Gemini Analysis'));await click(checkbox('Automatic analysis'));await click(button('Start Live AI Monitoring'));await emit();await emit()
+ await click(checkbox('Enable Real Gemini Analysis'));await click(button('Start Live AI Monitoring'));await emit();await emit();await emit();await emit()
  expect(fetchMock.mock.calls.filter(c=>String(c[0]).endsWith('/clips'))).toHaveLength(1)
- expect(container.textContent).toContain('1 busy windows skipped')
+ expect(container.textContent).toContain('1 windows not analyzed')
  await click(button('Stop Live AI Monitoring'));await act(async()=>release(Response.json(result())))
  expect(container.textContent).not.toContain('Possible wrong order');await emit();expect(fetchMock.mock.calls.filter(c=>String(c[0]).endsWith('/clips'))).toHaveLength(1)
 })
 it('failed model call stops automatic analysis without retry',async()=>{
  pendingResponse=Promise.resolve(Response.json({error:'Synthetic timeout',callsUsed:1},{status:502}))
- await click(checkbox('Enable Real Gemini Analysis'));await click(checkbox('Automatic analysis'));await click(button('Start Live AI Monitoring'));await emit()
+ await click(checkbox('Enable Real Gemini Analysis'));await click(button('Start Live AI Monitoring'));await emit()
  expect(container.textContent).toContain('Synthetic timeout');expect(button('Start Live AI Monitoring').disabled).toBe(false)
  await emit();expect(fetchMock.mock.calls.filter(c=>String(c[0]).endsWith('/clips'))).toHaveLength(1)
 })
 
-it('new findings open a dismissible notification without removing the evidence card',async()=>{
+it('new findings appear beside camera without a camera-covering notification',async()=>{
+ await click(checkbox('Enable Real Gemini Analysis'));await click(button('Start Live AI Monitoring'));await emit()
  expect(container.querySelector('.live-ai-toast')).toBeNull()
- await click(checkbox('Enable Real Gemini Analysis'));await click(button('Start Live AI Monitoring'));await emit();await click(button('Analyze recent clip'))
- const toast=container.querySelector('.live-ai-toast')!
- expect(toast.getAttribute('role')).toBe('status')
- expect(toast.textContent).toContain('GREEN → BLUE')
- expect(toast.textContent).toContain('Possible wrong order')
- expect(toast.textContent).toContain('Human verification: required')
- await click(container.querySelector('[aria-label="Dismiss pour notification"]') as HTMLElement)
- expect(container.querySelector('.live-ai-toast')).toBeNull()
- expect(container.querySelector('.live-ai-events')?.textContent).toContain('GREEN → BLUE')
+ const panel=container.querySelector('.live-ai-summary .live-ai-events')!
+ expect(panel.textContent).toContain('GREEN → BLUE')
+ expect(panel.textContent).toContain('Possible wrong order')
+ expect(panel.textContent).toContain('Human verification: required')
+})
+it('stopping during capture cancels the active recorder without an upload',async()=>{
+ await click(button('Start Live AI Monitoring'));await click(button('Stop Live AI Monitoring'))
+ expect(mocks.cancel).toHaveBeenCalled();expect(trackStop).toHaveBeenCalled()
+ expect(fetchMock.mock.calls.filter(c=>String(c[0]).endsWith('/clips'))).toHaveLength(0)
+})
+it('bounded queue drains serially after an in-flight result',async()=>{
+ let release!:(r:Response)=>void;pendingResponse=new Promise(r=>release=r)
+ await click(checkbox('Enable Real Gemini Analysis'));await click(button('Start Live AI Monitoring'))
+ await emit();await emit();await emit();await emit()
+ expect(fetchMock.mock.calls.filter(c=>String(c[0]).endsWith('/clips'))).toHaveLength(1)
+ pendingResponse=null;await act(async()=>release(Response.json(result())))
+ expect(fetchMock.mock.calls.filter(c=>String(c[0]).endsWith('/clips'))).toHaveLength(3)
+ expect(container.textContent).toContain('Coverage gaps (1)')
+})
+it('expanded mocked spill produces separate observation and risk cards with human controls',async()=>{
+ const response=result() as ReturnType<typeof result>&{observation:Record<string,unknown>}
+ response.observation.expanded={schemaVersion:'three-cup-live-window/v0.1',sessionId:'mock-session',videoId:'window-0',observations:[{eventId:'spill',category:'spill_or_splash',summary:'Mock visible droplets',eventStartMs:1800,eventEndMs:2000,evidenceTimestampsMs:[1900],cupIds:['BLUE'],utensil:'none',observationStatus:'observed',visibilityNote:'Mock clear view'}]}
+ pendingResponse=Promise.resolve(Response.json(response))
+ await click(checkbox('Enable Real Gemini Analysis'));await click(button('Start Live AI Monitoring'));await emit()
+ expect(container.textContent).toContain('Mock visible droplets')
+ expect(container.textContent).toContain('Visible liquid outside a vessel reported')
+ expect(container.textContent).toContain('Derived risks · interpretations')
+ expect(container.querySelectorAll('.live-ai-events article')).toHaveLength(3)
 })

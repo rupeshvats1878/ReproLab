@@ -18,7 +18,9 @@ for(const port of [ui,bridge]) {
   if(!available){console.error(`Port ${port} is occupied. No process was stopped. Set LIVE_UI_PORT and LIVE_BRIDGE_PORT to unused ports.`);process.exit(1)}
 }
 if(!existsSync(join(root,'web/node_modules/vite'))) {console.error('Install frontend dependencies first: npm ci --prefix web');process.exit(1)}
-const env={...process.env,LIVE_BRIDGE_PORT:String(bridge),LIVE_UI_ORIGIN:`http://127.0.0.1:${ui}`,LIVE_BRIDGE_URL:`http://127.0.0.1:${bridge}`}
+const sharedLedger=join(root,'..','labbench-live-demo/server/live-camera/private/budget.json')
+const budgetFile=process.env.LIVE_BUDGET_FILE || (existsSync(sharedLedger)?sharedLedger:join(root,'server/live-camera/private/budget.json'))
+const env={...process.env,LIVE_BUDGET_FILE:budgetFile,LIVE_BRIDGE_PORT:String(bridge),LIVE_UI_ORIGIN:`http://127.0.0.1:${ui}`,LIVE_BRIDGE_URL:`http://127.0.0.1:${bridge}`}
 let stopping=false
 const children=[spawn(process.execPath,['server/live-camera/bridge.mjs'],{cwd:root,env,stdio:'inherit'}),spawn(process.execPath,['node_modules/vite/bin/vite.js','--host','127.0.0.1','--port',String(ui),'--strictPort'],{cwd:join(root,'web'),env,stdio:'inherit'})]
 function stop(code=0){if(stopping)return;stopping=true;children.forEach(c=>c.kill('SIGTERM'));setTimeout(()=>process.exit(code),500).unref()}

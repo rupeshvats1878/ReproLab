@@ -8,7 +8,17 @@ from gemini_adapter.constants import INTERACTIONS_URL
 from gemini_adapter.prompt import OBSERVATION_PROMPT
 
 
-def build_request(*, model_id, mime_type, video_bytes, video_fps, api_key, timeout_s):
+def build_request(
+    *,
+    model_id,
+    mime_type,
+    video_bytes,
+    video_fps,
+    api_key,
+    timeout_s,
+    prompt=None,
+    generation_config=None,
+):
     video_part = {
         "type": "video",
         "mime_type": mime_type,
@@ -16,21 +26,24 @@ def build_request(*, model_id, mime_type, video_bytes, video_fps, api_key, timeo
     }
     if video_fps is not None:
         video_part["processing"] = {"type": "static", "fps": video_fps}
+    body = {
+        "model": model_id,
+        "store": False,
+        "input": [
+            video_part,
+            {"type": "text", "text": OBSERVATION_PROMPT if prompt is None else prompt},
+        ],
+        "response_format": {"type": "text", "mime_type": "application/json"},
+    }
+    if generation_config is not None:
+        body["generation_config"] = generation_config
     return {
         "url": INTERACTIONS_URL,
         "headers": {
             "content-type": "application/json",
             "x-goog-api-key": api_key,
         },
-        "body": {
-            "model": model_id,
-            "store": False,
-            "input": [
-                video_part,
-                {"type": "text", "text": OBSERVATION_PROMPT},
-            ],
-            "response_format": {"type": "text", "mime_type": "application/json"},
-        },
+        "body": body,
         "timeout_s": timeout_s,
     }
 

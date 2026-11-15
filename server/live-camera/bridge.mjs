@@ -15,7 +15,7 @@ export class LiveBridge {
     Object.assign(this, {processMedia, recordEvidence, implementation, reserve, remaining, credentials, now})
     this.infer = infer || (async (path,s,window,start,captures) => {
       const {stdout} = await exec(process.env.PYTHON || 'python3', [join(here,'worker.py'),path,s.id,window,String(start),captures], {
-        env:{...process.env, THREE_CUP_GEMINI_VIDEO_ENABLED:'1'}, timeout:35_000, maxBuffer:2*1024*1024,
+        env:{...process.env, THREE_CUP_GEMINI_VIDEO_ENABLED:'1', LIVE_CALL_RESERVED:'1'}, timeout:50_000, maxBuffer:2*1024*1024,
       })
       return JSON.parse(stdout)
     })
@@ -63,6 +63,7 @@ export class LiveBridge {
       if(!observation || observation.schemaVersion!=='three-cup-gemini-observation/v0.1' || observation.sessionId!==id || observation.videoId!==window || observation.sourceOffsetMs!==meta.startMs || !Array.isArray(observation.events) || !Number.isInteger(observation.videoDurationMs) || Math.abs(observation.videoDurationMs-media.durationMs)>2) throw fail('Invalid adapter response; human review required.',502)
       const evidenceRef=observation.capture?.rawResponsePath ? basename(observation.capture.rawResponsePath) : null
       const safe={...observation}; delete safe.capture
+      if(safe.expanded){safe.expanded={...safe.expanded};delete safe.expanded.capture}
       const result={schemaVersion:'reprolab-live-window/v1',dataKind:'model',sessionId:id,windowId:window,index:meta.index,protocolId:s.protocolId,
         callsUsed:s.callsUsed,maxCalls:s.maxCalls,sourceOffsetMs:meta.startMs,durationMs:observation.videoDurationMs,
         inputSha256:hash(bytes),clipSha256:media.clipSha256,evidenceRef,receivedAtMs:this.now()-s.created,
@@ -121,7 +122,7 @@ export async function budgetLedger(path) {
 }
 if(process.argv[1] && resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
   const port=Number(process.env.LIVE_BRIDGE_PORT||8791)
-  const budget=await budgetLedger(join(here,'private','budget.json'))
+  const budget=await budgetLedger(process.env.LIVE_BUDGET_FILE || join(here,'private','budget.json'))
   const revision=(await exec('git',['rev-parse','HEAD'],{cwd:here})).stdout.trim()
   const dirty=Boolean((await exec('git',['status','--porcelain'],{cwd:here})).stdout.trim())
   const recordEvidence=async(id,window,kind,data)=>{
@@ -130,7 +131,7 @@ if(process.argv[1] && resolve(process.argv[1])===fileURLToPath(import.meta.url))
   }
   const bridge=new LiveBridge({...budget,recordEvidence,implementation:{gitCommit:revision,gitDirty:dirty}})
   const server=createServer(bridge,{uiOrigin:process.env.LIVE_UI_ORIGIN||'http://127.0.0.1:5184'})
-  server.requestTimeout=50_000; server.headersTimeout=10_000
+  server.requestTimeout=65_000; server.headersTimeout=10_000
   server.on('error',()=>{console.error('Live bridge cannot bind its port. No existing process was stopped.');process.exitCode=1})
   server.listen(port,'127.0.0.1',()=>console.log(`Live camera bridge at 127.0.0.1:${port}; provider OFF until explicitly enabled; ${budget.remaining()} calls remain.`))
 }

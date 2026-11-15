@@ -4,7 +4,7 @@ export interface FinalizedClip { blob:Blob;startMs:number;durationMs:number;sent
 export function recordClip(stream:MediaStream,sessionStart:number,windowMs:number,onClip:(clip:FinalizedClip)=>void,onError:()=>void) {
   const mime=chooseRecorderMime(type=>MediaRecorder.isTypeSupported(type))
   if(!mime)throw Error('This browser cannot record MP4 or WebM. Try Chrome.')
-  const recorder=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:600_000})
+  const recorder=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:2_500_000})
   const chunks:BlobPart[]=[]
   let started=0,timer:ReturnType<typeof setTimeout>|undefined,cancelled=false
   recorder.onstart=()=>{started=performance.now();timer=setTimeout(()=>{if(recorder.state==='recording')recorder.stop()},windowMs)}

@@ -118,3 +118,9 @@ Some database integration tests require a configured test database. Synthetic fi
 Opening a local recording does not itself upload the video. Publishing media or using a separately configured external inference workflow is a distinct action. Keep recordings, extracted frames, real response JSON, credentials, and private review artifacts out of Git. Share approved experiment records deliberately.
 
 ReproLab supports evidence-based review. It does not certify that an experiment is safe, that every mistake was detected, or that a model observation is correct.
+
+### Expanded live camera integration
+
+See [LIVE_EXPANDED_INTEGRATION.md](docs/LIVE_EXPANDED_INTEGRATION.md) for the
+isolated live startup, overlapping capture, expanded event cards, shared call
+ledger, tests and current limitations. Saved replay remains a separate mode.

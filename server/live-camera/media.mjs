@@ -23,7 +23,7 @@ export async function normalize(input, output, requestedDuration, env = process.
   const declared = Number(info.format?.duration) * 1000
   if (Number.isFinite(declared) && (declared < 250 || declared > 20_500 || Math.abs(declared-requestedDuration) > 2000)) throw new Error('Clip duration does not match its capture window.')
   // Decode the entire bounded file; never silently truncate it to the allowed duration.
-  await exec(env.FFMPEG || 'ffmpeg', ['-nostdin','-v','error','-xerror','-protocol_whitelist','file','-f',format,'-i',input,'-map','0:v:0','-an','-vf','scale=640:360:force_original_aspect_ratio=decrease,pad=640:360:(ow-iw)/2:(oh-ih)/2','-r','15','-c:v','libx264','-preset','ultrafast','-crf','28','-pix_fmt','yuv420p','-movflags','+faststart','-y',output], { timeout: 15_000, maxBuffer: 100_000 })
+  await exec(env.FFMPEG || 'ffmpeg', ['-nostdin','-v','error','-xerror','-protocol_whitelist','file','-f',format,'-i',input,'-map','0:v:0','-an','-vf','scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2','-r','15','-c:v','libx264','-preset','ultrafast','-crf','23','-pix_fmt','yuv420p','-movflags','+faststart','-y',output], { timeout: 15_000, maxBuffer: 100_000 })
   const probe = await exec(env.FFPROBE || 'ffprobe', ['-v','error','-show_entries','format=duration','-of','json',output], { timeout:5000, maxBuffer:100_000 })
   const durationMs = Math.round(Number(JSON.parse(probe.stdout).format.duration)*1000)
   if (!Number.isInteger(durationMs) || durationMs < 250 || durationMs > 20_500 || Math.abs(durationMs-requestedDuration)>2000) throw new Error('Decoded clip duration is invalid.')
