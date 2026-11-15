@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { buildAdapterImport, buildClipCheckRequest, buildRecordingLink, clipHeadline, clipIdentityCopy, clipRailItems, clipStatusCopy, localVideoId, sourceHashFromManifest, shouldApplyClipResponse, type ClipCheckResponse } from './clipCheck.ts'
 
 describe('clip check requests', () => {
+  it('recognizes reconstructed-run source hashes and rejects conflicting aliases', () => {
+    const hash = 'ab'.repeat(32)
+    expect(sourceHashFromManifest({ originalRecordingSha256: hash })).toEqual({ ok: true, sha256: hash })
+    expect(sourceHashFromManifest({ originalRecordingSha256: hash, sourceSha256: 'cd'.repeat(32) }).ok).toBe(false)
+    expect(sourceHashFromManifest({ originalRecordingSha256: 12 }).ok).toBe(false)
+  })
   it('does not downgrade a malformed source hash to a confirmation-only link', () => {
     for (const sourceSha256 of [null, 123, '', [], {}]) {
       expect(sourceHashFromManifest({ sourceSha256 }).ok).toBe(false)

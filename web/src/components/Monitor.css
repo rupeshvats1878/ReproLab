@@ -4,6 +4,12 @@
   color: var(--ink);
 }
 
+.monitor-advanced > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 1rem; }
+.monitor-advanced > summary::before { content: '+'; color: #a7c6b2; }
+.monitor-advanced[open] > summary::before { content: '−'; }
+.monitor-advanced > summary span { font-size: 0.78rem; font-weight: 400; color: #a4b6ab; }
+.monitor-advanced > .fold { margin-top: 0.55rem; border: 0; border-top: 1px solid #3a4a5a; border-radius: 0; background: transparent; }
+
 /* Three-cup presentation stays scoped away from the six-well workspace. */
 .monitor[data-procedure='three-cup'] .monitor-heading {
   display: flex;

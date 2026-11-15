@@ -445,6 +445,8 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
         ) : null}
       </details>
 
+      <details className="fold monitor-advanced">
+        <summary>Advanced details <span>Measurements, history and diagnostics</span></summary>
       <details className="fold">
         <summary>Measurements</summary>
         <dl className="monitor-status">
@@ -623,6 +625,7 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
           </ul>
         ) : null}
       </fieldset>
+      </details>
       </details>
     </section>
   )
@@ -951,6 +954,7 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
   const [clipResult, setClipResult] = useState<ClipCheckResponse | null>(null)
   const [manifestSha256, setManifestSha256] = useState<string | null>(null)
   const [manifestInvalid, setManifestInvalid] = useState(false)
+  const [manifestNote, setManifestNote] = useState('')
   const [linkNotice, setLinkNotice] = useState('')
   const clipGeneration = useRef(0)
   // Each selection is a new object, even when two files share name and size.
@@ -962,6 +966,7 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
     setClipResult(null)
     setManifestSha256(null)
     setManifestInvalid(false)
+    setManifestNote('')
     setLinkNotice('')
     clipGeneration.current += 1
   }
@@ -1106,6 +1111,7 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
     const generation = ++clipGeneration.current
     setClipPhase('processing')
     setManifestInvalid(false)
+    setManifestNote('')
     setClipResult((current) => current ? { ...current, linked: false, association: null } : null)
     let parsed: unknown
     try {
@@ -1128,6 +1134,9 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
       return
     }
     setManifestSha256(hash.sha256)
+    if (parsed && typeof parsed === 'object' && 'reconstructionNote' in parsed && typeof parsed.reconstructionNote === 'string') {
+      setManifestNote(parsed.reconstructionNote)
+    }
     setLinkNotice(hash.sha256
       ? 'A source hash is loaded. Linking checks it against this recording.'
       : 'This manifest has no source hash. Linking asks for confirmation.')
@@ -1340,8 +1349,9 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
               }}
             />
           </label>
+          {manifestNote ? <p className="media-notice">Reconstructed provenance: {manifestNote}</p> : null}
           {manifestSha256 || manifestInvalid ? (
-            <button type="button" onClick={() => { clipGeneration.current += 1; setManifestSha256(null); setManifestInvalid(false); setClipPhase('done'); setClipResult((current) => current ? { ...current, linked: false, association: null } : null); setLinkNotice('The manifest was removed. Linking asks for confirmation.') }}>
+            <button type="button" onClick={() => { clipGeneration.current += 1; setManifestSha256(null); setManifestInvalid(false); setManifestNote(''); setClipPhase('done'); setClipResult((current) => current ? { ...current, linked: false, association: null } : null); setLinkNotice('The manifest was removed. Linking asks for confirmation.') }}>
               Remove manifest
             </button>
           ) : null}

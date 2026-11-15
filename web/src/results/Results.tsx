@@ -19,7 +19,7 @@ import './results.css'
 type ListKind = 'loading' | 'ready' | 'empty' | 'unavailable' | 'unreachable'
 type SessionKind = 'idle' | 'loading' | 'ready' | 'missing' | 'invalid' | 'unavailable' | 'unreachable'
 
-export function Results(props: { review: ReviewController; active: boolean; onOpenLibrary: (experimentId: string) => void }) {
+export function Results(props: { review: ReviewController; active: boolean; onOpenLibrary: (experimentId: string) => void; onOpenMonitor: () => void }) {
   const [trackedActive, setTrackedActive] = useState(props.active)
   const [refresh, setRefresh] = useState(0)
   const [summaries, setSummaries] = useState<MonitorSessionSummary[]>([])
@@ -104,11 +104,16 @@ export function Results(props: { review: ReviewController; active: boolean; onOp
 
   return (
     <section className="results">
-      <h2>Results</h2>
-      <p>Inspect a saved session, then publish a finished run.</p>
+      <header className="results-heading">
+        <p className="results-eyebrow">Experiment record</p>
+        <h2>From observation to evidence.</h2>
+        <p>Review what happened. Keep uncertainty visible. Share the finished record.</p>
+      </header>
 
       <section className="results-block" aria-labelledby="monitor-results">
-        <h3 id="monitor-results">Monitor sessions</h3>
+        <div className="results-section-heading"><h3 id="monitor-results">Your experiment</h3>
+          <button type="button" onClick={props.onOpenMonitor}>Back to Monitor</button>
+        </div>
         {summaries.length > 0 ? (
           <label>
             Previous sessions
@@ -120,6 +125,7 @@ export function Results(props: { review: ReviewController; active: boolean; onOp
             </select>
           </label>
         ) : null}
+        <details className="results-id-lookup"><summary>Find a session by ID</summary>
         <form className="results-lookup" onSubmit={openById}>
           <label>
             Open by session ID
@@ -127,6 +133,16 @@ export function Results(props: { review: ReviewController; active: boolean; onOp
           </label>
           <button type="submit" className="primary-action">Open session</button>
         </form>
+        </details>
+        {props.active && listKind === 'empty' && !selectedId ? (
+          <div className="results-empty">
+            <p className="results-eyebrow">Ready for your first record</p>
+            <h3>Give your experiment a history.</h3>
+            <p>Capture and finish a session in Monitor, then return here to review and publish it.</p>
+            <button type="button" className="primary-action" onClick={props.onOpenMonitor}>Go to Monitor</button>
+            <p className="results-small">Local recording reviews and imported hypotheses stay in Monitor; they are not automatically saved sessions.</p>
+          </div>
+        ) : null}
         {props.active && listKind !== 'ready' ? <p role="status">{listMessage(listKind)}</p> : null}
         {props.active && (sessionKind === 'loading' || sessionKind === 'missing' || sessionKind === 'invalid' || sessionKind === 'unavailable' || sessionKind === 'unreachable') ? (
           <p role="status">{sessionMessage(sessionKind)}</p>
@@ -138,8 +154,10 @@ export function Results(props: { review: ReviewController; active: boolean; onOp
         </details>
       </section>
 
+      <details className="results-block results-tools">
+        <summary>More review tools <span>Browser records, comparisons and references</span></summary>
       <section className="results-block" aria-labelledby="review-results">
-        <h3 id="review-results">Review records</h3>
+        <h3 id="review-results">Browser review records</h3>
         <details>
           <summary>About these records</summary>
           <p>This visit’s record is filled while Monitor runs. Saved copies stay in this browser. They are not monitor sessions or replications.</p>
@@ -163,6 +181,7 @@ export function Results(props: { review: ReviewController; active: boolean; onOp
         <summary>Replications</summary>
         <p>Open a publication from Library. A planned replication is not a performed monitor session.</p>
       </details>
+      </details>
     </section>
   )
 }
@@ -174,7 +193,14 @@ function MonitorResult({ session, onOpenLibrary }: { session: RetrievedMonitor; 
   const observations = session.observations ?? []
   const [copyNote, setCopyNote] = useState('')
   return (
-    <div>
+    <div className="result-record">
+      <div className="result-metrics" aria-label="Stored evidence summary">
+        <div><span>Session</span><strong>{session.finishedAt ? 'Finished' : 'In progress'}</strong></div>
+        <div><span>Recorded flags</span><strong>{alerts.length}</strong></div>
+        <div><span>Person reports</span><strong>{reports.length}</strong></div>
+        <div><span>Observations</span><strong>{observations.length}</strong></div>
+      </div>
+      <p className="results-small">A finished session is not a verified successful experiment. Flags require review.</p>
       <p role="status">Retrieved from the library.</p>
       <p>
         {session.preparedProtocol ? `${session.preparedProtocol.title}, version ${session.preparedProtocol.version}` : 'Protocol association not recorded'}

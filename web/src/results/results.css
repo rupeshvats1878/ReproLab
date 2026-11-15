@@ -17,3 +17,28 @@
 .results button.primary-action { background: var(--teal-bg); border-color: var(--teal); font-weight: 750; }
 .results select { width: 100%; }
 .results :focus-visible { outline: 3px solid var(--teal); outline-offset: 3px; }
+
+.results-heading { padding: 0.4rem 0 1rem; }
+.results-heading h2 { max-width: 40rem; font-size: clamp(1.8rem, 3.5vw, 2.7rem); letter-spacing: -0.045em; line-height: 1.15; }
+.results-heading > p:last-child { color: var(--muted); margin-bottom: 0; }
+.results .results-eyebrow { color: #a9d9bf; font-size: 0.7rem; letter-spacing: 0.14em; text-transform: uppercase; margin: 0 0 0.7rem; }
+.results-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.results-section-heading h3 { margin: 0; }
+.results-id-lookup { margin: 1rem 0; }
+.results summary { cursor: pointer; padding: 0.4rem 0; }
+.results-empty { padding: 2.5rem 1.5rem; margin: 1rem 0; text-align: center; border: 1px solid #3c5446; border-radius: 0.8rem; background: radial-gradient(ellipse at bottom, #263b30, #19251e); }
+.results-empty h3 { font-size: 1.7rem; letter-spacing: -0.035em; margin: 0; }
+.results-empty > p { max-width: 38rem; margin-inline: auto; color: #b9cbbf; }
+.results .results-small { font-size: 0.8rem; color: var(--muted); }
+.results .results-empty button.primary-action { padding: 0.65rem 1rem; margin: 0.5rem 0; background: #b5ebc9; color: #142b1f; border-color: #b5ebc9; }
+.results-tools > summary { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; font-weight: 650; }
+.results-tools > summary::before { content: '+'; color: #a9d9bf; }
+.results-tools[open] > summary::before { content: '−'; }
+.results-tools > summary span { color: var(--muted); font-size: 0.8rem; font-weight: 400; }
+.results-tools > .results-block { border: 0; border-top: 1px solid var(--line); border-radius: 0; }
+.result-record { margin-top: 1.2rem; }
+.result-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.65rem; }
+.result-metrics > div { display: grid; gap: 0.5rem; padding: 1rem; background: #202f27; border: 1px solid #3b5043; border-radius: 0.7rem; }
+.result-metrics span { font-size: 0.75rem; color: #b4c9bc; }
+.result-metrics strong { font-size: 1.4rem; font-weight: 550; }
+@media (max-width: 650px) { .result-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .results-empty { padding: 1.5rem 0.8rem; } }

@@ -1,5 +1,20 @@
 # Monitor polish and recording-link verification
 
+## Follow-up simplification and manifest support
+
+Monitor now groups diagnostic sections under Advanced details. Results leads
+with the selected experiment, or a clear empty state and Go to Monitor action.
+Browser comparison/reference tools are collapsed together. Loaded records show
+stored counts without claiming experiment success. Library is unchanged.
+
+Manifests also accept originalRecordingSha256, reject conflicts across all source
+hash aliases, and display a supplied reconstructionNote. Added a regression test.
+116 frontend tests pass; TypeScript/production build pass. Browser verification
+covered Results navigation and a user-supplied reconstructed envelope linked to
+its original local recording. Original IDs, human-review status and once-only
+timestamp seeking were preserved. Detailed footage findings remain private in
+the offline worktree. No genuine inference was initiated by this work.
+
 Branch: codex/monitor-polish. Base: 42d257542e08e7e4141e50cba11ef8066a3916fb.
 Dedicated worktree: C:/Users/rupes/Projects/labbench-monitor-polish.
 

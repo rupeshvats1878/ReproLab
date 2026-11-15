@@ -69,7 +69,7 @@ export default function App() {
           />
         </div>
         <div hidden={tab !== 'results'}>
-          <Results review={review} active={tab === 'results'} onOpenLibrary={openLibrary} />
+          <Results review={review} active={tab === 'results'} onOpenLibrary={openLibrary} onOpenMonitor={() => setTab('monitor')} />
         </div>
         <div hidden={tab !== 'library'}>
           <Library
