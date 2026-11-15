@@ -1,3 +1,4 @@
+import { ProcedureChecklist } from '../capture/ProcedureChecklist.tsx'
 import { playbackEventIndex } from '../capture/recordingAnalysis.ts'
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { expectedWellId } from '../shared/protocol.ts'
@@ -1363,7 +1364,7 @@ function CapturePanel({ session, running, playbackMs, onReplaySource }: { sessio
             <strong>{source}</strong><span aria-hidden="true">→</span><strong>{destination}</strong>
           </li>)}
         </ol>
-        <details><summary>Procedure details</summary><ul className="plain-list">{protocol.lines.map((line) => <li key={line}>{line}</li>)}</ul></details>
+        <ProcedureChecklist protocolId={protocol.id} />
         {latest && latestComparison ? (
           <p data-relation={latestComparison.relation}>{latestComparison.relation}</p>
         ) : null}

@@ -133,3 +133,10 @@ button:not(:disabled):hover { border-color: var(--teal); }
 .playback-finding .playback-verdict { font-weight: 650; line-height: 1.5; color: #e1eedf; }
 .playback-finding[data-deviation='true'] .playback-verdict { color: #ffce91; }
 .evidence-item[data-selected='true'] { border-color: #a9e4ca; background: #254037; box-shadow: inset 3px 0 #a9e4ca; }
+
+.handling-procedure { padding: .9rem 1rem; border: 1px solid var(--line); border-radius: .7rem; background: #19292b; }
+.handling-procedure h4 { margin: 0 0 .5rem; }
+.handling-procedure ol { padding-left: 1.4rem; margin: .75rem 0; font-size: .83rem; line-height: 1.6; }
+.handling-procedure li { padding-left: .3rem; }
+.handling-procedure .capture-caption { font-size: .75rem; line-height: 1.5; color: var(--muted); }
+.handling-review { font-size: .8rem; color: #ffce91; margin-bottom: 0; }
