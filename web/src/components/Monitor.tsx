@@ -1,3 +1,4 @@
+import { LiveCamera } from '../liveCamera/LiveCamera.tsx'
 import { ProcedureChecklist } from '../capture/ProcedureChecklist.tsx'
 import { playbackEventIndex } from '../capture/recordingAnalysis.ts'
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
@@ -46,6 +47,7 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
   function syncReplayClock(video: HTMLVideoElement) {
     setMediaClock(current => current.key !== session.reviewFile ? current : {key:current.key,timeMs:Number.isFinite(video.currentTime)?video.currentTime*1000:0,playing:!video.paused&&!video.ended})
   }
+  const [liveCameraMode, setLiveCameraMode] = useState(true)
   const [wellSize, setWellSize] = useState(0.2)
   const [humanNote, setHumanNote] = useState('')
   const [reportedState, setReportedState] = useState<WellState>('filled')
@@ -136,6 +138,9 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
         ) : null}
       </div>
 
+      {session.procedureMode === 'three-cup' ? <div className="button-row" aria-label="Three-cup workspace mode"><button aria-pressed={liveCameraMode} onClick={() => {session.stopCamera(); setLiveCameraMode(true)}}>Live AI camera</button><button aria-pressed={!liveCameraMode} onClick={() => setLiveCameraMode(false)}>Saved recordings & capture tools</button></div> : null}
+      {session.procedureMode === 'three-cup' && liveCameraMode ? <LiveCamera beforeStart={() => { session.stopCamera(); setDemoMode(false) }} /> : null}
+      <div hidden={session.procedureMode === 'three-cup' && liveCameraMode}>
       {session.procedureMode === 'three-cup' ? <CaptureToolbar session={session} /> : null}
       {session.procedureMode === 'three-cup' ? <section className="demo-mode-switch" aria-label="Demo visualization controls"><div><strong>Analysis Replay</strong><p>Watch saved observations unfold with the original recording. No live AI calls.</p></div><button type="button" className="primary-action" aria-pressed={replayActive} disabled={!replay && !demoMode} onClick={() => { setDemoMode(value => !value); setFullResults(false) }}>{replayActive ? 'Return to review tools' : 'Enter Demo Visualization Mode'}</button>{!replay ? <p>Import and link a saved analysis to enable replay.</p> : null}</section> : null}
       <div className="live-split">
@@ -663,6 +668,7 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
       </fieldset>
       </details>
       </details> : null}
+      </div>
     </section>
   )
 }

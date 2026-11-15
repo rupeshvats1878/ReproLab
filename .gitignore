@@ -35,3 +35,8 @@ pnpm-debug.log*
 # Local integration scratch and private offline evidence (not app source).
 /work/
 /server/three-cup-vision/
+
+# Live camera private runtime evidence and budget ledger
+/server/live-camera/private/
+__pycache__/
+*.pyc
