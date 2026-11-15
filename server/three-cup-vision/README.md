@@ -79,3 +79,15 @@ Only `offline.rules` contains the approved sequence RED→BLUE then GREEN→RED.
 ## Ownership
 
 Codex: this offline service and related docs. Cursor: future `video_adapter/` and adapter-only tests/dependencies. Rupesh: shared routes, frontend, reviewed integration. No merge is performed by this pilot. Contract: `three-cup-observation/v0.1`, draft pending Rupesh review.
+
+## Per-run evaluation and sequence comparison (v0.2 local draft)
+
+Use `offline.evaluation` for explicit per-recording protocols, independent human ground truth, optional role-associated marker evidence, separate reviews, and JSON/Markdown reports. The earlier `offline compare --step` remains a legacy command for the original fixed procedure only; it must not be used for Recording 2.
+
+```sh
+.venv/bin/python -m offline.evaluation data/evaluation-input.json \
+  --json-output outputs/evaluation.json \
+  --markdown-output outputs/evaluation.md
+```
+
+The evaluator needs no new dependencies. See [the evaluation handoff](../../docs/THREE_CUP_EVALUATION_HANDOFF.md) for the complete supported JSON, actual Cursor envelope mapping, rule priority, exact metric denominators, and safe annotation workflow. Keep inputs/reports under ignored `data/` and `outputs/`; output paths must not already exist. The mapper copies already source-relative adapter timestamps without adding its offset again. Missing/unverified data yields `NOT_EVALUATED`, metrics null; synthetic software results are explicitly labeled. All comparisons require human review and never complete steps or authorize automatic alerts. No genuine machine observations or real-world accuracy have been scored by this handoff.
