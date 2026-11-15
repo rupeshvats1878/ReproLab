@@ -25,6 +25,11 @@
 .demo-event-caption[data-tone='rejected'] { border-color:#da9999; }
 .demo-caption-kicker { display:block; font-size:.65rem; color:var(--muted); margin-bottom:.3rem; }
 .demo-event-caption strong { display:block; font-size:clamp(1.1rem,2.2vw,1.8rem); font-weight:650; letter-spacing:-.04em; }
+/* Handling descriptions are longer than cup-pair captions. Keep the video visible. */
+.demo-handling-caption { padding:.5rem .75rem; width:fit-content; max-width:100%; box-sizing:border-box; }
+.demo-handling-caption strong { font-size:clamp(.85rem,1.25vw,1.1rem); line-height:1.3; letter-spacing:-.015em; }
+.demo-handling-caption .demo-caption-kicker { margin-bottom:.15rem; }
+.demo-handling-caption p { margin-top:.2rem; font-size:.65rem; }
 .demo-event-caption strong>small { font-size:.7rem; font-weight:400; color:var(--muted); letter-spacing:0; }
 .demo-event-caption p,.demo-quiet-caption { font-size:.72rem; margin:.3rem 0 0; }
 .demo-quiet-caption { display:inline-block; background:#101b23d9; padding:.45rem .6rem; border-radius:.4rem; color:var(--muted); }
