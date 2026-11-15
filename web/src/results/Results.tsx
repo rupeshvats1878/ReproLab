@@ -1,3 +1,5 @@
+import { captureProtocol } from '../capture/threeCup.ts'
+import { recordingComparisons } from '../capture/recordingAnalysis.ts'
 import { parseRecordingAnalysis } from '../capture/recordingAnalysis.ts'
 import { SavedRecordingEvidence } from '../capture/RecordingReview.tsx'
 import { useEffect, useState, type FormEvent } from 'react'
@@ -213,7 +215,7 @@ function MonitorResult({ session, onOpenLibrary }: { session: RetrievedMonitor; 
         <div><span>{session.recordingAnalyses?.length ? 'Transfer hypotheses' : 'Observations'}</span><strong>{session.recordingAnalyses?.length ? importedCount : observations.length}</strong></div>
       </div>
       <p className="results-small">A finished session is not a verified successful experiment. Flags require review.</p>
-      <p role="status">Retrieved from the library.</p>
+      <details className="results-fold"><summary>Session information</summary>
       <p>
         {session.preparedProtocol ? `${session.preparedProtocol.title}, version ${session.preparedProtocol.version}` : session.protocol?.approvedSteps?.join('; ') || 'Protocol association not recorded'}
         {' · '}
@@ -235,7 +237,9 @@ function MonitorResult({ session, onOpenLibrary }: { session: RetrievedMonitor; 
           <p>These instructions were copied when the session started. A later draft edit does not change them.</p>
         </div>
       ) : null}
+      </details>
       {session.recordingAnalyses?.length ? <SavedRecordingEvidence analyses={session.recordingAnalyses} reviews={session.recordingReviews} /> : null}
+      <details className="results-fold"><summary>Other flags &amp; human reports ({alerts.length + reports.length})</summary>
       <h4>{session.recordingAnalyses?.length ? 'Other stored flags' : 'Detected issues'}</h4>
       {alerts.length === 0 ? <p>{session.recordingAnalyses?.length ? 'No other detector flags were stored. Imported transfer findings above remain open for review.' : 'No issue was retrieved.'}</p> : null}
       <ul>
@@ -249,6 +253,7 @@ function MonitorResult({ session, onOpenLibrary }: { session: RetrievedMonitor; 
       </ul>
       <h4>Human reports</h4>
       {reports.length === 0 ? <p>No human report was stored.</p> : <p>{reports.length} human report{reports.length === 1 ? '' : 's'}. A report is not an observed correction.</p>}
+      </details>
       <details>
         <summary>Evidence and history</summary>
         <p>{observations.length} stored observation{observations.length === 1 ? '' : 's'}.</p>
@@ -266,6 +271,7 @@ function MonitorResult({ session, onOpenLibrary }: { session: RetrievedMonitor; 
           <p>{evidence.length} evidence record{evidence.length === 1 ? '' : 's'}. A frame label is not the recording.</p>
         )}
       </details>
+      <AnalysisSummary session={session} />
       <PublishRun session={session} onOpenLibrary={onOpenLibrary} />
       <details>
         <summary>Details</summary>
@@ -287,6 +293,22 @@ function MonitorResult({ session, onOpenLibrary }: { session: RetrievedMonitor; 
   )
 }
 
+function AnalysisSummary({session}:{session:RetrievedMonitor}) {
+ return <section className="results-analysis" aria-label="Analysis summary"><h3>AI analysis · saved findings</h3><p className="results-small">Summary of stored observations and existing protocol checks. No new AI inference or compliance verdict.</p>
+ {(session.recordingAnalyses??[]).map(entry=>{
+  try {
+   const parsed=parseRecordingAnalysis(entry.analysis)
+   const findings=recordingComparisons(parsed.events,captureProtocol(entry.captureProtocolId).transfers)
+   const concerns=parsed.events.map((event,i)=>({event,finding:findings[i]})).filter(x=>/possible|uncertain/i.test(x.finding))
+   const reviews=(session.recordingReviews??[]).filter(r=>r.analysisId===entry.id)
+   const pending=parsed.events.filter(e=>!reviews.some(r=>r.eventId===e.id)).length
+   return <div key={entry.id}><h4>{parsed.videoId}{entry.dataKind==='synthetic'?' · Synthetic fixture':''}</h4><div className="results-analysis-grid"><div><h4>Observed</h4><p>{parsed.events.length} transfer hypotheses recorded.</p></div><div><h4>Possible issues</h4>{concerns.length?<ul>{concerns.map(({event,finding})=><li key={event.id}><strong>{event.source} → {event.destination}</strong><p>{finding}</p></li>)}</ul>:<p>No possible transfer deviation flagged in the saved observations. This does not establish compliance.</p>}</div><div><h4>Review next</h4><p>{pending} transfer hypotheses without a recorded human decision. Check original video and the evidence above.</p></div></div></div>
+  }catch{return <p key={entry.id}>Saved analysis could not be summarized. Inspect the evidence.</p>}
+ })}
+ <p className="results-small">Additional records: {session.alerts?.length??0} detector flags · {session.humanReports?.length??0} human reports. Human decisions remain separate from model observations.</p>
+ </section>
+}
+
 function PublishRun({ session, onOpenLibrary }: { session: RetrievedMonitor; onOpenLibrary: (experimentId: string) => void }) {
   const [notes, setNotes] = useState('')
   const [publishing, setPublishing] = useState(false)
@@ -296,10 +318,6 @@ function PublishRun({ session, onOpenLibrary }: { session: RetrievedMonitor; onO
   const [uploadFailed, setUploadFailed] = useState(false)
   const [localFile, setLocalFile] = useState<Blob | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
-  const alerts = session.alerts ?? []
-  const unresolved = alerts.filter((alert) => (alert.updates?.length ?? 0) === 0)
-  const corrections = alerts.reduce((count, alert) => count + (alert.updates?.length ?? 0), 0)
-  const reports = session.humanReports ?? []
   const evidence = (session.evidence ?? []) as LocalEvidence[]
   const recording = evidence.find((item) => item.available && (item.kind === 'camera_recording' || item.kind === 'prerecorded_source') && item.id)
   const synthetic = session.sourceKind === 'synthetic'
@@ -367,29 +385,9 @@ function PublishRun({ session, onOpenLibrary }: { session: RetrievedMonitor; onO
   }
   return (
     <form onSubmit={(event) => { event.preventDefault(); void publish(false) }}>
-      <h4>Publish experiment</h4>
-      <p>Finished does not mean the run succeeded. Unresolved issues stay in the publication.</p>
-      {synthetic ? <p>Synthetic demonstration. Not a camera recording.</p> : null}
-      {capture ? <p>{session.recordingAnalyses?.length ? 'Saved model hypotheses and separate human decisions will be included. Publishing does not confirm correctness.' : 'Three-cup capture. Automatic checks are not connected. Markers are reports from a person, not camera judgments.'}</p> : null}
-      <p>{capture ? 'Three-cup capture' : `${session.preparedProtocol?.title}, version ${session.preparedProtocol?.version}`}. {sourceLabel(session.sourceKind)}.</p>
-      {session.preparedProtocol ? (
-        <ol>
-          {session.preparedProtocol.steps.map((instruction) => <li key={instruction}>{instruction}</li>)}
-        </ol>
-      ) : null}
-      {capture && session.protocol?.approvedSteps?.length ? (
-        <ol>
-          {session.protocol.approvedSteps.map((instruction) => <li key={instruction}>{instruction}</li>)}
-        </ol>
-      ) : null}
-      {session.recordingAnalyses?.length ? <p>The imported analysis and its review history will be included below the saved procedure.</p> : <p>{session.observations?.length ?? 0} recorded observations. {alerts.length} deviations. {corrections} observed corrections. {reports.length} human reports.</p>}
-      {unresolved.length > 0 ? (
-        <ul>
-          {unresolved.map((alert) => (
-            <li key={alert.id}>{alert.wellId} remains unresolved. {alert.observedState}</li>
-          ))}
-        </ul>
-      ) : <p>{session.recordingAnalyses?.length ? 'Imported transfer hypotheses retain their own comparisons and human reviews above; this is not a compliance verdict.' : 'No unresolved deviation was stored.'}</p>}
+      <details className="results-fold"><summary>Publish to Library</summary>
+      <p>Save the evidence and review history. Unresolved findings remain unverified.</p>
+      {synthetic ? <p>Synthetic demonstration, not genuine model evidence.</p> : null}
       {recording && localFile && previewUrl ? (
         <div>
           <p>Local recording preview. This file is not in the library until you include it.</p>
@@ -411,7 +409,7 @@ function PublishRun({ session, onOpenLibrary }: { session: RetrievedMonitor; onO
       ) : recording ? (
         <p>A recording was saved for this browser, but the file is not available now. Publishing will not include it.</p>
       ) : (
-        <p>No recording file is available. A frame label is not footage. You can still publish the run.</p>
+        <p>Evidence and notes only; no video attached.</p>
       )}
       <label>
         Researcher notes
@@ -427,6 +425,7 @@ function PublishRun({ session, onOpenLibrary }: { session: RetrievedMonitor; onO
           <button type="button" onClick={() => void publish(true)} disabled={publishing}>Publish without recording</button>
         </p>
       ) : error ? <p role="alert">{error}</p> : null}
+      </details>
       {publishedId ? (
         <p role="status">
           Published {publishedId}.

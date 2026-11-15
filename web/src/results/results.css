@@ -51,3 +51,5 @@
 .results-heading > p:last-child { line-height: 1.7; }
 .results-workflow { background: #18262d; margin-top: 1.4rem; }
 .results-tools { background: transparent; }
+
+.results-analysis{padding:20px;border:1px solid var(--line);border-radius:14px;background:var(--panel);margin:22px 0}.results-analysis-grid{display:grid;grid-template-columns:1fr 1.5fr 1fr;gap:20px}.results-analysis-grid h4{color:var(--teal);margin:0 0 8px}.results-analysis-grid p{font-size:13px;line-height:1.5}.results-analysis-grid ul{padding-left:18px}.results-fold{margin:14px 0;padding:12px 0;border-top:1px solid var(--line)}.results-fold summary{cursor:pointer;font-weight:600}@media(max-width:800px){.results-analysis-grid{grid-template-columns:1fr}}
