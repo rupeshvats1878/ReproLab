@@ -238,7 +238,7 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
   const [playbackNote, setPlaybackNote] = useState('')
   const [seekMessage, setSeekMessage] = useState('')
   const [observationPaused, setPausedState] = useState(false)
-  const [debugOverlay, setDebugOverlay] = useState(true)
+  const [debugOverlay, setDebugOverlay] = useState(false)
   const [samplingColor, setSamplingState] = useState(false)
   const [expectedColor, setExpectedColor] = useState<Rgb>(COLOR_PRESETS[0].rgb)
   const [expectedLabel, setExpectedLabel] = useState<string>(COLOR_PRESETS[0].label)

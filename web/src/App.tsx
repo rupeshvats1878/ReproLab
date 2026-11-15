@@ -26,7 +26,7 @@ export default function App() {
   const [runId, setRunId] = useState<string | null>(() => sessionStorage.getItem(OPEN_REPLICATION_KEY))
 
   return (
-    <div className="app-shell">
+    <div className={tab === 'monitor' ? 'app-shell app-shell-monitor' : 'app-shell'}>
       <header className="app-header">
         <div>
           <p className="app-kicker">Prototype</p>

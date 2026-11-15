@@ -1,8 +1,12 @@
-import { useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { expectedWellId } from '../shared/protocol.ts'
 import { PROTOCOL_ORDER, WELL_GRID, type WellId, type WellState } from '../shared/types.ts'
 import type { MonitorProps } from '../shared/types.ts'
-import { highlightedOmissionWells, type FrameEvidence } from '../monitor/liveDecisions.ts'
+import {
+  highlightedOmissionWells,
+  type FrameEvidence,
+  type LiveAlert,
+} from '../monitor/liveDecisions.ts'
 import { formatRgb, rgbToCss, COLOR_PRESETS, type ColorPresetId } from '../vision/color.ts'
 import { normalizedToContent, type WellRegions } from '../vision/geometry.ts'
 import { SYNTHETIC_SEQUENCES } from '../vision/synthetic.ts'
@@ -28,6 +32,9 @@ export function Monitor(props: MonitorProps) {
   const reviewOpen = protocol.alerts.filter((alert) => alert.status !== 'resolved')
   const lastTrace = session.traces.at(-1)
   const expected = expectedWellId(PROTOCOL_ORDER, session.stableStates)
+  const prominentAlert =
+    session.live.alerts.find((alert) => alert.status === 'open') ?? session.live.alerts.at(-1) ?? null
+  const otherAlerts = session.live.alerts.filter((alert) => alert.id !== prominentAlert?.id)
 
   return (
     <section className="monitor" aria-labelledby="monitor-title">
@@ -40,16 +47,60 @@ export function Monitor(props: MonitorProps) {
         </p>
       </div>
 
+      <div className="monitor-toolbar">
+        {session.inputKind === 'synthetic' ? (
+          <p className="synthetic-flag" role="status">
+            Synthetic demonstration
+          </p>
+        ) : null}
+        <p className="input-banner" data-kind={session.inputKind} role="status">
+          {session.inputLabel}
+        </p>
+        <div className="button-row">
+          <button type="button" onClick={session.startCamera} disabled={session.cameraPhase === 'starting' || session.cameraPhase === 'live'}>
+            Start Camera
+          </button>
+          <button type="button" onClick={session.stopCamera} disabled={session.cameraPhase !== 'live' && session.cameraPhase !== 'starting'}>
+            Stop Camera
+          </button>
+          <button type="button" onClick={session.togglePlayback} disabled={session.inputKind !== 'prerecorded'}>
+            Play or pause video
+          </button>
+          <button type="button" onClick={session.startRun} disabled={!session.canStartRun}>
+            Start run
+          </button>
+          <button type="button" onClick={session.completeRun} disabled={session.localPhase !== 'running'}>
+            Complete run
+          </button>
+        </div>
+        <label className="file-field">
+          Prerecorded video file
+          <input
+            type="file"
+            accept="video/*"
+            onChange={(event) => {
+              const file = event.target.files?.[0]
+              if (file) session.useVideoFile(file)
+              event.target.value = ''
+            }}
+          />
+        </label>
+        <div className="button-row" role="group" aria-label="Synthetic sequences">
+          {SYNTHETIC_SEQUENCES.map((sequence) => (
+            <button
+              key={sequence.id}
+              type="button"
+              aria-pressed={session.syntheticId === sequence.id}
+              onClick={() => session.useSynthetic(sequence.id)}
+            >
+              Synthetic: {sequence.title}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="live-split">
         <div className="live-stage">
-          {session.inputKind === 'synthetic' ? (
-            <p className="synthetic-flag" role="status">
-              Synthetic demonstration
-            </p>
-          ) : null}
-          <p className="input-banner" data-kind={session.inputKind} role="status">
-            {session.inputLabel}
-          </p>
           <div className="stage" ref={session.bindStage} onPointerDown={session.onStagePointerDown}>
         <video
           ref={session.bindVideo}
@@ -132,28 +183,34 @@ export function Monitor(props: MonitorProps) {
               their previous values.
             </p>
           ) : null}
+          <p className="monitor-note" role="status">
+            Recording: {session.recording.detail}
+          </p>
+          <p className="monitor-note">{session.evidenceNote}</p>
         </div>
 
         <aside className="live-decisions" aria-label="Protocol decisions">
-          <h3>Active step</h3>
-          <p>
-            This screen watches only {PROTOCOL_ORDER.join(', ')}. A protocol generated in Prepare, including
-            Gemini output, is not executed here.
-          </p>
-          <p className="step-line">
-            {session.live.blockedReason
-              ? 'Monitoring is blocked. New frames will not become events until you start a new run.'
-              : session.localPhase !== 'running'
-                ? 'Start a run to follow the six locations in order.'
-                : expected
-                  ? `Step ${PROTOCOL_ORDER.indexOf(expected) + 1} of 6: fill ${expected}. Stable reading is ${session.stableStates[expected]}.`
-                  : 'Every location in the order is stably filled.'}
-          </p>
-          <p className="monitor-note">
-            Session {session.live.sessionId} · {session.live.sourceKind} · generation {session.monitorGeneration}
-          </p>
-          <div className="monitor-alerts">
-            <h3>Possible omissions</h3>
+          <section className="step-card">
+            <h3>Active step</h3>
+            <p>
+              This screen watches only {PROTOCOL_ORDER.join(', ')}. A protocol generated in Prepare, including
+              Gemini output, is not executed here.
+            </p>
+            <p className="step-line">
+              {session.live.blockedReason
+                ? 'Monitoring is blocked. New frames will not become events until you start a new run.'
+                : session.localPhase !== 'running'
+                  ? 'Start a run to follow the six locations in order.'
+                  : expected
+                    ? `Step ${PROTOCOL_ORDER.indexOf(expected) + 1} of 6: fill ${expected}. Stable reading is ${session.stableStates[expected]}.`
+                    : 'Every location in the order is stably filled.'}
+            </p>
+            <p className="monitor-note">
+              Session {session.live.sessionId} · {session.live.sourceKind} · generation {session.monitorGeneration}
+            </p>
+          </section>
+          <section className="monitor-alerts" aria-label="Active alert">
+            <h3>Active alert</h3>
             <p>
               An alert appears only when the earlier location is stably empty. Unknown stays unknown.
               The analyzer&apos;s mix score marks a mixed region unknown. That is not hand, pipette, or
@@ -163,99 +220,91 @@ export function Monitor(props: MonitorProps) {
               Saved review still uses the shared omission list, which can include unknown. Review has{' '}
               {reviewOpen.length} unresolved alert{reviewOpen.length === 1 ? '' : 's'}.
             </p>
-            <label className="file-field">
-              Note for a human report
-              <input value={humanNote} onChange={(event) => setHumanNote(event.target.value)} />
-            </label>
-            <label className="file-field">
-              Reported state
-              <select
-                value={reportedState}
-                onChange={(event) => setReportedState(event.target.value as WellState)}
-              >
-                <option value="filled">Filled</option>
-                <option value="empty">Empty</option>
-                <option value="unknown">Unknown</option>
-              </select>
-            </label>
-            {session.live.alerts.length === 0 ? (
-              <p>No live omission alert in this monitoring session.</p>
+            <div className="human-report">
+              <label className="file-field">
+                Note for a human report
+                <input value={humanNote} onChange={(event) => setHumanNote(event.target.value)} />
+              </label>
+              <label className="file-field">
+                Reported state
+                <select
+                  value={reportedState}
+                  onChange={(event) => setReportedState(event.target.value as WellState)}
+                >
+                  <option value="filled">Filled</option>
+                  <option value="empty">Empty</option>
+                  <option value="unknown">Unknown</option>
+                </select>
+              </label>
+            </div>
+            {prominentAlert ? (
+              <AlertCard
+                alert={prominentAlert}
+                prominent
+                humanNote={humanNote}
+                reportedState={reportedState}
+                onAcknowledge={session.acknowledgeOmission}
+                onReport={session.reportMissedObservation}
+                onContinue={session.continueAfterCorrection}
+              />
             ) : (
-              <ul className="decision-list">
-                {session.live.alerts.map((alert) => (
-                  <li key={alert.id} className="decision-card" data-status={alert.status}>
-                    <strong>
-                      {alert.wellId} · {alert.status}
-                    </strong>
-                    <p>{alert.expectedAction}</p>
-                    <p>Observed: {alert.observedState}</p>
-                    <p>Rule: {alert.rule}</p>
-                    <p>Source time: {alert.raisedAtElapsedMs} ms</p>
-                    {alert.rawState ? <p>Raw state at the alert: {alert.rawState}</p> : null}
-                    <EvidenceFigure evidence={alert.evidence} />
-                    {alert.correction ? (
-                      <div>
-                        <p>
-                          Later camera update at {alert.correction.elapsedMs} ms: the well was observed
-                          filled. The original alert is unchanged.
-                        </p>
-                        <EvidenceFigure evidence={alert.correction.evidence} />
-                      </div>
-                    ) : null}
-                    <div className="button-row">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          session.acknowledgeOmission(alert.id, humanNote || 'Acknowledged by a person.')
-                        }
-                        disabled={alert.status !== 'open'}
-                      >
-                        Acknowledge
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          session.reportMissedObservation(
-                            alert.id,
-                            humanNote || 'Missed observation reported by a person.',
-                            reportedState,
-                          )
-                        }
-                      >
-                        Report missed observation
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          session.continueAfterCorrection(
-                            alert.id,
-                            humanNote || 'Continue after a correction.',
-                          )
-                        }
-                      >
-                        Continue after correction
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+              <p>No live omission alert in this monitoring session.</p>
             )}
-          </div>
-          <div className="monitor-alerts">
+            {otherAlerts.length > 0 ? (
+              <div>
+                <h4>Earlier alerts</h4>
+                <ul className="decision-list">
+                  {otherAlerts.map((alert) => (
+                    <li key={alert.id}>
+                      <AlertCard
+                        alert={alert}
+                        humanNote={humanNote}
+                        reportedState={reportedState}
+                        onAcknowledge={session.acknowledgeOmission}
+                        onReport={session.reportMissedObservation}
+                        onContinue={session.continueAfterCorrection}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </section>
+          <section className="monitor-alerts" aria-label="Decision timeline">
             <h3>Decision timeline</h3>
             {session.live.timeline.length === 0 ? (
               <p>No decision yet. A skip is raised from the stable reading, not from a fixed timestamp.</p>
             ) : (
               <ol className="decision-list">
                 {session.live.timeline.map((entry) => (
-                  <li key={entry.id}>
-                    <p>
-                      <strong>{entry.source === 'human' ? 'Human' : 'Camera'}</strong> · {entry.kind}
+                  <li
+                    key={entry.id}
+                    className="decision-entry"
+                    data-source={entry.source}
+                    data-kind={entry.kind}
+                    data-unknown={entry.observedState.includes('unknown') ? 'true' : 'false'}
+                  >
+                    <p className="decision-kicker">
+                      <span className="state-badge" data-tone={entry.source === 'human' ? 'human' : entry.kind}>
+                        {entry.source === 'human' ? 'Human report' : 'Camera'}
+                      </span>
+                      <span>{entry.kind}</span>
                     </p>
-                    <p>Expected: {entry.expectedAction}</p>
-                    <p>Observed: {entry.observedState}</p>
-                    <p>Rule: {entry.rule}</p>
-                    <p>Source time: {entry.sourceElapsedMs} ms</p>
+                    <p className="decision-title">{entry.expectedAction}</p>
+                    <dl className="decision-facts">
+                      <div>
+                        <dt>Observed</dt>
+                        <dd>{entry.observedState}</dd>
+                      </div>
+                      <div>
+                        <dt>Why</dt>
+                        <dd>{entry.rule}</dd>
+                      </div>
+                      <div>
+                        <dt>Source time</dt>
+                        <dd>{entry.sourceElapsedMs} ms</dd>
+                      </div>
+                    </dl>
                     {entry.note ? <p>Note: {entry.note}</p> : null}
                     {entry.reportedState ? <p>Human reported state: {entry.reportedState}</p> : null}
                     <EvidenceFigure evidence={entry.evidence} />
@@ -263,51 +312,22 @@ export function Monitor(props: MonitorProps) {
                 ))}
               </ol>
             )}
-          </div>
+          </section>
         </aside>
       </div>
 
-      <div className="monitor-columns">
-        <div className="monitor-controls">
-          <fieldset>
-            <legend>Input</legend>
-            <div className="button-row">
-              <button type="button" onClick={session.startCamera} disabled={session.cameraPhase === 'starting' || session.cameraPhase === 'live'}>
-                Start Camera
-              </button>
-              <button type="button" onClick={session.stopCamera} disabled={session.cameraPhase !== 'live' && session.cameraPhase !== 'starting'}>
-                Stop Camera
-              </button>
-              <button type="button" onClick={session.togglePlayback} disabled={session.inputKind !== 'prerecorded'}>
-                Play or pause video
-              </button>
-            </div>
-            <label className="file-field">
-              Prerecorded video file
-              <input
-                type="file"
-                accept="video/*"
-                onChange={(event) => {
-                  const file = event.target.files?.[0]
-                  if (file) session.useVideoFile(file)
-                  event.target.value = ''
-                }}
-              />
-            </label>
-            <div className="button-row" role="group" aria-label="Synthetic sequences">
-              {SYNTHETIC_SEQUENCES.map((sequence) => (
-                <button
-                  key={sequence.id}
-                  type="button"
-                  aria-pressed={session.syntheticId === sequence.id}
-                  onClick={() => session.useSynthetic(sequence.id)}
-                >
-                  Synthetic: {sequence.title}
-                </button>
-              ))}
-            </div>
-          </fieldset>
+      <section className="observation-history" aria-label="Observation history">
+        <h3>Observation history</h3>
+        <p className="monitor-note">
+          Camera rows come from stable vision readings. Human rows are reports and do not change those
+          readings. Review has stored {storedObservations} observation{storedObservations === 1 ? '' : 's'}.
+        </p>
+        <HistoryList session={session} />
+      </section>
 
+      <details className="fold">
+        <summary>Calibration</summary>
+        <div className="monitor-controls">
           <fieldset>
             <legend>Registration and detector</legend>
             <p className="monitor-note">
@@ -394,36 +414,10 @@ export function Monitor(props: MonitorProps) {
               {' '}Scores are heuristic, not calibrated probabilities. A hand or pipette crossing a well is not treated as a dispense. Mixed regions stay unknown; that is not automatic occlusion detection.
             </p>
           </fieldset>
-
-          <fieldset>
-            <legend>Run and recording</legend>
-            <div className="button-row">
-              <button type="button" onClick={session.startRun} disabled={!session.canStartRun}>
-                Start run
-              </button>
-              <button type="button" onClick={session.completeRun} disabled={session.localPhase !== 'running'}>
-                Complete run
-              </button>
-            </div>
-            <p className="monitor-note" role="status">
-              Recording: {session.recording.detail}
-            </p>
-            <p className="monitor-note">{session.evidenceNote}</p>
-          </fieldset>
         </div>
+      </details>
 
-      </div>
-
-      <section className="observation-history" aria-label="Observation history">
-        <h3>Observation history</h3>
-        <p className="monitor-note">
-          Camera rows come from stable vision readings. Human rows are reports and do not change those
-          readings. Review has stored {storedObservations} observation{storedObservations === 1 ? '' : 's'}.
-        </p>
-        <HistoryList session={session} />
-      </section>
-
-      <details className="debug-panel">
+      <details className="fold debug-panel">
         <summary>Raw versus stabilized observations</summary>
         <p>
           Raw is the latest classifier output. Stabilized is the reading committed after repeated frames.
@@ -466,7 +460,9 @@ export function Monitor(props: MonitorProps) {
         )}
       </details>
 
-      <fieldset>
+      <details className="fold">
+        <summary>Final image</summary>
+        <fieldset>
         <legend>Final image</legend>
         <p className="monitor-note">
           A still has no internal clock. Its run time is the completion time. Agreement means the well looks
@@ -531,6 +527,7 @@ export function Monitor(props: MonitorProps) {
           </ul>
         ) : null}
       </fieldset>
+      </details>
     </section>
   )
 }
@@ -552,18 +549,123 @@ function statesFromAssessment(session: VisionSession): Record<WellId, WellState>
 }
 
 function EvidenceFigure(props: { evidence: FrameEvidence }) {
+  const dialogRef = useRef<HTMLDialogElement>(null)
   const index =
     props.evidence.frameIndex == null ? '' : ` Frame index ${props.evidence.frameIndex}.`
+  const caption = `${props.evidence.elapsedMs} ms · ${props.evidence.label}.${index}`
   return (
     <figure className="evidence-figure">
       {props.evidence.frameDataUrl ? (
-        <img src={props.evidence.frameDataUrl} alt={`Supporting frame at ${props.evidence.elapsedMs} ms`} />
-      ) : null}
-      <figcaption>
-        {props.evidence.elapsedMs} ms · {props.evidence.label}.{index}
-        {props.evidence.frameDataUrl ? '' : ' No still was stored for this decision.'}
-      </figcaption>
+        <>
+          <button
+            type="button"
+            className="evidence-open"
+            onClick={() => dialogRef.current?.showModal()}
+          >
+            <img src={props.evidence.frameDataUrl} alt="" />
+            Open supporting frame
+          </button>
+          <dialog
+            ref={dialogRef}
+            className="evidence-dialog"
+            aria-label={`Supporting frame at ${props.evidence.elapsedMs} ms`}
+            onClick={(event) => {
+              if (event.target === dialogRef.current) dialogRef.current?.close()
+            }}
+          >
+            <img
+              src={props.evidence.frameDataUrl}
+              alt={`Supporting frame at ${props.evidence.elapsedMs} ms`}
+            />
+            <p>{caption}</p>
+            <button type="button" onClick={() => dialogRef.current?.close()}>
+              Close
+            </button>
+          </dialog>
+        </>
+      ) : (
+        <p>No still was stored for this decision.</p>
+      )}
+      <figcaption>{caption}</figcaption>
     </figure>
+  )
+}
+
+function AlertCard(props: {
+  alert: LiveAlert
+  prominent?: boolean
+  humanNote: string
+  reportedState: WellState
+  onAcknowledge: (alertId: string, note: string) => void
+  onReport: (alertId: string, note: string, reportedState: WellState) => void
+  onContinue: (alertId: string, note: string) => void
+}) {
+  const { alert } = props
+  return (
+    <article className="decision-card" data-status={alert.status} data-prominent={props.prominent ? 'true' : 'false'}>
+      <p className="decision-kicker">
+        <span className="state-badge" data-tone={alert.status}>
+          {alert.status === 'open' ? 'Open' : alert.status === 'corrected' ? 'Corrected' : 'Acknowledged'}
+        </span>
+        <strong>{alert.wellId}</strong>
+      </p>
+      <p className="decision-title">{alert.expectedAction}</p>
+      <div className="original-alert">
+        <h4>Original alert</h4>
+        <dl className="decision-facts">
+          <div>
+            <dt>Observed</dt>
+            <dd>{alert.observedState}</dd>
+          </div>
+          <div>
+            <dt>Why</dt>
+            <dd>{alert.rule}</dd>
+          </div>
+          <div>
+            <dt>Source time</dt>
+            <dd>{alert.raisedAtElapsedMs} ms</dd>
+          </div>
+        </dl>
+        {alert.rawState ? <p>Raw state at the alert: {alert.rawState}</p> : null}
+        <EvidenceFigure evidence={alert.evidence} />
+      </div>
+      {alert.correction ? (
+        <div className="correction-update">
+          <h4>Later camera update</h4>
+          <p>
+            At {alert.correction.elapsedMs} ms the well was observed filled. The original alert is unchanged.
+          </p>
+          <EvidenceFigure evidence={alert.correction.evidence} />
+        </div>
+      ) : null}
+      <div className="button-row">
+        <button
+          type="button"
+          onClick={() => props.onAcknowledge(alert.id, props.humanNote || 'Acknowledged by a person.')}
+          disabled={alert.status !== 'open'}
+        >
+          Acknowledge
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            props.onReport(
+              alert.id,
+              props.humanNote || 'Missed observation reported by a person.',
+              props.reportedState,
+            )
+          }
+        >
+          Report missed observation
+        </button>
+        <button
+          type="button"
+          onClick={() => props.onContinue(alert.id, props.humanNote || 'Continue after a correction.')}
+        >
+          Continue after correction
+        </button>
+      </div>
+    </article>
   )
 }
 
@@ -585,10 +687,15 @@ function HistoryList(props: { session: VisionSession }) {
   const rows = [...camera, ...human].sort((a, b) => a.at - b.at || a.source.localeCompare(b.source))
   if (rows.length === 0) return <p className="monitor-note">No observation in this monitoring session.</p>
   return (
-    <ol className="plain-list">
+    <ol className="history-list">
       {rows.map((row) => (
-        <li key={row.key}>
-          {row.at} ms — {row.source}: {row.detail}
+        <li key={row.key} data-source={row.source === 'Human' ? 'human' : 'camera'} data-unknown={row.detail.includes('unknown') ? 'true' : 'false'}>
+          <span className="state-badge" data-tone={row.source === 'Human' ? 'human' : row.detail.includes('unknown') ? 'unknown' : 'camera'}>
+            {row.source}
+          </span>
+          <span>
+            {row.at} ms — {row.detail}
+          </span>
         </li>
       ))}
     </ol>
@@ -644,8 +751,9 @@ function RegionLayer(props: {
               props.onKey(wellId, move[0], move[1])
             }}
           >
-            <span>{wellId}</span>
-            <span>{STATE_LABEL[stable]}</span>
+            <span className="region-id">{wellId}</span>
+            <span className="region-state">{STATE_LABEL[stable]}</span>
+            {omission ? <span className="region-flag">Omission</span> : null}
             {props.debug && measurement ? <span>{measurement.fillScore.toFixed(2)}</span> : null}
           </button>
         )
