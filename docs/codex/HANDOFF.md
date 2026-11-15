@@ -1,0 +1,54 @@
+# Task 001 handoff
+
+Branch codex/three-cup-offline.
+Pinned base 0dc59196a7eb14db506c81286fad8e37623fee92.
+Origin fetched and pinned base verified in origin/demo-ui history.
+Implementation commit is recorded in STATUS.md after the source checkpoint.
+
+## Delivered
+
+server/three-cup-offline/offline.py provides schema-1 app annotation import and
+validated presegmented clip scoring. README.md documents exact input/output,
+denominators and Windows/macOS commands. tests/test_offline.py has 18 tests.
+Local .gitignore excludes venv, footage, frames and local exports.
+Reviewed kit is preserved under docs/codex/kit. Root AGENTS.md was newly installed
+and its references reconciled to that directory. There was no existing AGENTS.md.
+The reviewed Windows offline scope supersedes the supplied older Mac/vision scope.
+
+Actual source inspected read-only was web/src/capture/threeCup.ts,
+threeCup.test.ts and useVisionSession.ts. Marker timestamps are points with human
+provenance. The importer preserves raw source and does not infer intervals.
+The app's expectedProcedure includes the deliberate answer, so the complete review
+manifest is prohibited as observation-model input.
+
+Contracts are three-cup-review/1 for offline import and the kit's observation/v0.1
+draft for future discussion. No production API contract is introduced.
+
+## Validation
+
+Windows Python 3.15.2, standard library only, local ignored venv.
+Executed from repository root:
+
+    server/three-cup-offline/.venv/Scripts/python.exe -W error::ResourceWarning -m unittest discover -s server/three-cup-offline/tests -v
+
+18 tests passed. The initial test run revealed an unclosed recording handle.
+It was fixed with a context manager and the warning-strict suite passed.
+CLI --help ran successfully. See STATUS.md for additional CLI smoke checks.
+
+## Remaining evidence and scope
+
+No real experiment footage examined. Real accuracy, decoder behavior on real WebM,
+macOS execution and live model behavior remain unverified. FFmpeg is unavailable
+locally. Import reports this status explicitly. Appearance and optional markers
+are deferred for the prioritized A/B checkpoint. No model training or inference
+service was added.
+
+## Integration
+
+Rupesh should review the pinned feature commit and select its offline paths on a
+new integration branch. Root instructions and archived kit are review material.
+Do not blindly overwrite another checkout's instructions. Run focused tests and
+review a real annotation/recording pair before using results as evidence.
+Ryan's measured service contract is needed for live model integration.
+LIVE_MONITOR_DIRECTION.md records Rupesh's requested real-time visual product
+direction for Cursor, including the decisions panel on the right.
