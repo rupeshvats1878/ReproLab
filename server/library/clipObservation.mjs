@@ -12,6 +12,9 @@ const STATUSES = new Set(['observed', 'unclear', 'no_transfer', 'unavailable'])
 const APPEARANCE_LABELS = new Set(['visually_uniform', 'visibly_streaked', 'unclear'])
 const REQUEST_KEYS = ['sessionId', 'videoId', 'requestId', 'sourceOffsetMs', 'clipStartMs', 'clipEndMs']
 const IMPORT_KEYS = [...REQUEST_KEYS, 'document', 'monitorSessionId', 'monitorVideoId']
+const LINK_KEYS = [...IMPORT_KEYS, 'recordingDurationMs', 'recordingSha256', 'manifestSha256', 'confirm']
+const SHA256 = /^[0-9a-f]{64}$/i
+const MAX_RECORDING_MS = 24 * 60 * 60 * 1000
 export const VERIFIED_CLIP = {
   path: 'C:/Users/rupes/Projects/labbench-codex-offline/server/three-cup-offline/local/integration/recording-1-review-84000-92000.mp4',
   sessionId: 'local-review-recording-1',
@@ -22,9 +25,11 @@ export const VERIFIED_CLIP = {
 }
 
 const latestRequest = new Map()
+const recordingLinks = new Map()
 
 export function resetClipChecks() {
   latestRequest.clear()
+  recordingLinks.clear()
 }
 
 export function beginClipCheck(body) {
@@ -56,6 +61,49 @@ export function importAdapterReview(body) {
     return tagged(rejectedResult(imported, 'clip-bounds', imported.document), imported.document)
   }
   return tagged(acceptAdapterResult(imported, imported.document), imported.document)
+}
+
+export function recordingAssociation(monitorVideoId) {
+  return recordingLinks.get(monitorVideoId) ?? null
+}
+
+/** Associate a saved result with a selected recording. The raw document keeps its own ids. */
+export function linkAdapterReview(body) {
+  const spec = validateLink(body)
+  if (!isCurrent(spec)) return unlinked(staleResult(spec), 'stale')
+  if (spec.document.videoDurationMs !== spec.clipEndMs - spec.clipStartMs) {
+    return unlinked(tagged(rejectedResult(spec, 'clip-bounds', spec.document), spec.document), 'clip-bounds')
+  }
+  const review = tagged(acceptAdapterResult(spec, spec.document), spec.document)
+  if (review.status === 'rejected') return unlinked(review, review.reason)
+  if (spec.clipEndMs > spec.recordingDurationMs) {
+    return unlinked(tagged(rejectedResult(spec, 'recording-bounds', spec.document), spec.document), 'recording-bounds')
+  }
+  if (timesOutsideRecording(review, spec.recordingDurationMs)) {
+    return unlinked(tagged(rejectedResult(spec, 'evidence-out-of-range', spec.document), spec.document), 'evidence-out-of-range')
+  }
+  const hash = hashKind(spec)
+  if (hash.error) return unlinked(review, hash.error)
+  if (!hash.kind) return unlinked(review, 'unconfirmed')
+  const association = {
+    kind: hash.kind,
+    monitorSessionId: spec.monitorSessionId,
+    monitorVideoId: spec.monitorVideoId,
+    recordingDurationMs: spec.recordingDurationMs,
+    sessionId: spec.sessionId,
+    videoId: spec.videoId,
+    sourceOffsetMs: spec.sourceOffsetMs,
+    clipStartMs: spec.clipStartMs,
+    clipEndMs: spec.clipEndMs,
+  }
+  recordingLinks.set(spec.monitorVideoId, association)
+  return {
+    ...review,
+    linked: true,
+    linkStatus: hash.kind,
+    association,
+    matchesOpenReview: false,
+  }
 }
 
 export function adapterArguments(job) {
@@ -134,12 +182,65 @@ export function acceptAdapterResult(job, document, responseRequestId) {
   })
 }
 
+function validateLink(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) throw new LibraryError('invalid', 'body')
+  const keys = Object.keys(body)
+  if (keys.length !== LINK_KEYS.length || LINK_KEYS.some((key) => !keys.includes(key))) {
+    throw new LibraryError('invalid', 'body')
+  }
+  const imported = importFields(body)
+  if (!Number.isInteger(body.recordingDurationMs) || body.recordingDurationMs <= 0 || body.recordingDurationMs > MAX_RECORDING_MS) {
+    throw new LibraryError('invalid', 'recordingDurationMs')
+  }
+  if (!optionalHash(body.recordingSha256)) throw new LibraryError('invalid', 'recordingSha256')
+  if (!optionalHash(body.manifestSha256)) throw new LibraryError('invalid', 'manifestSha256')
+  if (typeof body.confirm !== 'boolean') throw new LibraryError('invalid', 'confirm')
+  return {
+    ...imported,
+    recordingDurationMs: body.recordingDurationMs,
+    recordingSha256: body.recordingSha256,
+    manifestSha256: body.manifestSha256,
+    confirm: body.confirm,
+  }
+}
+
+function optionalHash(value) {
+  return value === null || (typeof value === 'string' && SHA256.test(value))
+}
+
+function hashKind(spec) {
+  if (spec.manifestSha256) {
+    const supplied = typeof spec.recordingSha256 === 'string' ? spec.recordingSha256.toLowerCase() : ''
+    if (supplied !== spec.manifestSha256.toLowerCase()) return { error: 'recording-mismatch', kind: null }
+    return { error: null, kind: 'hash-verified' }
+  }
+  if (spec.confirm === true) return { error: null, kind: 'user-confirmed' }
+  return { error: null, kind: null }
+}
+
+function timesOutsideRecording(review, durationMs) {
+  const times = []
+  for (const event of review.events ?? []) {
+    times.push(event.eventStartMs, event.eventEndMs, ...(event.evidenceTimestampsMs ?? []))
+  }
+  for (const appearance of review.appearances ?? []) times.push(...(appearance.evidenceTimestampsMs ?? []))
+  return times.some((value) => !Number.isInteger(value) || value < 0 || value > durationMs)
+}
+
+function unlinked(review, linkStatus) {
+  return { ...review, linked: false, linkStatus, association: null, matchesOpenReview: false }
+}
+
 function validateImport(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new LibraryError('invalid', 'body')
   const keys = Object.keys(body)
   if (keys.length !== IMPORT_KEYS.length || IMPORT_KEYS.some((key) => !keys.includes(key))) {
     throw new LibraryError('invalid', 'body')
   }
+  return importFields(body)
+}
+
+function importFields(body) {
   if (!body.document || typeof body.document !== 'object' || Array.isArray(body.document)) {
     throw new LibraryError('invalid', 'document')
   }
@@ -356,11 +457,9 @@ function result(job, fields) {
     provenance: fields.provenance ?? 'adapter',
     monitorSessionId: job.monitorSessionId ?? null,
     monitorVideoId: job.monitorVideoId ?? null,
-    matchesOpenReview: Boolean(
-      job.monitorSessionId
-      && job.monitorVideoId
-      && job.monitorSessionId === job.sessionId
-      && job.monitorVideoId === job.videoId,
-    ),
+    matchesOpenReview: false,
+    linked: false,
+    linkStatus: null,
+    association: null,
   }
 }

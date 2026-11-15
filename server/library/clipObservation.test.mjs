@@ -10,6 +10,8 @@ import {
   beginClipCheck,
   finishClipCheck,
   importAdapterReview,
+  linkAdapterReview,
+  recordingAssociation,
   resetClipChecks,
 } from './clipObservation.mjs'
 
@@ -257,7 +259,8 @@ test('an imported synthetic result stays labeled synthetic and an offset is not 
   const matching = importAdapterReview(importBody(document))
   assert.equal(matching.status, 'hypothesis')
   assert.equal(matching.provenance, 'synthetic')
-  assert.equal(matching.matchesOpenReview, true)
+  assert.equal(matching.linked, false)
+  assert.equal(matching.matchesOpenReview, false)
   assert.equal(matching.events[0].eventStartMs, 85_000)
   assert.equal(matching.raw.events[0].eventStartMs, 85_000)
   assert.equal(matching.needsHumanVerification, true)
@@ -310,6 +313,7 @@ test('the saved disabled adapter response imports as unavailable and makes no re
   assert.deepEqual(imported.events, [])
   assert.notEqual(imported.reason, 'no-transfer')
   assert.equal(imported.raw.sourceOffsetMs, 84_000)
+  assert.equal(imported.linked, false)
 
   const store = createMemoryStore()
   const server = createServer(createLibraryServer({ store }))
@@ -328,6 +332,170 @@ test('the saved disabled adapter response imports as unavailable and makes no re
   } finally {
     server.close()
   }
+})
+
+const EXTERNAL = 'local-review-recording-1'
+const EXTERNAL_VIDEO = 'recording-1'
+const MONITOR_VIDEO = 'local-142963865-recording 1.mov'
+const OTHER_VIDEO = 'local-153475988-recording 2.mov'
+const SOURCE_HASH = '322150651c2fe93fd1d746fb7e17cbf542a72d66791ecb655b84c55092b364f7'
+
+function linkBody(document, overrides = {}) {
+  return {
+    ...importBody(document),
+    monitorSessionId: SESSION,
+    monitorVideoId: MONITOR_VIDEO,
+    recordingDurationMs: 180_000,
+    recordingSha256: null,
+    manifestSha256: null,
+    confirm: true,
+    ...overrides,
+  }
+}
+
+test('an external result links to a different recording without rewriting its ids', () => {
+  resetClipChecks()
+  const document = adapterDocument({
+    sessionId: EXTERNAL,
+    videoId: EXTERNAL_VIDEO,
+    modelId: 'gemini-4-hydrogen',
+    remoteCallMade: false,
+  })
+  const imported = importAdapterReview(importBody(document, {
+    monitorSessionId: SESSION,
+    monitorVideoId: MONITOR_VIDEO,
+  }))
+  assert.equal(imported.linked, false)
+  assert.equal(imported.status, 'hypothesis')
+  assert.equal(imported.raw.sessionId, EXTERNAL)
+  assert.equal(imported.raw.videoId, EXTERNAL_VIDEO)
+  assert.equal(imported.events[0].eventStartMs, 85_000)
+
+  const pending = linkAdapterReview(linkBody(document, { confirm: false }))
+  assert.equal(pending.linked, false)
+  assert.equal(pending.linkStatus, 'unconfirmed')
+  assert.equal(recordingAssociation(MONITOR_VIDEO), null)
+  assert.equal(pending.raw.sessionId, EXTERNAL)
+
+  const linked = linkAdapterReview(linkBody(document))
+  assert.equal(linked.linked, true)
+  assert.equal(linked.association.kind, 'user-confirmed')
+  assert.equal(linked.association.monitorVideoId, MONITOR_VIDEO)
+  assert.equal(linked.sessionId, EXTERNAL)
+  assert.equal(linked.videoId, EXTERNAL_VIDEO)
+  assert.equal(linked.raw.sessionId, EXTERNAL)
+  assert.equal(linked.raw.videoId, EXTERNAL_VIDEO)
+  assert.notEqual(linked.raw.sessionId, SESSION)
+  assert.equal(linked.events[0].eventStartMs, 85_000)
+  assert.equal(linked.events[0].evidenceTimestampsMs[0], 85_200)
+  assert.equal(linked.needsHumanVerification, true)
+  assert.equal(recordingAssociation(MONITOR_VIDEO).kind, 'user-confirmed')
+  assert.equal(recordingAssociation(OTHER_VIDEO), null)
+
+  const switched = linkAdapterReview(linkBody(document, {
+    requestId: REQUEST_TWO,
+    monitorVideoId: OTHER_VIDEO,
+  }))
+  assert.equal(switched.linked, false)
+  assert.equal(switched.linkStatus, 'stale')
+  assert.equal(recordingAssociation(MONITOR_VIDEO).monitorVideoId, MONITOR_VIDEO)
+  assert.equal(recordingAssociation(OTHER_VIDEO), null)
+
+  const moved = linkAdapterReview(linkBody(document, { monitorVideoId: OTHER_VIDEO }))
+  assert.equal(moved.linked, true)
+  assert.equal(moved.association.monitorVideoId, OTHER_VIDEO)
+  assert.equal(recordingAssociation(MONITOR_VIDEO).monitorVideoId, MONITOR_VIDEO)
+  assert.equal(moved.raw.videoId, EXTERNAL_VIDEO)
+})
+
+test('the link route keeps the adapter ids and does not accept a video path', async () => {
+  resetClipChecks()
+  const document = adapterDocument({ sessionId: EXTERNAL, videoId: EXTERNAL_VIDEO })
+  const store = createMemoryStore()
+  const server = createServer(createLibraryServer({ store }))
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+  try {
+    const imported = await ask(server, importBody(document, {
+      monitorSessionId: SESSION,
+      monitorVideoId: MONITOR_VIDEO,
+    }), '/clip-observations/reviews')
+    assert.equal(imported.status, 200)
+    assert.equal(imported.body.linked, false)
+    assert.equal(imported.body.raw.sessionId, EXTERNAL)
+    const linked = await ask(server, linkBody(document), '/clip-observations/reviews/links')
+    assert.equal(linked.status, 200)
+    assert.equal(linked.body.linked, true)
+    assert.equal(linked.body.association.kind, 'user-confirmed')
+    assert.equal(linked.body.raw.videoId, EXTERNAL_VIDEO)
+    assert.equal(linked.body.events[0].eventStartMs, 85_000)
+    const blocked = await ask(server, { ...linkBody(document), clipPath: 'C:\\clips\\short.mov' }, '/clip-observations/reviews/links')
+    assert.equal(blocked.status, 400)
+  } finally {
+    server.close()
+  }
+})
+
+test('a wrong recording and out-of-range evidence stay unlinked', () => {
+  resetClipChecks()
+  const document = adapterDocument({ sessionId: EXTERNAL, videoId: EXTERNAL_VIDEO })
+  importAdapterReview(importBody(document, {
+    monitorSessionId: SESSION,
+    monitorVideoId: MONITOR_VIDEO,
+  }))
+  const mismatch = linkAdapterReview(linkBody(document, {
+    recordingSha256: 'ab'.repeat(32),
+    manifestSha256: SOURCE_HASH,
+    confirm: true,
+  }))
+  assert.equal(mismatch.linked, false)
+  assert.equal(mismatch.linkStatus, 'recording-mismatch')
+  assert.equal(mismatch.raw.sessionId, EXTERNAL)
+  assert.equal(recordingAssociation(MONITOR_VIDEO), null)
+
+  const verified = linkAdapterReview(linkBody(document, {
+    recordingSha256: SOURCE_HASH.toUpperCase(),
+    manifestSha256: SOURCE_HASH,
+    confirm: false,
+  }))
+  assert.equal(verified.linked, true)
+  assert.equal(verified.association.kind, 'hash-verified')
+  assert.equal(verified.raw.videoId, EXTERNAL_VIDEO)
+  assert.equal(verified.events[0].eventStartMs, 85_000)
+
+  resetClipChecks()
+  importAdapterReview(importBody(document, {
+    monitorSessionId: SESSION,
+    monitorVideoId: MONITOR_VIDEO,
+  }))
+  const short = linkAdapterReview(linkBody(document, { recordingDurationMs: 8_000 }))
+  assert.equal(short.linked, false)
+  assert.equal(short.status, 'rejected')
+  assert.equal(short.linkStatus, 'recording-bounds')
+  assert.equal(short.raw.events[0].evidenceTimestampsMs[0], 85_200)
+  assert.equal(85_200 > 8_000, true)
+  assert.deepEqual(short.events, [])
+
+  resetClipChecks()
+  const ranged = adapterDocument({
+    sessionId: EXTERNAL,
+    videoId: EXTERNAL_VIDEO,
+    appearances: [{
+      cupId: 'GREEN',
+      label: 'visually_uniform',
+      evidenceTimestampsMs: [100_000],
+      needsHumanVerification: true,
+    }],
+  })
+  importAdapterReview(importBody(ranged, {
+    monitorSessionId: SESSION,
+    monitorVideoId: MONITOR_VIDEO,
+  }))
+  const outside = linkAdapterReview(linkBody(ranged, { recordingDurationMs: 95_000 }))
+  assert.equal(outside.linked, false)
+  assert.equal(outside.linkStatus, 'evidence-out-of-range')
+  assert.deepEqual(outside.events, [])
+  assert.equal(outside.raw.appearances[0].evidenceTimestampsMs[0], 100_000)
+  assert.equal(outside.raw.sessionId, EXTERNAL)
 })
 
 function ask(server, body, path = '/clip-observations') {

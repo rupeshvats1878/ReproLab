@@ -155,6 +155,7 @@ export interface VisionSession {
   playbackNotice: string
   openCaptureReview: (file: File) => void
   clearCaptureReview: () => void
+  readReviewRecording: () => { blob: Blob | null; durationMs: number | null }
   seekStage: (observationTimestamp: number) => void
   reportPlaybackError: (message: string) => void
   markers: CaptureMarkerRecord[]
@@ -821,6 +822,14 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
   function reportPlaybackError(message: string): void {
     if (ignoreVideoErrorRef.current) return
     setPlaybackNotice(message)
+  }
+
+  function readReviewRecording(): { blob: Blob | null; durationMs: number | null } {
+    const video = videoRef.current
+    const durationMs = video && Number.isFinite(video.duration) && video.duration > 0
+      ? Math.round(video.duration * 1000)
+      : null
+    return { blob: reviewOpenRef.current ? fileBlobRef.current : null, durationMs }
   }
 
   function seekStage(observationTimestamp: number): void {
@@ -1813,6 +1822,7 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
     playbackNotice,
     openCaptureReview,
     clearCaptureReview,
+    readReviewRecording,
     seekStage,
     reportPlaybackError,
     markers,

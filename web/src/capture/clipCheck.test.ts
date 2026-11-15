@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildAdapterImport, buildClipCheckRequest, clipHeadline, clipIdentityCopy, clipRailItems, clipStatusCopy, localVideoId, shouldApplyClipResponse, type ClipCheckResponse } from './clipCheck.ts'
+import { buildAdapterImport, buildClipCheckRequest, buildRecordingLink, clipHeadline, clipIdentityCopy, clipRailItems, clipStatusCopy, localVideoId, sourceHashFromManifest, shouldApplyClipResponse, type ClipCheckResponse } from './clipCheck.ts'
 
 describe('clip check requests', () => {
   it('sets the source offset from the clip start and rejects a window over 60 seconds', () => {
@@ -45,13 +45,26 @@ describe('clip check requests', () => {
     expect(clipStatusCopy('unavailable', null, 'timeout', true)).not.toMatch(/No video was sent/)
   })
 
-  it('shows a synthetic hypothesis on the original recording and hides a mismatched result', () => {
-    const matching: ClipCheckResponse = {
+  it('shows a linked hypothesis on the original recording and hides an unconfirmed result', () => {
+    const linked: ClipCheckResponse = {
       status: 'hypothesis',
       provenance: 'synthetic',
-      matchesOpenReview: true,
+      linked: true,
+      sessionId: 'external-session',
+      videoId: 'recording-1',
       sourceOffsetMs: 84000,
       needsHumanVerification: true,
+      association: {
+        kind: 'user-confirmed',
+        monitorSessionId: 'session_1',
+        monitorVideoId: 'local-1-recording.mov',
+        recordingDurationMs: 200000,
+        sessionId: 'external-session',
+        videoId: 'recording-1',
+        sourceOffsetMs: 84000,
+        clipStartMs: 84000,
+        clipEndMs: 92000,
+      },
       events: [{
         eventId: 'request_1:0',
         sourceCupId: 'RED',
@@ -63,19 +76,27 @@ describe('clip check requests', () => {
         needsHumanVerification: true,
       }],
     }
-    const items = clipRailItems(matching)
+    const items = clipRailItems(linked, 'local-1-recording.mov')
     expect(items.map((item) => item.mediaMs)).toEqual([85000, 86000])
     expect(items.every((item) => item.source === 'Synthetic fixture')).toBe(true)
     expect(items.every((item) => item.detail.includes('does not complete a step'))).toBe(true)
-    expect(clipIdentityCopy(matching)).toMatch(/Synthetic fixture/)
-    expect(clipIdentityCopy(matching)).toMatch(/not an observation/)
-    expect(clipRailItems({ ...matching, matchesOpenReview: false })).toEqual([])
+    expect(clipIdentityCopy(linked)).toMatch(/user confirmation/)
+    expect(clipIdentityCopy(linked)).toMatch(/external-session/)
+    expect(clipIdentityCopy(linked)).toMatch(/not an observation/)
+    expect(clipRailItems({ ...linked, linked: false, association: null })).toEqual([])
+    expect(clipRailItems(linked, 'local-2-other.mov')).toEqual([])
     expect(clipRailItems({
-      ...matching,
+      ...linked,
+      provenance: 'adapter',
+      association: linked.association && { ...linked.association, recordingDurationMs: 85500 },
+      events: [{ ...linked.events![0], evidenceTimestampsMs: [86000] }],
+    }, 'local-1-recording.mov').map((item) => item.mediaMs)).toEqual([85000])
+    expect(clipRailItems({
+      ...linked,
       status: 'uncertain',
       provenance: 'adapter',
-      events: [{ ...matching.events![0], seekable: false, evidenceTimestampsMs: [93000] }],
-    })).toMatchObject([{ seekable: false, mediaMs: 85000, source: 'Unverified' }])
+      events: [{ ...linked.events![0], seekable: false, evidenceTimestampsMs: [93000] }],
+    }, 'local-1-recording.mov')).toMatchObject([{ seekable: false, mediaMs: 85000, source: 'Unverified' }])
   })
 
   it('builds an import from the saved document without adding the offset again', () => {
@@ -95,5 +116,32 @@ describe('clip check requests', () => {
     if (!built.ok) return
     expect(built.body).toMatchObject({ sourceOffsetMs: 84000, clipStartMs: 84000, clipEndMs: 92000 })
     expect(JSON.stringify(built.body)).not.toMatch(/clipPath|authorize/)
+  })
+
+  it('builds a recording link without rewriting the saved document', () => {
+    const document = {
+      sessionId: 'local-review-recording-1',
+      videoId: 'recording-1',
+      sourceOffsetMs: 84000,
+      videoDurationMs: 8000,
+    }
+    const built = buildRecordingLink({
+      requestId: 'request_1',
+      document,
+      monitorSessionId: 'session_1',
+      monitorVideoId: 'local-9-recording.mov',
+      recordingDurationMs: 180000,
+      recordingSha256: null,
+      manifestSha256: null,
+      confirm: true,
+    })
+    expect(built.ok).toBe(true)
+    if (!built.ok) return
+    expect(built.body.sessionId).toBe('local-review-recording-1')
+    expect(built.body.document).toBe(document)
+    expect(built.body.confirm).toBe(true)
+    expect(JSON.stringify(built.body)).not.toMatch(/clipPath|authorize/)
+    expect(sourceHashFromManifest({ sourceSha256AfterEncoding: 'ab'.repeat(32) })).toEqual({ ok: true, sha256: 'ab'.repeat(32) })
+    expect(sourceHashFromManifest({ sha256: 'ab'.repeat(32) })).toEqual({ ok: true, sha256: null })
   })
 })

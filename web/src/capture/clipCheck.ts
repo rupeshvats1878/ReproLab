@@ -21,8 +21,26 @@ export interface ClipCheckResponse {
   remoteCallMade?: boolean
   provenance?: 'synthetic' | 'adapter' | string
   matchesOpenReview?: boolean
+  linked?: boolean
+  linkStatus?: string | null
+  association?: ClipAssociation | null
+  clipStartMs?: number
+  clipEndMs?: number
   events?: ClipEvent[]
   appearances?: ClipAppearance[]
+  raw?: unknown
+}
+
+export interface ClipAssociation {
+  kind: 'hash-verified' | 'user-confirmed'
+  monitorSessionId: string
+  monitorVideoId: string
+  recordingDurationMs: number
+  sessionId: string
+  videoId: string
+  sourceOffsetMs: number
+  clipStartMs: number
+  clipEndMs: number
 }
 
 export interface ClipEvent {
@@ -132,6 +150,75 @@ export interface ClipImportRequest extends ClipCheckRequest {
   document: unknown
 }
 
+export interface ClipLinkRequest extends ClipImportRequest {
+  recordingDurationMs: number
+  recordingSha256: string | null
+  manifestSha256: string | null
+  confirm: boolean
+}
+
+const SHA256 = /^[0-9a-f]{64}$/i
+
+export function sourceHashFromManifest(value: unknown): { ok: true; sha256: string | null } | { ok: false; error: string } {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return { ok: false, error: 'The manifest was not a JSON object. No video was sent.' }
+  }
+  const record = value as Record<string, unknown>
+  const primary = typeof record.sourceSha256 === 'string' ? record.sourceSha256 : null
+  const encoded = typeof record.sourceSha256AfterEncoding === 'string' ? record.sourceSha256AfterEncoding : null
+  if (primary && encoded && primary.toLowerCase() !== encoded.toLowerCase()) {
+    return { ok: false, error: 'The manifest lists two different source hashes. No video was sent.' }
+  }
+  const chosen = primary ?? encoded
+  if (chosen == null) return { ok: true, sha256: null }
+  if (!SHA256.test(chosen)) return { ok: false, error: 'The manifest source hash is not a SHA-256 hex string. No video was sent.' }
+  return { ok: true, sha256: chosen.toLowerCase() }
+}
+
+export async function sha256Hex(blob: Blob): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer())
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+/** Build a link request. The document is sent unchanged, beside the selected recording. */
+export function buildRecordingLink(args: {
+  requestId: string
+  document: unknown
+  monitorSessionId: string
+  monitorVideoId: string
+  recordingDurationMs: number
+  recordingSha256: string | null
+  manifestSha256: string | null
+  confirm: boolean
+}): { ok: true; body: ClipLinkRequest } | { ok: false; error: string } {
+  const built = buildAdapterImport({
+    monitorSessionId: args.monitorSessionId,
+    monitorVideoId: args.monitorVideoId,
+    requestId: args.requestId,
+    document: args.document,
+  })
+  if (!built.ok) return built
+  if (!Number.isInteger(args.recordingDurationMs) || args.recordingDurationMs <= 0) {
+    return { ok: false, error: 'The recording duration is not loaded yet. No video was sent.' }
+  }
+  if (args.recordingSha256 != null && !SHA256.test(args.recordingSha256)) {
+    return { ok: false, error: 'The recording hash is not a SHA-256 hex string. No video was sent.' }
+  }
+  if (args.manifestSha256 != null && !SHA256.test(args.manifestSha256)) {
+    return { ok: false, error: 'The manifest source hash is not a SHA-256 hex string. No video was sent.' }
+  }
+  return {
+    ok: true,
+    body: {
+      ...built.body,
+      recordingDurationMs: args.recordingDurationMs,
+      recordingSha256: args.recordingSha256,
+      manifestSha256: args.manifestSha256,
+      confirm: args.confirm,
+    },
+  }
+}
+
 export function clipStatusCopy(status: string | undefined, message?: string | null, reason?: string, remoteCallMade?: boolean): string {
   const transport = remoteCallMade === true ? 'A clip was submitted.' : 'No video was sent.'
   if (status === 'processing') return 'Checking this clip. No result yet.'
@@ -150,27 +237,44 @@ export function clipStatusCopy(status: string | undefined, message?: string | nu
 }
 
 export function clipIdentityCopy(result: ClipCheckResponse): string {
+  const ids = result.sessionId && result.videoId ? `${result.sessionId} / ${result.videoId}` : 'the saved result'
+  if (result.linkStatus === 'recording-mismatch') {
+    return `Saved result for ${ids}. This recording does not match the supplied hash, so its events are not shown.`
+  }
+  if (result.linkStatus === 'recording-bounds' || result.linkStatus === 'evidence-out-of-range') {
+    return `Saved result for ${ids}. Its clip is outside this recording, so its events are not shown.`
+  }
+  if (result.linked && result.association) {
+    const how = result.association.kind === 'hash-verified' ? 'recording hash' : 'user confirmation'
+    if (result.provenance === 'synthetic') {
+      return `Synthetic fixture linked by ${how}. Adapter session ${result.sessionId}, video ${result.videoId}. It is not an observation.`
+    }
+    return `Linked by ${how}. Adapter session ${result.sessionId}, video ${result.videoId}. It does not complete a step.`
+  }
   if (result.provenance === 'synthetic') {
-    return result.matchesOpenReview
-      ? 'Synthetic fixture for this session. It is not an observation.'
-      : 'Synthetic fixture for a different session. Its events are not shown.'
+    return `Synthetic fixture for ${ids}. It is not linked to this recording, so its events are not shown. It is not an observation.`
   }
-  if (result.matchesOpenReview) return 'Saved adapter result for this session. It does not complete a step.'
-  if (result.sessionId && result.videoId) {
-    return `Saved result for ${result.sessionId} / ${result.videoId}. It does not match this session, so its events are not shown.`
-  }
-  return 'Saved adapter result. It does not complete a step.'
+  return `Saved result for ${ids}. It is not linked to this recording, so its events are not shown.`
 }
 
-/** Rail rows for a reviewed result. Times are already original-media milliseconds. */
-export function clipRailItems(result: ClipCheckResponse | null): ClipRailItem[] {
-  if (!result?.matchesOpenReview) return []
+export function clipAssociationCopy(result: ClipCheckResponse): string {
+  if (result.association?.kind === 'hash-verified') return 'Association: hash-verified.'
+  if (result.association?.kind === 'user-confirmed') return 'Association: user-confirmed.'
+  return 'Association: not linked.'
+}
+
+/** Rail rows for a linked result. Times are already original-media milliseconds. */
+export function clipRailItems(result: ClipCheckResponse | null, activeVideoId?: string): ClipRailItem[] {
+  if (!result?.linked || !result.association) return []
+  if (activeVideoId && result.association.monitorVideoId !== activeVideoId) return []
   if (result.status !== 'hypothesis' && result.status !== 'uncertain') return []
+  const duration = result.association.recordingDurationMs
   const source = result.provenance === 'synthetic' ? 'Synthetic fixture' : 'Unverified'
   const items: ClipRailItem[] = []
   for (const event of result.events ?? []) {
     if (event.needsHumanVerification !== true) continue
-    const evidence = event.evidenceTimestampsMs ?? []
+    if (event.eventStartMs > duration) continue
+    const evidence = (event.evidenceTimestampsMs ?? []).filter((timestamp) => timestamp >= 0 && timestamp <= duration)
     const title = event.sourceCupId && event.destinationCupId ? `${event.sourceCupId} → ${event.destinationCupId}` : 'Unclear transfer'
     if (event.seekable === false) {
       items.push({
@@ -206,7 +310,8 @@ export function clipRailItems(result: ClipCheckResponse | null): ClipRailItem[] 
     })
   }
   for (const [index, appearance] of (result.appearances ?? []).entries()) {
-    const evidence = appearance.evidenceTimestampsMs ?? []
+    const evidence = (appearance.evidenceTimestampsMs ?? []).filter((timestamp) => timestamp >= 0 && timestamp <= duration)
+    if ((appearance.evidenceTimestampsMs ?? []).length > 0 && evidence.length === 0) continue
     items.push({
       id: `appearance:${index}`,
       time: formatClipMs(evidence[0] ?? result.sourceOffsetMs ?? 0),

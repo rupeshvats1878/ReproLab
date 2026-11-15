@@ -9,7 +9,7 @@ import type { PreparedMonitorProtocol } from '../prepare/sixWell.ts'
 import { formatRgb, rgbToCss, COLOR_PRESETS, type ColorPresetId } from '../vision/color.ts'
 import { normalizedToContent, type WellRegions } from '../vision/geometry.ts'
 import { SYNTHETIC_SEQUENCES } from '../vision/synthetic.ts'
-import { buildAdapterImport, buildClipCheckRequest, clipHeadline, clipIdentityCopy, clipRailItems, clipStatusCopy, localVideoId, shouldApplyClipResponse, type ClipCheckResponse } from '../capture/clipCheck.ts'
+import { buildAdapterImport, buildClipCheckRequest, buildRecordingLink, clipAssociationCopy, clipHeadline, clipIdentityCopy, clipRailItems, clipStatusCopy, localVideoId, sha256Hex, shouldApplyClipResponse, sourceHashFromManifest, type ClipCheckResponse } from '../capture/clipCheck.ts'
 import { CAPTURE_MARKERS, CAPTURE_PROTOCOLS, compareHumanMarker, DEFAULT_CAPTURE_PROTOCOL_ID, recordingSeekSeconds, THREE_CUP_DEMO_PLAN, captureProtocol } from '../capture/threeCup.ts'
 import { useVisionSession, type VisionSession } from '../vision/useVisionSession.ts'
 import type { WellMeasurement } from '../vision/analyze.ts'
@@ -907,6 +907,8 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
   const [clipEnd, setClipEnd] = useState('10')
   const [clipPhase, setClipPhase] = useState<'idle' | 'processing' | 'done' | 'error'>('idle')
   const [clipResult, setClipResult] = useState<ClipCheckResponse | null>(null)
+  const [manifestSha256, setManifestSha256] = useState<string | null>(null)
+  const [linkNotice, setLinkNotice] = useState('')
   const clipGeneration = useRef(0)
   const reviewKey = session.reviewFile ? `${session.reviewFile.name}:${session.reviewFile.bytes}` : ''
   const [clipReviewKey, setClipReviewKey] = useState(reviewKey)
@@ -914,6 +916,8 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
     setClipReviewKey(reviewKey)
     setClipPhase('idle')
     setClipResult(null)
+    setManifestSha256(null)
+    setLinkNotice('')
     clipGeneration.current += 1
   }
   const protocol = captureProtocol(session.captureProtocolId)
@@ -1053,6 +1057,88 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
       setClipResult({ status: 'unavailable', requestId, message: 'The adapter result could not be reviewed. No video was sent.' })
     }
   }
+  async function loadRecordingManifest(file: File): Promise<void> {
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(await file.text())
+    } catch {
+      setManifestSha256(null)
+      setLinkNotice('The manifest was not valid JSON. No video was sent.')
+      return
+    }
+    const hash = sourceHashFromManifest(parsed)
+    if (!hash.ok) {
+      setManifestSha256(null)
+      setLinkNotice(hash.error)
+      return
+    }
+    setManifestSha256(hash.sha256)
+    setLinkNotice(hash.sha256
+      ? 'A source hash is loaded. Linking checks it against this recording.'
+      : 'This manifest has no source hash. Linking asks for confirmation.')
+  }
+  async function linkImportedResult(): Promise<void> {
+    if (!session.reviewFile || !clipResult?.raw || !clipResult.requestId) return
+    const generation = clipGeneration.current
+    const requestId = clipResult.requestId
+    const recording = session.readReviewRecording()
+    if (recording.durationMs == null) {
+      setLinkNotice('The recording duration is not loaded yet. No video was sent.')
+      return
+    }
+    let recordingSha256: string | null = null
+    if (manifestSha256) {
+      if (!recording.blob) {
+        setLinkNotice('The selected recording could not be read. No video was sent.')
+        return
+      }
+      setLinkNotice('Checking the recording hash.')
+      try {
+        recordingSha256 = await sha256Hex(recording.blob)
+      } catch {
+        if (clipGeneration.current !== generation) return
+        setLinkNotice('The recording hash could not be read. No video was sent.')
+        return
+      }
+    }
+    if (clipGeneration.current !== generation) return
+    const built = buildRecordingLink({
+      requestId,
+      document: clipResult.raw,
+      monitorSessionId: session.live.sessionId,
+      monitorVideoId: localVideoId(session.reviewFile),
+      recordingDurationMs: recording.durationMs,
+      recordingSha256,
+      manifestSha256,
+      confirm: manifestSha256 == null,
+    })
+    if (!built.ok) {
+      setLinkNotice(built.error)
+      return
+    }
+    try {
+      const response = await fetch('/library/clip-observations/reviews/links', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(built.body),
+      })
+      const payload: unknown = await response.json()
+      const result = payload && typeof payload === 'object' ? payload as ClipCheckResponse : {}
+      if (!applyClipResult(generation, requestId, result)) return
+      if (!response.ok || result.linked !== true) {
+        setClipPhase(result.status === 'rejected' ? 'error' : 'done')
+        setClipResult({ ...result, requestId, message: result.message ?? null })
+        setLinkNotice('')
+        return
+      }
+      setClipPhase('done')
+      setClipResult({ ...result, message: result.message ?? null })
+      setLinkNotice('')
+    } catch {
+      if (clipGeneration.current !== generation) return
+      setLinkNotice('The recording link could not be saved. No video was sent.')
+    }
+  }
   function watchMedia(mediaMs: number): void {
     if (session.inputKind === 'prerecorded') {
       session.seekStage(mediaMs)
@@ -1155,8 +1241,40 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
               }}
             />
           </label>
+          <label className="file-field">
+            Recording manifest
+            <input
+              type="file"
+              accept="application/json,.json"
+              disabled={clipPhase === 'processing'}
+              onChange={(event) => {
+                const file = event.target.files?.[0]
+                if (file) void loadRecordingManifest(file)
+                event.target.value = ''
+              }}
+            />
+          </label>
+          {manifestSha256 ? (
+            <button type="button" onClick={() => { setManifestSha256(null); setLinkNotice('The source hash was removed. Linking asks for confirmation.') }}>
+              Remove manifest
+            </button>
+          ) : null}
+          {clipResult?.raw && clipResult.status !== 'rejected' && clipResult.linked !== true ? (
+            <button type="button" onClick={() => void linkImportedResult()} disabled={clipPhase === 'processing'}>
+              Link this result to this recording
+            </button>
+          ) : null}
           <p role="status">{clipPhase === 'idle' ? 'A check sends the clip times only. The recording stays on this computer. Times alone cannot run the adapter.' : clipStatusCopy(clipResult?.status ?? (clipPhase === 'processing' ? 'processing' : undefined), clipResult?.message, clipResult?.reason, clipResult?.remoteCallMade)}</p>
           {clipResult ? <p>{clipIdentityCopy(clipResult)}</p> : null}
+          {linkNotice ? <p role="status">{linkNotice}</p> : null}
+          {clipResult?.sessionId && clipResult.videoId ? (
+            <details>
+              <summary>Adapter identity</summary>
+              <p>Session {clipResult.sessionId}</p>
+              <p>Video {clipResult.videoId}</p>
+              <p>{clipAssociationCopy(clipResult)}</p>
+            </details>
+          ) : null}
         </section>
       ) : null}
       {seekNotice ? <p className="media-notice" role="alert">{seekNotice}</p> : null}
@@ -1174,7 +1292,7 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
               onWatch: () => watch(marker.observationTimestamp),
             }
           }),
-          ...clipRailItems(clipResult).map((item) => ({
+          ...clipRailItems(clipResult, session.reviewFile ? localVideoId(session.reviewFile) : undefined).map((item) => ({
             id: item.id,
             time: item.time,
             source: item.source,
