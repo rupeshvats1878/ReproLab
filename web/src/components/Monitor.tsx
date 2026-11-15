@@ -137,7 +137,7 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
       </div>
 
       {session.procedureMode === 'three-cup' ? <CaptureToolbar session={session} /> : null}
-      {session.procedureMode === 'three-cup' ? <section className="demo-mode-switch" aria-label="Demo visualization controls"><div><strong>Analysis Replay</strong><p>Watch saved observations unfold with the original recording. No live AI calls.</p></div><button type="button" className="primary-action" aria-pressed={replayActive} disabled={!replay && !demoMode} onClick={() => { setDemoMode(value => !value); setFullResults(false) }}>{replayActive ? 'Return to review tools' : 'Enter Demo Visualization Mode'}</button>{!replay ? <p>Import and link a saved analysis to enable replay.</p> : null}</section> : null}
+      {session.procedureMode === 'three-cup' ? <section className="demo-mode-switch" aria-label="Demo visualization controls"><div><strong>Analysis Replay</strong></div><button type="button" className="primary-action" aria-pressed={replayActive} disabled={!replay && !demoMode} onClick={() => { setDemoMode(value => !value); setFullResults(false) }}>{replayActive ? 'Return to review tools' : 'Enter Demo Visualization Mode'}</button>{!replay ? <p>Import and link a saved analysis to enable replay.</p> : null}</section> : null}
       <div className="live-split">
         <div className="live-stage">
           <div className="stage" ref={session.bindStage} onPointerDown={session.onStagePointerDown}>
