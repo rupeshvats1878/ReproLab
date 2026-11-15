@@ -153,6 +153,28 @@ An earlier direct call on a fresh process took 1174.5 ms for the first picture a
 
 These three drawings do not show that the checkpoint can tell a filled well from an empty one. The blue circle was still called empty. The blocked drawing was also called empty, with empty, obstructed, and unclear almost tied. Do not describe this as validated well detection or as real-camera performance.
 
+## Diagnosis: why every drawing was called empty
+
+Verdict: the checkpoint needs task-specific training. Do not connect it to the Monitor until a model has been trained on this kind of picture and this question. No inference bug was found that would justify changing the label mapping, and no mapping was invented.
+
+The published checkpoint is not a four-class well detector. `thaitea/laya-vision` is a general visual question model. Its trained choice head scores whatever option text the caller writes. `visibly_empty`, `visibly_filled`, `obstructed`, and `unclear` are words in our question. They are not classes the checkpoint was trained to emit. The checkpoint card says it was trained on everyday photos, diagrams, charts, rubric-graded images, and simple game screens, and that a different kind of image needs fine-tuning. Colored-water wells are that different kind of image.
+
+The choice scorer is part of the trained checkpoint. It is not a fresh random head. The separate action head, `act_probability`, was not trained with `train_act=True`. The service does not read it and does not use it to authorize an action.
+
+Preprocessing follows the checkpoint config: the Hugging Face processor, one 512-pixel tile, 64 image tokens, and the Idefics3 rescale and normalization that the package checks at load. The three drawings do reach the vision tower as different features. The root-mean-square difference between the empty-circle features and the blue-circle features was 2.98. Reversing the option order, and scoring four option orders, still chose `visibly_empty`.
+
+A control question on the same pipeline, "What is the dominant color?", did separate the pictures: a white drawing and the empty-circle drawing were called white, and a blue drawing and the blue-circle drawing were called blue. Image loading, size, normalization, and answer decoding work for a question this checkpoint can answer.
+
+`assessment` is the argmax of the temperature-scaled probabilities. The checkpoint's choice temperature is 3.857. Dividing by that temperature softens the probabilities. It does not change which label wins. The raw scores below are the logits before that division. They are not probabilities and they are not calibrated accuracy.
+
+| Drawing | Raw logits, empty / filled / obstructed / unclear | Argmax |
+| --- | --- | --- |
+| Empty white circle | 10.065 / -0.024 / 2.943 / 4.424 | visibly_empty |
+| Blue filled circle | 9.838 / 0.310 / 1.845 / 3.381 | visibly_empty |
+| Blue circle with a bar across it | 5.981 / -0.934 / 5.722 / 5.759 | visibly_empty |
+
+The blue circle is not a near tie that the service promoted into a firm label. Its raw score for empty is about 9.5 above its score for filled. The blocked drawing is a near tie in the raw scores, and its reported confidence is 0.098. The service still returns the argmax. It does not replace a weak argmax with `unclear`, and it does not describe confidence as accuracy. A caller has to read `uncertainty.confidence` and `uncertainty.probabilities` with the label.
+
 ## Compatibility note
 
 `transformers` 5.20.2 can load this checkpoint. Its image encoder returns a list of one tensor, shaped `[64, 576]`. The published `predict` path expects one batch tensor and calls `.repeat` on it. This service stacks that list into `[1, 64, 576]` before `predict`. The features still come from the checkpoint.
@@ -163,7 +185,9 @@ Transformers also warns that passing the stacked tensor as `image_hidden_states`
 
 ## What Rupesh should do later
 
-Do not add this call inside the video loop yet. When the frontend connects:
+Do not connect this service to the Monitor. The current checkpoint does not judge these well drawings, and integration should wait for a checkpoint trained on this task.
+
+The contract, for whenever that checkpoint exists:
 
 - Proxy one request at a time from the Vite app to `http://127.0.0.1:8790`. The browser should not depend on a public host.
 - Send the current well crop as a JPEG. Include `sessionId`, `frameId`, `sourceVideoTimeMs`, `wellId`, the expected visible condition, and `imageKind`.
@@ -186,4 +210,4 @@ Do not add this call inside the video loop yet. When the frontend connects:
 
 ## Still in the way of a demo
 
-The service runs the real checkpoint on this Mac. It is not ready to be shown as a well detector. The filled and blocked drawings were both labeled empty. No real camera image has been tried. The Monitor screen is intentionally not wired to this service.
+The service runs the real checkpoint on this Mac. Frontend integration is deferred. The model can name white versus blue on these drawings, and it still calls the blue well empty when asked the well question. No real camera image has been tried. The Monitor screen is not wired to this service.
