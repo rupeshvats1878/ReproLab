@@ -132,3 +132,40 @@ Synthetic uniform and striped fixtures test numerical behavior only.
 The full test suite now requires the optional dependencies. To run just the
 standard-library importer/scorer tests, use unittest discover with
 -p test_offline.py. No real appearance accuracy has been measured.
+## Sequential audit and explicit-protocol comparison
+
+The following examples use Windows venv Python from the repository root.
+On macOS substitute .venv/bin/python, which remains untested here.
+
+    server/three-cup-offline/.venv/Scripts/python.exe server/three-cup-offline/audit_video.py --video path/to/take.mov --output server/three-cup-offline/local/new-audit
+
+audit_video.py creates a new destination, records every decoder timestamp in
+timestamps.jsonl, writes one sampled image approximately each second, and saves
+audit.json with source SHA-256, frame counts, anomalies and termination status.
+It refuses an existing output directory. Sampling affects saved images only.
+Every frame is decoded sequentially. A false read can mean EOF or decoder failure.
+Matching frame counts and monotonic timestamps do not certify file integrity.
+A failure can leave a partial output directory. Preserve it for diagnosis.
+All audit output and actual recordings belong under ignored local storage.
+
+The appearance library and CLI now accept unknown physical identity. Use
+--cup unknown to emit cupId=null and cupIdentityMethod=unknown. This permits
+measurement of a spatially selected ROI without guessing identity from color.
+Known cup behavior is preserved.
+
+    server/three-cup-offline/.venv/Scripts/python.exe server/three-cup-offline/compare_protocol.py --protocol path/to/protocol.json --observations path/to/observations.json
+
+Synthetic protocol example:
+
+    {"protocolId":"p","sessionId":"s","videoId":"v","steps":[{"sourceCupId":"BLUE","destinationCupId":"RED"}]}
+
+Synthetic observation example:
+
+    [{"eventId":"e","sessionId":"s","videoId":"v","eventType":"transfer","startMs":100,"endMs":200,"sourceCupId":"BLUE","destinationCupId":"RED","uncertain":true,"occluded":false,"identityVerified":false,"reviewStepIndex":null}]
+
+This produces NEEDS_HUMAN_REVIEW and an unassigned event. reviewStepIndex is
+one-based or null. The caller assigns it explicitly after reviewing evidence.
+Missing/unknown evidence never silently consumes a step. Repeated assignments
+and conflicting temporal order remain reviewable. There is no automatic sequence
+alignment, completion or finding of an omitted action.
+See docs/codex/INTEGRATION_READINESS.md for the exact fields and adapter mapping.

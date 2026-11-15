@@ -10,7 +10,7 @@ from offline import CUPS, identifier, number, require
 
 
 def measure(image, roi, cup_id, frame_id, time_ms):
-    require(cup_id in CUPS, "physical cup_id required")
+    require(cup_id is None or cup_id in CUPS, "invalid physical cup_id")
     identifier(frame_id, "frame_id")
     number(time_ms, "original recording time_ms")
     require(isinstance(image, np.ndarray) and image.dtype == np.uint8 and
@@ -29,7 +29,7 @@ def measure(image, roi, cup_id, frame_id, time_ms):
     gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
     return {
         "schemaVersion": "three-cup-appearance/1", "cupId": cup_id,
-        "cupIdentityMethod": "human_selected_physical_label",
+        "cupIdentityMethod": "unknown" if cup_id is None else "human_selected_physical_label",
         "frameId": frame_id, "timeMs": time_ms, "timeDomain": "original_recording_ms",
         "timestampSource": "operator_supplied",
         "roi": list(roi), "methodVersion": "lab-cell-dispersion/1",
@@ -49,7 +49,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image", required=True)
     parser.add_argument("--roi", required=True, nargs=4, type=int, metavar=("X", "Y", "WIDTH", "HEIGHT"))
-    parser.add_argument("--cup", required=True, choices=sorted(CUPS))
+    parser.add_argument("--cup", required=True, choices=sorted(CUPS) + ["unknown"])
     parser.add_argument("--frame-id", required=True)
     parser.add_argument("--time-ms", required=True, type=float)
     args = parser.parse_args()
@@ -57,7 +57,7 @@ def main():
         path = Path(args.image).resolve(strict=True)
         image = cv2.imdecode(np.fromfile(path, dtype=np.uint8), cv2.IMREAD_COLOR)
         require(image is not None, "image decode failed")
-        result = measure(image, args.roi, args.cup, args.frame_id, args.time_ms)
+        result = measure(image, args.roi, None if args.cup == "unknown" else args.cup, args.frame_id, args.time_ms)
         result["sourceImage"] = str(path)
         print(json.dumps(result, indent=2, allow_nan=False))
     except (ValueError, OSError, cv2.error) as error:

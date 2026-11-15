@@ -66,3 +66,20 @@ CLI help and a temporary synthetic image CLI smoke test passed. No real footage
 was used. Calibration, optional marker recognition and real-media validation remain
 pending. Cursor's UI progress is known only from the user's confirmation that it
 is running. This update does not verify its implementation.
+## Latest follow-up, 2026-11-15
+
+This section supersedes earlier no-footage and deferred-appearance status above.
+The supplied originals have now been sequentially decoded and sampled locally.
+Private artifacts in server/three-cup-offline/local/review include audit-1/audit.json,
+audit-2/audit.json, timestamps.jsonl files, event-review.json,
+appearance-measurements.json, ROI overlays and detailed contact sheets.
+Agent annotations require human review and contain null physical identities.
+
+New source files are audit_video.py and compare_protocol.py with focused tests in
+tests/test_offline_review.py. appearance.py now supports explicit unknown identity.
+32 tests pass plus real-video audit and actual-image appearance CLI execution.
+Ryan's newly pushed adapter at a34c5a6b9dc29c5bdf9f8f382c48755c98c3d1c6 was inspected
+read-only and its 23 tests passed in an ignored local snapshot with network blocked.
+INTEGRATION_READINESS.md contains exact contract mapping, pending dependencies,
+reproduced edge cases and the message for Cursor. STATUS.md records current checks.
+No branch merge or remote video inference was performed.
