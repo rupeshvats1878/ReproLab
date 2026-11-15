@@ -9,6 +9,7 @@ import type { PreparedMonitorProtocol } from '../prepare/sixWell.ts'
 import { formatRgb, rgbToCss, COLOR_PRESETS, type ColorPresetId } from '../vision/color.ts'
 import { normalizedToContent, type WellRegions } from '../vision/geometry.ts'
 import { SYNTHETIC_SEQUENCES } from '../vision/synthetic.ts'
+import { CAPTURE_MARKERS, THREE_CUP_CUPS, THREE_CUP_EXPECTED } from '../capture/threeCup.ts'
 import { useVisionSession, type VisionSession } from '../vision/useVisionSession.ts'
 import type { WellMeasurement } from '../vision/analyze.ts'
 import type { PixelRect } from '../vision/geometry.ts'
@@ -76,11 +77,28 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
     <section className="monitor" aria-labelledby="monitor-title" data-debug={session.debugOverlay ? 'true' : 'false'} data-running={running ? 'true' : 'false'}>
       <div className="monitor-heading">
         <h2 id="monitor-title">Monitor</h2>
-        <p>Six-well order: A1, A2, A3, B1, B2, B3.</p>
+        {session.procedureMode === 'six-well' ? <p>Six-well order: A1, A2, A3, B1, B2, B3.</p> : null}
         {session.localPhase === 'completed' ? (
           <p>Stopping the camera does not finish the record. Finish session closes it, and finished does not mean the run succeeded.</p>
         ) : null}
-        {preparedProtocol ? (
+        <div className="button-row" role="group" aria-label="Procedure">
+          <button type="button" aria-pressed={session.procedureMode === 'six-well'} onClick={() => session.setProcedureMode('six-well')} disabled={running}>
+            Six-well monitoring
+          </button>
+          <button type="button" aria-pressed={session.procedureMode === 'three-cup'} onClick={() => session.setProcedureMode('three-cup')} disabled={running}>
+            Three-cup capture
+          </button>
+        </div>
+        {session.procedureMode === 'three-cup' ? (
+          <div>
+            <p role="status">Capture mode — automatic checks not connected</p>
+            <p>Cups keep their physical labels: {THREE_CUP_CUPS.join(', ')}. Red and blue should look uniformly mixed. Green will have visible streaks.</p>
+            <ul>
+              {THREE_CUP_EXPECTED.map((line) => <li key={line}>{line}</li>)}
+            </ul>
+          </div>
+        ) : null}
+        {preparedProtocol && session.procedureMode === 'six-well' ? (
           <div>
             <p>
               Approved protocol: {preparedProtocol.title}, version {preparedProtocol.version}. The camera has not been started.
@@ -124,6 +142,7 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
         {session.inputKind === 'none' ? (
           <p className="stage-placeholder">Camera is off.</p>
         ) : null}
+        {session.procedureMode === 'six-well' ? (
         <RegionLayer
           regions={session.regions}
           content={session.contentRect}
@@ -138,6 +157,7 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
           onDrag={(event) => session.moveDrag('video', event)}
           onDragEnd={session.endDrag}
         />
+        ) : null}
           </div>
           <p className="live-clock" role="status">
             {session.inputKind === 'none' ? '' : `${sourceLabel(session.inputKind)} · `}
@@ -167,6 +187,9 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
         </div>
 
         <aside className="live-decisions" aria-label="Protocol decisions">
+          {session.procedureMode === 'three-cup' ? <CapturePanel session={session} running={running} /> : null}
+          {session.procedureMode === 'six-well' ? (
+          <>
           <ol className="well-progress" aria-label="Six-well progress">
             {PROTOCOL_ORDER.map((wellId) => (
               <li
@@ -294,6 +317,8 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
               </details>
             ) : null}
           </section>
+          </>
+          ) : null}
         </aside>
       </div>
 
@@ -311,6 +336,7 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
           setStep={setSetupStep}
           pictureReady={pictureReady}
         />
+        {session.procedureMode === 'six-well' ? (
         <details className="fold">
           <summary>Demo and imported video</summary>
         <p className="monitor-note">Optional. A synthetic sequence is not a camera recording. Pause on an issue applies only there.</p>
@@ -394,6 +420,7 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
           </button>
         </div>
         </details>
+        ) : null}
       </details>
 
       <details className="fold">
@@ -858,6 +885,33 @@ function setupPrompt(step: SetupStep, pictureReady: boolean): string {
   return 'Camera is on. Continue to the regions.'
 }
 
+function CapturePanel({ session, running }: { session: VisionSession; running: boolean }) {
+  return (
+    <section className="guide" aria-label="Three-cup capture">
+      <p>Markers record what you report. They do not complete a step or claim the camera verified it.</p>
+      <div className="button-row">
+        {CAPTURE_MARKERS.map((marker) => (
+          <button key={marker.id} type="button" onClick={() => session.addMarker(marker.id)} disabled={!running}>
+            {marker.label}
+          </button>
+        ))}
+      </div>
+      {session.markers.length === 0 ? <p className="monitor-note">No operator marker yet.</p> : (
+        <ul>
+          {session.markers.map((marker) => (
+            <li key={marker.id}>{marker.label} at {marker.observationTimestamp} ms. Reported by a person.</li>
+          ))}
+        </ul>
+      )}
+      <div className="button-row">
+        <button type="button" onClick={session.downloadRecording} disabled={!session.localRecording}>Download recording</button>
+        <button type="button" onClick={session.downloadAnnotations}>Download annotations</button>
+      </div>
+      <p className="monitor-note">The annotation file is for review. It is not a Laya training dataset.</p>
+    </section>
+  )
+}
+
 function CameraSetup({
   session,
   wellSize,
@@ -876,6 +930,32 @@ function CameraSetup({
   const starting = session.cameraPhase === 'starting' || session.cameraPhase === 'live'
   const calibrationMissing = session.referenceLabel.startsWith('Not captured')
   const previewUnknown = session.measurements.length === 0 || session.measurements.every((item) => item.state === 'unknown')
+  if (session.procedureMode === 'three-cup') {
+    return (
+      <div className="camera-setup">
+        <button type="button" className="primary-action" onClick={session.startCamera} disabled={starting}>
+          Start camera
+        </button>
+        <label className="check-field">
+          <input
+            type="checkbox"
+            checked={session.recordThisRun}
+            disabled={session.localPhase === 'running'}
+            onChange={(event) => session.setRecordThisRun(event.target.checked)}
+          />
+          Record this run
+        </label>
+        <p className="monitor-note">Records the camera without audio. Cup names stay the physical labels.</p>
+        <button type="button" className="primary-action" onClick={session.startRun} disabled={!session.canStartRun || session.inputKind !== 'live'}>
+          Start capture
+        </button>
+        <button type="button" onClick={session.startClockCheck} disabled={session.localPhase === 'running'}>
+          Record 12-second timestamp check
+        </button>
+        <p className="monitor-note">The timestamp check draws a changing clock into a test recording. It is not a cup reading.</p>
+      </div>
+    )
+  }
   return (
     <div className="camera-setup">
       <div className="button-row" role="group" aria-label="Setup steps">

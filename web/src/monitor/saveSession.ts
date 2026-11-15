@@ -13,6 +13,7 @@ interface SessionBody {
   sourceKind: 'live' | 'prerecorded' | 'synthetic'
   startedAtIso: string
   preparedProtocol?: PreparedMonitorProtocol | null
+  procedureId?: 'six-well-colored-water' | 'three-cup-capture'
 }
 
 const MONITOR_INDEX_KEY = 'reprolab-monitor-session-index'
@@ -91,7 +92,7 @@ export function createMonitorSaver(notify: (status: SaveStatus) => void, fetchIm
     }
   }
 
-  async function postOnce(path: string, body: { id?: string }) {
+  async function postOnce(path: string, body: { id?: string; [key: string]: unknown }) {
     if (body.id && sent.has(body.id)) return
     await send(path, body)
     if (body.id) sent.add(body.id)
@@ -108,6 +109,7 @@ export function createMonitorSaver(notify: (status: SaveStatus) => void, fetchIm
           sourceKind: input.sourceKind,
           startedAtIso: input.startedAtIso,
           ...(input.preparedProtocol ? { preparedProtocol: input.preparedProtocol } : {}),
+          ...(input.procedureId === 'three-cup-capture' ? { procedureId: input.procedureId } : {}),
         })
         if (typeof sessionStorage !== 'undefined') {
           sessionStorage.setItem(BROWSER_MONITOR_SESSION_KEY, input.sessionId)
@@ -170,6 +172,18 @@ export function createMonitorSaver(notify: (status: SaveStatus) => void, fetchIm
         await send(`/monitor-sessions/${encodeURIComponent(sessionId)}/finish`, {})
         closed = true
         failed = false
+      })
+    },
+    saveMarker(marker: { id: string; marker: string; observationTimestamp: number }) {
+      if (!opened) return
+      const path = `/monitor-sessions/${encodeURIComponent(opened.sessionId)}/events`
+      enqueue(async () => {
+        await postOnce(path, {
+          id: marker.id,
+          type: 'human_marker',
+          marker: marker.marker,
+          observationTimestamp: marker.observationTimestamp,
+        })
       })
     },
     saveEvidence(draft: MediaDraft, observationTimestamp: number) {
@@ -280,6 +294,8 @@ export interface RetrievedMonitor {
   startedAtIso?: string | null
   blockedReason?: string | null
   finishedAt?: string | null
+  procedureId?: string
+  humanMarkers?: Array<{ id?: string; marker?: string; label?: string; cups?: string[]; observationTimestamp?: number; provenance?: string }>
   preparedProtocol?: {
     id: string
     version: number

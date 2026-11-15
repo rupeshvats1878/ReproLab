@@ -167,11 +167,19 @@ export function experimentSummary(experiment) {
 
 const RUN_RECORD_BYTES = 1_500_000
 
+const CAPTURE_STEPS = [
+  'RED and BLUE should look uniformly mixed. GREEN will have visible streaks.',
+  'Expected transfers: RED → BLUE, then GREEN → RED.',
+  'This take deliberately uses GREEN → BLUE for the second transfer.',
+]
+
 export function recordedExperimentRecord(session, notes, { id, publishedAt, shared = null }) {
   if (!session.finishedAt) throw new LibraryError('invalid_state')
-  const protocol = session.preparedProtocol
-  if (!protocol || !Array.isArray(protocol.steps)) throw new LibraryError('invalid', 'preparedProtocol')
   const presented = presentMonitorSession(session)
+  const protocol = presented.procedureId === 'three-cup-capture'
+    ? { id: 'three-cup-capture', version: 1, title: 'Three-cup capture', steps: CAPTURE_STEPS }
+    : session.preparedProtocol
+  if (!protocol || !Array.isArray(protocol.steps)) throw new LibraryError('invalid', 'preparedProtocol')
   if (shared) {
     const source = presented.evidence.find((item) => item.id === shared.evidenceId)
     if (!source || source.available !== true) throw new LibraryError('invalid', 'evidenceId')
@@ -181,6 +189,7 @@ export function recordedExperimentRecord(session, notes, { id, publishedAt, shar
   }
   const kind = session.sourceKind === 'synthetic' ? 'demonstration' : 'recorded'
   const runRecord = {
+    procedureId: presented.procedureId,
     sourceKind: session.sourceKind,
     startedAtIso: session.startedAtIso ?? null,
     finishedAt: session.finishedAt,
@@ -206,6 +215,14 @@ export function recordedExperimentRecord(session, notes, { id, publishedAt, shar
         stableState: update.stableState,
         evidence: frameLabel(update.evidence),
       })),
+    })),
+    humanMarkers: (presented.humanMarkers ?? []).map((marker) => ({
+      id: marker.id,
+      marker: marker.marker,
+      cups: marker.cups,
+      label: marker.label,
+      observationTimestamp: marker.observationTimestamp,
+      provenance: 'human',
     })),
     humanReports: presented.humanReports.map((report) => ({
       id: report.id,
@@ -258,6 +275,12 @@ function frameLabel(evidence) {
     observationTimestamp: evidence.observationTimestamp ?? null,
     frameIndex: evidence.frameIndex ?? null,
   }
+}
+
+export function recordingIsReferenced(experiments, mediaId) {
+  return experiments.some((experiment) =>
+    (experiment.runRecord?.evidence ?? []).some((item) => item.sharedMediaId === mediaId),
+  )
 }
 
 export function escapeRegExp(value) {

@@ -15,6 +15,7 @@ import {
   matchesExperimentTitle,
   presentReplication,
   recordedExperimentRecord,
+  recordingIsReferenced,
   replicationRecord,
 } from './records.mjs'
 
@@ -144,6 +145,12 @@ export function createMemoryStore({ now = () => new Date().toISOString(), ids = 
       if (!file) throw new LibraryError('not_found')
       return mediaHandle(file.mimeType, file.bytes)
     },
+    async deleteMedia(id) {
+      if (recordingIsReferenced(experiments, id)) throw new LibraryError('invalid_state')
+      if (!media.has(id)) throw new LibraryError('not_found')
+      media.delete(id)
+      return { deleted: true }
+    },
   }
 }
 
@@ -218,6 +225,9 @@ export function createUnavailableStore() {
       throw new LibraryError('unavailable')
     },
     async openMedia() {
+      throw new LibraryError('unavailable')
+    },
+    async deleteMedia() {
       throw new LibraryError('unavailable')
     },
   }
@@ -514,6 +524,19 @@ export function createMongoStore({ client, dbName }) {
         upload.end(Buffer.from(bytes))
       })
       return { id, byteLength: bytes.length, mimeType }
+    },
+    async deleteMedia(id) {
+      await requireDatabase()
+      const referenced = await experiments().findOne(
+        { 'runRecord.evidence.sharedMediaId': id },
+        { projection: { _id: 1 } },
+      )
+      if (referenced) throw new LibraryError('invalid_state')
+      const bucket = new GridFSBucket(client.db(dbName), { bucketName: 'experimentMedia' })
+      const files = await bucket.find({ filename: id }).toArray()
+      if (files.length === 0) throw new LibraryError('not_found')
+      for (const file of files) await bucket.delete(file._id)
+      return { deleted: true }
     },
     async openMedia(id) {
       await requireDatabase()

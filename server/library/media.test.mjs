@@ -113,6 +113,40 @@ test('stores a bounded recording and serves a byte range', async () => {
   }
 })
 
+test('deletes an upload that no publication references and refuses one that is published', async () => {
+  const server = await listen(createMemoryStore())
+  const sessionId = 'session_3a3a3a3a-3a3a-4a3a-8a3a-3a3a3a3a3a3a'
+  const evidenceId = 'media_3b3b3b3b-3b3b-4b3b-8b3b-3b3b3b3b3b3b'
+  try {
+    const orphan = await ask(server, 'POST', '/media', Buffer.from('orphan'), { 'content-type': 'video/webm' })
+    const removed = await ask(server, 'DELETE', `/media/${orphan.body.id}`)
+    assert.equal(removed.status, 200)
+    assert.equal((await ask(server, 'GET', `/media/${orphan.body.id}`)).status, 404)
+    assert.equal((await ask(server, 'DELETE', `/media/${orphan.body.id}`)).status, 404)
+
+    await finishedSession(server, { sessionId, evidenceId, offset: 0 })
+    const failed = await ask(server, 'POST', '/media', Buffer.from('unused'), { 'content-type': 'video/webm' })
+    const rejected = await ask(server, 'POST', `/monitor-sessions/${sessionId}/publish`, {
+      recording: { evidenceId, mediaId: 'media_3c3c3c3c-3c3c-4c3c-8c3c-3c3c3c3c3c3c' },
+    })
+    assert.equal(rejected.status, 400)
+    assert.equal((await ask(server, 'DELETE', `/media/${failed.body.id}`)).status, 200)
+
+    const uploaded = await ask(server, 'POST', '/media', Buffer.from('kept-bytes'), { 'content-type': 'video/webm' })
+    const published = await ask(server, 'POST', `/monitor-sessions/${sessionId}/publish`, {
+      recording: { evidenceId, mediaId: uploaded.body.id },
+    })
+    assert.equal(published.status, 201)
+    const blocked = await ask(server, 'DELETE', `/media/${uploaded.body.id}`)
+    assert.equal(blocked.status, 409)
+    const still = await ask(server, 'GET', `/media/${uploaded.body.id}`)
+    assert.equal(still.status, 200)
+    assert.equal(still.bytes.toString(), 'kept-bytes')
+  } finally {
+    server.close()
+  }
+})
+
 test('publishes with a recording only when that upload is named, and keeps the first snapshot', async () => {
   const server = await listen(createMemoryStore())
   const sessionId = 'session_18181818-1818-4818-8818-181818181818'

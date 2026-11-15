@@ -69,7 +69,9 @@ import {
   resetDemoPresentation,
   setPauseOnIssue as pausePreference,
 } from '../monitor/demoPause.ts'
+import { annotationDocument, markerDefinition, THREE_CUP_PROCEDURE_ID, type CaptureMarkerId, type CaptureMarkerRecord } from '../capture/threeCup.ts'
 import { keepLocalMedia } from '../review/store.ts'
+import { durationNeedsRepair, patchWebmDuration } from './webmDuration.ts'
 import { ObservationEmitter, ReadingStabilizer, readingsOf } from './stabilize.ts'
 import { SYNTHETIC_SEQUENCES, type SyntheticFrame } from './synthetic.ts'
 
@@ -143,6 +145,14 @@ export interface VisionSession {
   setDebugOverlay: (enabled: boolean) => void
   setSamplingColor: (enabled: boolean) => void
   setFinalSeparate: (enabled: boolean) => void
+  procedureMode: 'six-well' | 'three-cup'
+  setProcedureMode: (mode: 'six-well' | 'three-cup') => void
+  markers: CaptureMarkerRecord[]
+  addMarker: (marker: CaptureMarkerId) => void
+  localRecording: Blob | null
+  downloadRecording: () => void
+  downloadAnnotations: () => void
+  startClockCheck: () => void
   recordThisRun: boolean
   setRecordThisRun: (enabled: boolean) => void
   attachSourceFile: boolean
@@ -214,6 +224,10 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
   const recordingMediaId = useRef<string | null>(null)
   const recordingSettled = useRef(false)
   const recordThisRunRef = useRef(false)
+  const procedureRef = useRef<'six-well' | 'three-cup'>('six-well')
+  const recordingStartedAt = useRef(0)
+  const recordingDurationRef = useRef<number | null>(null)
+  const clockFrameRef = useRef<number | null>(null)
   const attachSourceRef = useRef(false)
   const recordingTracks = useRef<MediaStreamTrack[]>([])
   const fileBlobRef = useRef<Blob | null>(null)
@@ -293,6 +307,9 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
     detail: 'Not recording.',
   })
   const [recordThisRun, setRecordThisRunState] = useState(false)
+  const [procedureMode, setProcedureModeState] = useState<'six-well' | 'three-cup'>('six-well')
+  const [markers, setMarkers] = useState<CaptureMarkerRecord[]>([])
+  const [localRecording, setLocalRecording] = useState<Blob | null>(null)
   const [attachSourceFile, setAttachSourceState] = useState(false)
   const [evidenceNote, setEvidenceNote] = useState('No evidence has been registered in this visit.')
   const [emitted, setEmitted] = useState<ObservationDraft[]>([])
@@ -420,7 +437,7 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
       if (mounted.current) setLocalElapsedMs(next)
       callbacksRef.current.onElapsedMs(next)
     }
-    if (pausedRef.current || holdRef.current) return
+    if (procedureRef.current === 'three-cup' || pausedRef.current || holdRef.current) return
     const draft = emitter.current.consider(next, stabilizer.current.snapshot())
     if (!draft) {
       const reason = emitter.current.blocked
@@ -518,6 +535,7 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
     finalContentRef.current = finalContentRect
     publishRef.current = publish
     loopRef.current = () => {
+      if (procedureRef.current === 'three-cup') return
       if (inputKindRef.current === 'synthetic' || inputKindRef.current === 'none') return
       const video = videoRef.current
       if (!video || video.readyState < 2 || video.seeking || video.paused || video.ended || pausedRef.current) return
@@ -587,16 +605,28 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
       failRecording(mediaId ?? createId('media'), 'Recording produced no bytes. Video evidence is not available.')
       return
     }
-    const durationMs = await measureVideoDuration(blob)
-    rememberVisionBlob(mediaId, blob)
-    void keepLocalMedia(mediaId, blob).catch(() => {
+    const wallClockMs = Math.round(performance.now() - recordingStartedAt.current)
+    let file = blob
+    let durationMs = await measureVideoDuration(blob)
+    if ((blob.type.includes('webm') || mime.includes('webm')) && durationNeedsRepair(durationMs, wallClockMs)) {
+      const patched = patchWebmDuration(new Uint8Array(await blob.arrayBuffer()), wallClockMs)
+      if (patched) {
+        file = new Blob([patched.buffer.slice(patched.byteOffset, patched.byteOffset + patched.byteLength) as ArrayBuffer], { type: blob.type || mime })
+        durationMs = await measureVideoDuration(file)
+      }
+    }
+    if (durationNeedsRepair(durationMs, wallClockMs)) durationMs = wallClockMs
+    recordingDurationRef.current = durationMs ?? null
+    rememberVisionBlob(mediaId, file)
+    setLocalRecording(file)
+    void keepLocalMedia(mediaId, file).catch(() => {
       registerEvidence('The recording is held for this page. This browser did not keep a copy for later.')
     })
     publishMedia(
       cameraRecordingDraft({
         mediaId,
         ok: true,
-        mimeType: blob.type || mime,
+        mimeType: file.type || mime,
         runStartOffsetMs: runOffsetRef.current,
         durationMs,
         label: 'Live camera recording',
@@ -667,6 +697,7 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
         }
       }
       const mediaStart = performance.now()
+      recordingStartedAt.current = mediaStart
       recorder.start(1000)
       runOffsetRef.current = runStartOffsetFromClocks(originRef.current, mediaStart)
       recorderRef.current = recorder
@@ -696,6 +727,89 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
     if (runningRef.current) return
     attachSourceRef.current = enabled
     setAttachSourceState(enabled)
+  }
+
+  function setProcedureMode(mode: 'six-well' | 'three-cup'): void {
+    if (runningRef.current || mode === procedureRef.current) return
+    procedureRef.current = mode
+    setProcedureModeState(mode)
+    setMarkers([])
+    resetDetector()
+    if (mode === 'three-cup') setRecordThisRun(true)
+  }
+
+  function addMarker(marker: CaptureMarkerId): void {
+    if (procedureRef.current !== 'three-cup' || !runningRef.current) return
+    const defined = markerDefinition(marker)
+    if (!defined) return
+    const record: CaptureMarkerRecord = {
+      id: `marker_${crypto.randomUUID()}`,
+      marker,
+      observationTimestamp: Math.max(0, lastElapsedRef.current),
+      cups: [...defined.cups],
+      label: defined.label,
+    }
+    setMarkers((items) => [...items, record])
+    monitorSaver().saveMarker(record)
+  }
+
+  function downloadRecording(): void {
+    if (!localRecording) return
+    downloadBlob(localRecording, 'three-cup-recording.webm')
+  }
+
+  function downloadAnnotations(): void {
+    const document = annotationDocument({
+      sessionId: liveRef.current.sessionId,
+      markers,
+      runStartOffsetMs: runOffsetRef.current,
+      durationMs: recordingDurationRef.current,
+      mediaId: recordingMediaId.current,
+    })
+    downloadBlob(new Blob([JSON.stringify(document, null, 2)], { type: 'application/json' }), 'three-cup-annotations.json')
+  }
+
+  function startClockCheck(): void {
+    if (runningRef.current) return
+    setProcedureMode('three-cup')
+    setRecordThisRun(true)
+    const canvas = document.createElement('canvas')
+    canvas.width = 640
+    canvas.height = 360
+    const context = canvas.getContext('2d')
+    if (!context) return
+    releaseCamera(true)
+    const stream = canvas.captureStream(15)
+    streamRef.current = stream
+    const video = videoRef.current
+    if (video) {
+      video.srcObject = stream
+      void video.play().catch(() => undefined)
+    }
+    inputKindRef.current = 'live'
+    setInputKind('live')
+    setFileName('')
+    setCameraPhase('live')
+    setCameraMessage('Timestamp check. The changing numbers are drawn into the recording. This is not a cup or well reading.')
+    const started = performance.now()
+    const draw = () => {
+      const seconds = (performance.now() - started) / 1000
+      context.fillStyle = '#0f172a'
+      context.fillRect(0, 0, canvas.width, canvas.height)
+      context.fillStyle = '#f8fafc'
+      context.font = '28px sans-serif'
+      context.fillText('Timestamp check', 36, 70)
+      context.font = '72px sans-serif'
+      context.fillText(`${seconds.toFixed(2)} s`, 36, 190)
+      clockFrameRef.current = window.requestAnimationFrame(draw)
+    }
+    clockFrameRef.current = window.requestAnimationFrame(draw)
+    startRun()
+    window.setTimeout(() => {
+      if (clockFrameRef.current != null) window.cancelAnimationFrame(clockFrameRef.current)
+      clockFrameRef.current = null
+      completeRun()
+    }, 12000)
   }
 
   function tickSynthetic(): void {
@@ -1260,11 +1374,12 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
     const startedAtIso = new Date().toISOString()
     const monitor = liveRef.current
     if (monitor.sourceKind === 'live' || monitor.sourceKind === 'prerecorded' || monitor.sourceKind === 'synthetic') {
+      const capture = procedureRef.current === 'three-cup'
       monitorSaver().open({
         sessionId: monitor.sessionId,
         sourceKind: monitor.sourceKind,
         startedAtIso,
-        preparedProtocol: preparedRef.current,
+        ...(capture ? { procedureId: THREE_CUP_PROCEDURE_ID } : { preparedProtocol: preparedRef.current }),
       })
     }
     callbacksRef.current.onRunStart({
@@ -1565,6 +1680,14 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
     localPhase,
     localElapsedMs,
     recording,
+    procedureMode,
+    setProcedureMode,
+    markers,
+    addMarker,
+    localRecording,
+    downloadRecording,
+    downloadAnnotations,
+    startClockCheck,
     recordThisRun,
     setRecordThisRun,
     attachSourceFile,
@@ -1624,6 +1747,15 @@ export function useVisionSession(callbacks: Callbacks, preparedProtocol: Prepare
     reportMissedObservation: reportMissed,
     continueAfterCorrection: continueAfter,
   }
+}
+
+function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(url)
 }
 
 function sourceKindFrom(kind: VisionSession['inputKind']): LiveSourceKind {

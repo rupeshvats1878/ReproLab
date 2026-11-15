@@ -395,7 +395,11 @@ function RecordedSummary({ run }: { run: NonNullable<StoredExperiment['runRecord
   const reports = run.humanReports ?? []
   const evidence = run.evidence ?? []
   const shared = evidence.find((item) => item.available && item.sharedMediaId)
-  const source = run.sourceKind === 'synthetic'
+  const markers = run.humanMarkers ?? []
+  const capture = run.procedureId === 'three-cup-capture'
+  const source = capture
+    ? 'Three-cup capture. Automatic checks are not connected.'
+    : run.sourceKind === 'synthetic'
     ? 'Synthetic demonstration.'
     : run.sourceKind === 'prerecorded'
       ? 'Imported video.'
@@ -421,6 +425,20 @@ function RecordedSummary({ run }: { run: NonNullable<StoredExperiment['runRecord
       ) : (
         <p>No recording was included. A frame label is not footage.</p>
       )}
+      {capture ? <p>RED, GREEN, and BLUE are physical cup labels. Operator markers are not model judgments.</p> : null}
+      {markers.length > 0 ? (
+        <ul>
+          {markers.map((marker) => {
+            const moment = shared ? watchMomentMs(marker.observationTimestamp ?? -1, shared.runStartOffsetMs ?? 0, shared.durationMs) : null
+            return (
+              <li key={marker.id ?? marker.label}>
+                {marker.label}. Reported by a person at {marker.observationTimestamp} ms.
+                {moment == null ? '' : <button type="button" onClick={() => watch(moment)}>Watch moment</button>}
+              </li>
+            )
+          })}
+        </ul>
+      ) : null}
       {unresolved.length > 0 ? (
         <ul>
           {unresolved.map((alert) => {

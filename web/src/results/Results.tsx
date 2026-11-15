@@ -8,7 +8,7 @@ import {
   type MonitorSessionSummary,
   type RetrievedMonitor,
 } from '../monitor/saveSession.ts'
-import { LibraryClientError, publishRecordedSession, uploadSharedRecording } from '../library/client.ts'
+import { deleteUnreferencedRecording, LibraryClientError, publishRecordedSession, uploadSharedRecording } from '../library/client.ts'
 import { dropLocalMedia, readLocalMedia } from '../review/store.ts'
 import { formatByteSize, nextPublicationAction, SHARED_RECORDING_LIMIT_BYTES } from './publishChoice.ts'
 import { ReferenceLab } from '../reference/ReferenceLab.tsx'
@@ -282,12 +282,13 @@ function PublishRun({ session, onOpenLibrary }: { session: RetrievedMonitor; onO
   if (!session.finishedAt) {
     return <p>This session is not finished. Finish it in Monitor before publishing. Stopping the camera does not finish it.</p>
   }
-  if (!session.preparedProtocol) {
+  const capture = session.procedureId === 'three-cup-capture'
+  if (!session.preparedProtocol && !capture) {
     return <p>No approved procedure is stored with this session, so it cannot be published.</p>
   }
   const overLimit = localFile != null && localFile.size > SHARED_RECORDING_LIMIT_BYTES
   async function publish(confirmWithout: boolean, retryUpload = false) {
-    if (publishing || !session.preparedProtocol) return
+    if (publishing || (!session.preparedProtocol && session.procedureId !== 'three-cup-capture')) return
     const action = nextPublicationAction({
       includeRecording: includeRecording && !overLimit && localFile != null,
       uploadFailed: retryUpload ? false : uploadFailed,
@@ -298,13 +299,23 @@ function PublishRun({ session, onOpenLibrary }: { session: RetrievedMonitor; onO
     setError('')
     try {
       let shared: { evidenceId: string; mediaId: string } | null = null
+      let uploadedId: string | null = null
       if (action === 'upload') {
         if (!localFile || !recording?.id) throw new LibraryClientError('The local recording is not available.')
         const uploaded = await uploadSharedRecording(localFile)
+        uploadedId = uploaded.id
         shared = { evidenceId: recording.id, mediaId: uploaded.id }
       }
-      const saved = await publishRecordedSession(session.id, notes, shared)
-      if (shared && recording?.id) await dropLocalMedia(recording.id).catch(() => undefined)
+      let saved
+      try {
+        saved = await publishRecordedSession(session.id, notes, shared)
+      } catch (reason) {
+        if (uploadedId) await deleteUnreferencedRecording(uploadedId)
+        throw reason
+      }
+      const referenced = saved.runRecord?.evidence?.some((item) => item.sharedMediaId === uploadedId)
+      if (uploadedId && !referenced) await deleteUnreferencedRecording(uploadedId)
+      if (shared && referenced && recording?.id) await dropLocalMedia(recording.id).catch(() => undefined)
       setUploadFailed(false)
       setPublishedId(saved.id)
     } catch (reason: unknown) {
@@ -320,10 +331,13 @@ function PublishRun({ session, onOpenLibrary }: { session: RetrievedMonitor; onO
       <h4>Publish experiment</h4>
       <p>Finished does not mean the run succeeded. Unresolved issues stay in the publication.</p>
       {synthetic ? <p>Synthetic demonstration. Not a camera recording.</p> : null}
-      <p>{session.preparedProtocol.title}, version {session.preparedProtocol.version}. {sourceLabel(session.sourceKind)}.</p>
-      <ol>
-        {session.preparedProtocol.steps.map((instruction) => <li key={instruction}>{instruction}</li>)}
-      </ol>
+      {capture ? <p>Three-cup capture. Automatic checks are not connected. Markers are reports from a person, not camera judgments.</p> : null}
+      <p>{capture ? 'Three-cup capture' : `${session.preparedProtocol?.title}, version ${session.preparedProtocol?.version}`}. {sourceLabel(session.sourceKind)}.</p>
+      {session.preparedProtocol ? (
+        <ol>
+          {session.preparedProtocol.steps.map((instruction) => <li key={instruction}>{instruction}</li>)}
+        </ol>
+      ) : null}
       <p>{session.observations?.length ?? 0} recorded observations. {alerts.length} deviations. {corrections} observed corrections. {reports.length} human reports.</p>
       {unresolved.length > 0 ? (
         <ul>

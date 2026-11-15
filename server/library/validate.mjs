@@ -298,14 +298,22 @@ const MEDIA_KINDS = ['camera_recording', 'prerecorded_source', 'final_plate_imag
 const MONITOR_UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 const MAX_CLOCK_MS = 86_400_000
 
+const PROCEDURE_IDS = ['six-well-colored-water', 'three-cup-capture']
+
 export function validateMonitorSession(body) {
   plainObject(body, 'body')
-  exactKeys(body, optionalKeys(body, ['sessionId', 'sourceKind'], ['startedAtIso', 'preparedProtocol']), 'body')
+  exactKeys(body, optionalKeys(body, ['sessionId', 'sourceKind'], ['startedAtIso', 'preparedProtocol', 'procedureId']), 'body')
   if (!MONITOR_SOURCES.includes(body.sourceKind)) throw new LibraryError('invalid', 'sourceKind')
+  const procedureId = body.procedureId === undefined ? 'six-well-colored-water' : body.procedureId
+  if (!PROCEDURE_IDS.includes(procedureId)) throw new LibraryError('invalid', 'procedureId')
+  if (procedureId === 'three-cup-capture' && body.preparedProtocol !== undefined) {
+    throw new LibraryError('invalid', 'preparedProtocol')
+  }
   return {
     sessionId: prefixedId(body.sessionId, 'session_', 'sessionId'),
     sourceKind: body.sourceKind,
     startedAtIso: body.startedAtIso === undefined ? null : monitorInstant(body.startedAtIso),
+    procedureId,
     preparedProtocol: body.preparedProtocol === undefined ? null : preparedProtocol(body.preparedProtocol),
   }
 }
@@ -340,8 +348,30 @@ export function validateMonitorEvent(body) {
   if (body.type === 'alert_update') return alertUpdateEvent(body)
   if (body.type === 'evidence') return evidenceEvent(body)
   if (body.type === 'human_report') return humanReportEvent(body)
+  if (body.type === 'human_marker') return humanMarkerEvent(body)
   if (body.type === 'block') return blockEvent(body)
   throw new LibraryError('invalid', 'type')
+}
+
+const CAPTURE_MARKERS = {
+  green_streaks: { cups: ['GREEN'], label: 'Visible streaks in GREEN' },
+  transfer_red_to_blue: { cups: ['RED', 'BLUE'], label: 'RED → BLUE transfer' },
+  transfer_green_to_red: { cups: ['GREEN', 'RED'], label: 'GREEN → RED transfer' },
+  transfer_green_to_blue: { cups: ['GREEN', 'BLUE'], label: 'GREEN → BLUE transfer' },
+}
+
+function humanMarkerEvent(body) {
+  exactKeys(body, ['id', 'type', 'marker', 'observationTimestamp'], 'body')
+  const marker = CAPTURE_MARKERS[body.marker]
+  if (!marker) throw new LibraryError('invalid', 'marker')
+  return {
+    id: prefixedId(body.id, 'marker_', 'id'),
+    type: body.type,
+    marker: body.marker,
+    cups: [...marker.cups],
+    label: marker.label,
+    observationTimestamp: clockMs(body.observationTimestamp, 'observationTimestamp'),
+  }
 }
 
 function observationEvent(body) {

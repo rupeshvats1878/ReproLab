@@ -31,7 +31,7 @@ export function createLibraryServer({ store, mediaLimit = SHARED_MEDIA_LIMIT_BYT
 async function route(req, res, store, mediaLimit) {
   const origin = req.headers.origin
   if (localDevOrigin(origin)) res.setHeader('Access-Control-Allow-Origin', origin)
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'content-type')
   res.setHeader('Vary', 'Origin')
   if (req.method === 'OPTIONS') {
@@ -165,9 +165,14 @@ async function route(req, res, store, mediaLimit) {
   }
 
   const mediaPath = /^\/media\/(media_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(url.pathname)
-  if (req.method === 'GET' && mediaPath) {
+  if (mediaPath && (req.method === 'GET' || req.method === 'DELETE')) {
+    const mediaId = `media_${mediaPath[1].slice('media_'.length).toLowerCase()}`
     await assertDatabase(store)
-    const file = await store.openMedia(`media_${mediaPath[1].slice('media_'.length).toLowerCase()}`)
+    if (req.method === 'DELETE') {
+      send(res, 200, await store.deleteMedia(mediaId))
+      return
+    }
+    const file = await store.openMedia(mediaId)
     await sendMedia(req, res, file)
     return
   }

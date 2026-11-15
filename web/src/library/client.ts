@@ -40,6 +40,7 @@ export interface RunAlert {
 }
 
 export interface RunRecord {
+  procedureId?: string
   sourceKind?: string
   startedAtIso?: string | null
   finishedAt?: string | null
@@ -48,6 +49,7 @@ export interface RunRecord {
   observations?: Array<{ id?: string; observationTimestamp?: number }>
   alerts?: RunAlert[]
   humanReports?: Array<{ id?: string; wellId?: string; humanActionKind?: string; humanNote?: string; humanReportedState?: string | null; observationTimestamp?: number }>
+  humanMarkers?: Array<{ id?: string; marker?: string; cups?: string[]; label?: string; observationTimestamp?: number; provenance?: string }>
   evidence?: RunEvidence[]
 }
 
@@ -148,6 +150,17 @@ export async function publishRecordedSession(
     method: 'POST',
     body,
   }))
+}
+
+export async function deleteUnreferencedRecording(mediaId: string): Promise<boolean> {
+  let response: Response
+  try {
+    response = await fetch(`${LIBRARY}/media/${encodeURIComponent(mediaId)}`, { method: 'DELETE' })
+  } catch {
+    return false
+  }
+  if (response.status === 409) return false
+  return response.ok || response.status === 404
 }
 
 export async function uploadSharedRecording(blob: Blob): Promise<{ id: string; byteLength: number; mimeType: string }> {

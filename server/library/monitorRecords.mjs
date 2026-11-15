@@ -2,15 +2,23 @@ import { LibraryError } from './errors.mjs'
 
 export const SIX_WELL_ORDER = ['A1', 'A2', 'A3', 'B1', 'B2', 'B3']
 export const MONITOR_PROTOCOL_ID = 'six-well-colored-water'
+export const THREE_CUP_PROCEDURE_ID = 'three-cup-capture'
 
 const CAMERA_TYPES = new Set(['observation', 'alert', 'alert_update', 'evidence'])
+const SIX_WELL_EVENT_TYPES = new Set(['observation', 'alert', 'alert_update', 'human_report'])
+
+export function procedureIdOf(session) {
+  return session?.procedureId === THREE_CUP_PROCEDURE_ID ? THREE_CUP_PROCEDURE_ID : MONITOR_PROTOCOL_ID
+}
 
 export function monitorSession(input, recordedAt) {
+  const procedureId = input.procedureId === THREE_CUP_PROCEDURE_ID ? THREE_CUP_PROCEDURE_ID : MONITOR_PROTOCOL_ID
   return {
     id: input.sessionId,
     sourceKind: input.sourceKind,
-    protocolId: MONITOR_PROTOCOL_ID,
-    protocolOrder: [...SIX_WELL_ORDER],
+    procedureId,
+    protocolId: procedureId,
+    protocolOrder: procedureId === THREE_CUP_PROCEDURE_ID ? ['RED', 'GREEN', 'BLUE'] : [...SIX_WELL_ORDER],
     startedAtIso: input.startedAtIso,
     preparedProtocol: input.preparedProtocol ?? null,
     recordedAt,
@@ -44,7 +52,9 @@ export function appendMonitorEvent(session, input, recordedAt) {
 }
 
 export function sameMonitorIdentity(existing, input) {
+  const incomingProcedure = input.procedureId === THREE_CUP_PROCEDURE_ID ? THREE_CUP_PROCEDURE_ID : MONITOR_PROTOCOL_ID
   return existing.sourceKind === input.sourceKind
+    && procedureIdOf(existing) === incomingProcedure
     && (existing.startedAtIso ?? null) === (input.startedAtIso ?? null)
     && JSON.stringify(existing.preparedProtocol ?? null) === JSON.stringify(input.preparedProtocol ?? null)
 }
@@ -58,6 +68,7 @@ export function presentMonitorSummary(session) {
     recordedAt: session.recordedAt ?? null,
     blockedReason: session.blockedReason ?? null,
     finishedAt: session.finishedAt ?? null,
+    procedureId: procedureIdOf(session),
     preparedProtocol: protocol
       ? { id: protocol.id, version: protocol.version, title: protocol.title }
       : null,
@@ -70,14 +81,22 @@ export function presentMonitorSession(session) {
     ...structuredClone(alert),
     updates: events.filter((event) => event.type === 'alert_update' && event.alertId === alert.id).map((event) => structuredClone(event)),
   }))
+  const procedureId = procedureIdOf(session)
   return {
     id: session.id,
     sourceKind: session.sourceKind,
-    protocol: {
-      id: MONITOR_PROTOCOL_ID,
-      order: [...SIX_WELL_ORDER],
-      note: 'Only the fixed six-well order A1, A2, A3, B1, B2, B3 is stored. A published Prepare protocol is not a monitor protocol.',
-    },
+    procedureId,
+    protocol: procedureId === THREE_CUP_PROCEDURE_ID
+      ? {
+          id: THREE_CUP_PROCEDURE_ID,
+          order: ['RED', 'GREEN', 'BLUE'],
+          note: 'Capture only. Automatic checks are not connected. RED, GREEN, and BLUE are physical cup labels.',
+        }
+      : {
+          id: MONITOR_PROTOCOL_ID,
+          order: [...SIX_WELL_ORDER],
+          note: 'Only the fixed six-well order A1, A2, A3, B1, B2, B3 is stored. A published Prepare protocol is not a monitor protocol.',
+        },
     startedAtIso: session.startedAtIso ?? null,
     preparedProtocol: session.preparedProtocol ?? null,
     recordedAt: session.recordedAt,
@@ -88,11 +107,15 @@ export function presentMonitorSession(session) {
     alerts,
     evidence: events.filter((event) => event.type === 'evidence'),
     humanReports: events.filter((event) => event.type === 'human_report'),
+    humanMarkers: events.filter((event) => event.type === 'human_marker'),
   }
 }
 
 function buildEvent(session, events, input, recordedAt) {
-  const provenance = input.type === 'human_report' ? 'human' : session.sourceKind
+  const capture = procedureIdOf(session) === THREE_CUP_PROCEDURE_ID
+  if (capture && SIX_WELL_EVENT_TYPES.has(input.type)) throw new LibraryError('invalid_state')
+  if (!capture && input.type === 'human_marker') throw new LibraryError('invalid_state')
+  const provenance = input.type === 'human_report' || input.type === 'human_marker' ? 'human' : session.sourceKind
   if (input.type === 'alert_update' || input.type === 'human_report') {
     const alert = events.find((event) => event.type === 'alert' && event.id === input.alertId)
     if (!alert) throw new LibraryError('invalid', 'alertId')
