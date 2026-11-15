@@ -83,3 +83,15 @@ Upload one binary finalized clip to `/live-camera/sessions/<server-session-id>/c
 Result contains `schemaVersion: reprolab-live-window/v1`, `dataKind: model`, server session/window IDs, hashes, frozen protocol ID, source offset, measured times, call count, evidence reference and the validated `three-cup-gemini-observation/v0.1` envelope. For a **mocked** clip-relative 500–1000 ms GREEN → BLUE event, Python returns 4500–5000 ms; frontend **does not add 4000 again**. Existing rules flag possible wrong order for Procedure B and possible extra transfer for Procedure A. A single event never establishes full compliance.
 
 Fallback: disable automatic analysis and use **Analyze recent clip**. If camera/provider access is unavailable, use the clearly labeled existing Analysis Replay. Do not call replay a live detection.
+
+## Color-aware prompt update (Nov 15)
+
+The user authorized testing existing recordings with real Gemini calls. Nine calls compared the old prompt, a rim-marker-only clarification (not selected), and a color-aware prompt. All calls used neutral observations without expected transfers/order, static 2 fps, 640×360 clips, low thinking and 4096 output tokens. Only eight-second excerpts were sent. Originals were unchanged; all excerpts, raw responses and detailed results stay ignored under `server/live-camera/private/prompt-eval/`.
+
+The selected prompt reports optional `sourceLiquidColor` / `destinationLiquidColor` independently from persistent `sourceCupId` / `destinationCupId`. Written words are not required. Rim markers or readable labels can identify physical cups, but current liquid color cannot silently substitute for stable identity. Unknown cup IDs still produce visible event cards and human-review findings. UI headlines display visible liquid colors, with physical IDs explicitly underneath. Older observations without these optional fields remain supported.
+
+Five genuine selected-prompt checks: each of four pour excerpts returned one transfer; the no-pour excerpt returned none. Reported visible pairs were green/red, green/blue, red/blue and blue/orange; the blue/orange event separately identified physical cups BLUE/RED. Complete physical IDs were returned in two of four pour excerpts; the other two retained uncertainty. Measured model latencies were 3.695, 3.985, 4.529, 6.232 and 3.603 seconds. This small selected sample is not an accuracy benchmark, and these values are not whole-app latency. The discarded marker-only prompt made one known excerpt less identifiable.
+
+The original two-second live setting and skipped-busy-window policy are unchanged. Eight-second excerpt success does not validate two-second pours or eliminate coverage gaps. Six-second capture is available for more context. No automatic replay, calibration guesses, expected-answer injection, or confident identity from liquid color was added.
+
+Verification for this update: 167 frontend tests, 38 Python tests and 19 live bridge tests passed; production build passed. Private model outputs/frames/videos were not committed.

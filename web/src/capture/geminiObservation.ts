@@ -11,6 +11,8 @@ const STATUSES = ['observed', 'unclear', 'no_transfer', 'unavailable'] as const
 const EVENT_STATUSES = ['observed', 'unclear'] as const
 
 export interface GeminiTransferHypothesis {
+  sourceLiquidColor?: string
+  destinationLiquidColor?: string
   sourceCupId: string
   destinationCupId: string
   eventStartMs: number
@@ -138,6 +140,8 @@ function parseEvent(
     ok: true,
     uncertain: event.observationStatus === 'unclear' || event.sourceCupId === 'unknown' || event.destinationCupId === 'unknown' || evidenceOutsideEvent,
     event: {
+      sourceLiquidColor: liquidColor(event.sourceLiquidColor),
+      destinationLiquidColor: liquidColor(event.destinationLiquidColor),
       sourceCupId: event.sourceCupId,
       destinationCupId: event.destinationCupId,
       eventStartMs: start,
@@ -168,4 +172,8 @@ function isFiniteTime(value: unknown): value is number {
 function cloneRaw(payload: unknown): unknown {
   if (!payload || typeof payload !== 'object') return null
   return structuredClone(payload)
+}
+
+function liquidColor(value: unknown): string {
+  return typeof value === 'string' && ['red','green','blue','yellow','orange','purple','brown','clear','mixed','other','unknown'].includes(value) ? value : 'unknown'
 }

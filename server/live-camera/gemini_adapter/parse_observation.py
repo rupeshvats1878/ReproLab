@@ -103,6 +103,8 @@ def _event(raw, duration_ms, warnings):
     return {
         "sourceCupId": source,
         "destinationCupId": destination,
+        "sourceLiquidColor": _liquid_color(raw.get("sourceLiquidColor")),
+        "destinationLiquidColor": _liquid_color(raw.get("destinationLiquidColor")),
         "eventStartMs": start,
         "eventEndMs": end,
         "evidenceTimestampsMs": evidence,
@@ -201,3 +203,9 @@ def _strip_fence(text):
     if lines and lines[-1].startswith("```"):
         lines = lines[:-1]
     return "\n".join(lines).strip()
+
+
+def _liquid_color(value):
+    allowed = {"red", "green", "blue", "yellow", "orange", "purple", "brown", "clear", "mixed", "other", "unknown"}
+    normalized = value.strip().lower() if isinstance(value, str) else "unknown"
+    return normalized if normalized in allowed else "unknown"

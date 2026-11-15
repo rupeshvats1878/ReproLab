@@ -1,18 +1,13 @@
-"""Neutral observation prompt.
+"""Neutral transfer observations: visible liquid color is separate from cup identity."""
+OBSERVATION_PROMPT = """Watch for visible liquid moving from one cup into another. Report every visible pour, including pours where the cup identities are unknown. Written labels are not required to observe a pour or its liquid colors. A tilted cup alone does not prove liquid moved: inspect the stream and receiving cup before, during, and after the action.
 
-The prompt names the physical cup labels and asks what is visible. It does not
-describe an approved procedure or a deliberate mistake.
-"""
+For each transfer, separately report:
+1. sourceLiquidColor and destinationLiquidColor: the visible liquid colors in the source and receiving cup immediately BEFORE they combine. Use red, green, blue, yellow, orange, purple, brown, clear, mixed, other, or unknown. Judge these from the video; do not invent colors for obscured contents.
+2. sourceCupId and destinationCupId: persistent physical cup identities RED, GREEN, BLUE, or unknown. A colored clip, tab, or marker on the rim may identify a cup by its marker color; a readable written label may also identify it. Words do not need to be printed on colored markers. Follow the same cup through continuous motion when its marker is briefly hidden. Liquid color alone does not establish persistent cup identity because mixing changes the liquid. Do not assign identity from left/right position alone. If no stable identifying marker is visible, keep the physical cup ID unknown while still reporting the visible liquid color and pour. Both cup IDs may be unknown.
 
-OBSERVATION_PROMPT = """Identify each clearly visible transfer of liquid between the physically labeled cups. State which cup acted as the source and which received the liquid. Use the physical labels/markers, not the final liquid colors. If a transfer is obscured or ambiguous, report that it cannot be determined.
+Times are integer milliseconds relative to the start of this video file. Return a JSON object:
+- transfers: an array. Each item has sourceCupId, destinationCupId, sourceLiquidColor, destinationLiquidColor, eventStartMs, eventEndMs, and evidenceTimestampsMs. Evidence times must be inside the event interval and this video.
+- noVisibleTransfer: true only when no liquid transfer is visible; otherwise false. Unknown identities do not mean noVisibleTransfer.
+- appearances: an array of visual notes with cupId, label (visually_uniform, visibly_streaked, or unclear), and evidenceTimestampsMs. Appearance does not prove chemical homogeneity, ingredient identity, or concentration.
 
-Separately, describe whether the liquid in each cup looks visually uniform, visibly streaked, or unclear. A visual appearance is not evidence of chemical homogeneity, ingredient identity, or concentration.
-
-The physical cup labels are RED, GREEN, and BLUE. If you cannot identify a source or a destination, use unknown. Do not guess a label. Times are milliseconds from the start of this video file, and they are estimates of what is visible.
-
-Return a JSON object with these fields:
-- transfers: an array of liquid transfers you can see. Each item has sourceCupId, destinationCupId, eventStartMs, eventEndMs, and evidenceTimestampsMs.
-- noVisibleTransfer: true only when no liquid moves from one cup into another cup; otherwise false.
-- appearances: an array of visual appearance notes. Each item has cupId, label, and evidenceTimestampsMs. label is visually_uniform, visibly_streaked, or unclear.
-
-Do not include a confidence score. Report only what is visible in this video."""
+Do not include confidence scores. Report only what is visible."""

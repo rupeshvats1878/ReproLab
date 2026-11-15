@@ -8,7 +8,7 @@ export interface WindowResult {
   processingMs: number; receivedAtMs: number; inputSha256: string; clipSha256: string; evidenceRef: string | null
   observation: unknown; coverageComplete: false
 }
-export interface LiveEvent extends RecordingEvent { windows: string[] }
+export interface LiveEvent extends RecordingEvent { sourceLiquidColor?:string; destinationLiquidColor?:string; windows: string[] }
 export interface LiveState {
   id: string; protocolId: CaptureProtocolId; stopped: boolean; lastIndex: number; events: LiveEvent[]
   windows: WindowResult[]; message: string; reviews: Record<string, 'confirmed'|'rejected'>
@@ -26,9 +26,9 @@ export function acceptWindow(state:LiveState,result:WindowResult):LiveState {
   for(const [index,e] of review.events.entries()) {
     // Only overlapping intervals from distinct windows can denote the same pour.
     // Adjacent/repeated pours remain independent observations.
-    const existing=events.find(x=>x.source===e.sourceCupId && x.destination===e.destinationCupId && x.startMs<e.eventEndMs && e.eventStartMs<x.endMs && !x.windows.includes(result.windowId))
+    const existing=events.find(x=>x.source===e.sourceCupId && x.destination===e.destinationCupId && x.sourceLiquidColor===e.sourceLiquidColor && x.destinationLiquidColor===e.destinationLiquidColor && x.startMs<e.eventEndMs && e.eventStartMs<x.endMs && !x.windows.includes(result.windowId))
     if(existing) { existing.windows.push(result.windowId); continue }
-    events.push({id:`${result.windowId}:${index}`,source:e.sourceCupId,destination:e.destinationCupId,startMs:e.eventStartMs,endMs:e.eventEndMs,evidence:e.evidenceTimestampsMs,humanConfirmed:false,uncertain:review.state==='uncertain'||e.observationStatus!=='observed'||!e.evidenceTimestampsMs.length,windows:[result.windowId]})
+    events.push({sourceLiquidColor:e.sourceLiquidColor,destinationLiquidColor:e.destinationLiquidColor,id:`${result.windowId}:${index}`,source:e.sourceCupId,destination:e.destinationCupId,startMs:e.eventStartMs,endMs:e.eventEndMs,evidence:e.evidenceTimestampsMs,humanConfirmed:false,uncertain:review.state==='uncertain'||e.observationStatus!=='observed'||!e.evidenceTimestampsMs.length,windows:[result.windowId]})
   }
   events.sort((a,b)=>a.startMs-b.startMs)
   return {...state,lastIndex:result.index,events,windows:[...state.windows,result],message:review.state==='no-transfer'?'No visible transfer reported in this window. This does not establish compliance.':review.state==='uncertain'?'Unclear observation — human review required.':'Genuine model hypotheses received — human review required.'}

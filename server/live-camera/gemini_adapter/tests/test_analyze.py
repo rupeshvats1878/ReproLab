@@ -103,11 +103,12 @@ class ObservationPromptTest(unittest.TestCase):
     def test_prompt_asks_for_visible_transfers_without_the_expected_sequence(self):
         lowered = OBSERVATION_PROMPT.lower()
         self.assertIn(
-            "identify each clearly visible transfer of liquid between the physically labeled cups.",
+            "report every visible pour, including pours where the cup identities are unknown.",
             lowered,
         )
-        self.assertIn("if a transfer is obscured or ambiguous", lowered)
-        self.assertIn("visibly streaked", lowered)
+        self.assertIn("do not invent colors for obscured contents", lowered)
+        self.assertIn("liquid color alone does not establish persistent cup identity", lowered)
+        self.assertIn("visibly_streaked", lowered)
         self.assertIn("chemical homogeneity", lowered)
         for fragment in FORBIDDEN_PROMPT_FRAGMENTS:
             self.assertNotIn(fragment, lowered)

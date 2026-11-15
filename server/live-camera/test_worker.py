@@ -18,4 +18,15 @@ class WorkerTest(unittest.TestCase):
         self.assertNotIn('BLUE → RED',body['input'][1]['text'])
         self.assertNotIn('GREEN → BLUE',body['input'][1]['text'])
 
+class ColorObservationTest(unittest.TestCase):
+    def test_colors_do_not_promote_unknown_cup_identity(self):
+        import json
+        from gemini_adapter.parse_observation import parse_observation_text
+        result=parse_observation_text(json.dumps({'transfers':[{'sourceCupId':'unknown','destinationCupId':'unknown','sourceLiquidColor':'Green','destinationLiquidColor':'RED','eventStartMs':100,'eventEndMs':900,'evidenceTimestampsMs':[500]}],'noVisibleTransfer':False,'appearances':[]}),1000)
+        event=result['events'][0]
+        self.assertEqual(event['sourceLiquidColor'],'green')
+        self.assertEqual(event['destinationLiquidColor'],'red')
+        self.assertEqual(event['sourceCupId'],'unknown')
+        self.assertEqual(event['observationStatus'],'unclear')
+
 if __name__=='__main__': unittest.main()
