@@ -49,7 +49,7 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
   function revealReplayControls() {
     setReplayControlsRecent(true)
     if (replayControlsTimer.current) clearTimeout(replayControlsTimer.current)
-    replayControlsTimer.current = setTimeout(() => setReplayControlsRecent(false), 2500)
+    replayControlsTimer.current = setTimeout(() => setReplayControlsRecent(false), 1000)
   }
   useEffect(() => {
     revealReplayControls()
