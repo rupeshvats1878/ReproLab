@@ -126,7 +126,7 @@ function parseEvent(
   }
   if (event.needsHumanVerification !== true) return { ok: false, reason: 'malformed' }
   const evidence = event.evidenceTimestampsMs as number[]
-  if (event.sourceCupId === event.destinationCupId) return { ok: false, reason: 'same-cups' }
+  if (event.sourceCupId !== 'unknown' && event.sourceCupId === event.destinationCupId) return { ok: false, reason: 'same-cups' }
   if (start < 0 || end < 0 || evidence.some((item) => item < 0)) return { ok: false, reason: 'negative-time' }
   if (end < start) return { ok: false, reason: 'reversed-interval' }
   if (end === start) return { ok: false, reason: 'zero-length' }
