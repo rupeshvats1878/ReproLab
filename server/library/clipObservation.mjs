@@ -3,7 +3,7 @@ import { LibraryError } from './errors.mjs'
 export const CLIP_OBSERVATION_SCHEMA = 'three-cup-gemini-observation/v0.1'
 export const CLIP_LIMIT_MS = 60_000
 export const CLIP_LIMIT_BYTES = 14 * 1024 * 1024
-export const ADAPTER_COMMIT = 'a34c5a6b9dc29c5bdf9f8f382c48755c98c3d1c6'
+export const ADAPTER_COMMIT = '119e048931069b817eb7e3a14b4f6d860a050ef5'
 
 const SESSION_ID = /^[\w][\w.-]{0,159}$/
 const REQUEST_ID = /^request_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -11,6 +11,15 @@ const CUPS = new Set(['RED', 'GREEN', 'BLUE', 'unknown'])
 const STATUSES = new Set(['observed', 'unclear', 'no_transfer', 'unavailable'])
 const APPEARANCE_LABELS = new Set(['visually_uniform', 'visibly_streaked', 'unclear'])
 const REQUEST_KEYS = ['sessionId', 'videoId', 'requestId', 'sourceOffsetMs', 'clipStartMs', 'clipEndMs']
+const IMPORT_KEYS = [...REQUEST_KEYS, 'document', 'monitorSessionId', 'monitorVideoId']
+export const VERIFIED_CLIP = {
+  path: 'C:/Users/rupes/Projects/labbench-codex-offline/server/three-cup-offline/local/integration/recording-1-review-84000-92000.mp4',
+  sessionId: 'local-review-recording-1',
+  videoId: 'recording-1',
+  sourceOffsetMs: 84_000,
+  videoDurationMs: 8_000,
+  bytes: 4_065_561,
+}
 
 const latestRequest = new Map()
 
@@ -40,6 +49,15 @@ export function remoteGatesOpen(env) {
   return enabled(env.THREE_CUP_GEMINI_VIDEO_ENABLED) && String(env.THREE_CUP_CLIP_AUTHORIZED ?? '').trim() === '1'
 }
 
+export function importAdapterReview(body) {
+  const imported = validateImport(body)
+  latestRequest.set(requestKey(imported.sessionId, imported.videoId), imported.requestId)
+  if (imported.document.videoDurationMs !== imported.clipEndMs - imported.clipStartMs) {
+    return tagged(rejectedResult(imported, 'clip-bounds', imported.document), imported.document)
+  }
+  return tagged(acceptAdapterResult(imported, imported.document), imported.document)
+}
+
 export function adapterArguments(job) {
   if (typeof job.clipPath !== 'string' || job.clipPath.trim() === '') {
     throw new LibraryError('invalid', 'clipPath')
@@ -65,9 +83,9 @@ export function acceptAdapterResult(job, document, responseRequestId) {
   if (document.needsHumanVerification !== true) return rejectedResult(job, 'malformed', document)
   if (document.sourceOffsetMs !== job.sourceOffsetMs) return rejectedResult(job, 'malformed', document)
   if (!Array.isArray(document.events) || !Array.isArray(document.appearances ?? [])) return rejectedResult(job, 'malformed', document)
-  const durationMs = document.videoDurationMs
-  if (durationMs != null && (!Number.isInteger(durationMs) || durationMs < 0)) return rejectedResult(job, 'malformed', document)
-  const window = clipMediaWindow(job.sourceOffsetMs, durationMs)
+  const requestedDuration = job.clipEndMs - job.clipStartMs
+  if (document.videoDurationMs !== requestedDuration) return rejectedResult(job, 'clip-bounds', document)
+  const window = clipMediaWindow(job.clipStartMs, requestedDuration)
   const events = []
   for (const [index, item] of document.events.entries()) {
     const parsed = parseEvent(item, window)
@@ -116,6 +134,35 @@ export function acceptAdapterResult(job, document, responseRequestId) {
   })
 }
 
+function validateImport(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) throw new LibraryError('invalid', 'body')
+  const keys = Object.keys(body)
+  if (keys.length !== IMPORT_KEYS.length || IMPORT_KEYS.some((key) => !keys.includes(key))) {
+    throw new LibraryError('invalid', 'body')
+  }
+  if (!body.document || typeof body.document !== 'object' || Array.isArray(body.document)) {
+    throw new LibraryError('invalid', 'document')
+  }
+  if (typeof body.monitorSessionId !== 'string' || !SESSION_ID.test(body.monitorSessionId)) {
+    throw new LibraryError('invalid', 'monitorSessionId')
+  }
+  if (!validVideoId(body.monitorVideoId)) throw new LibraryError('invalid', 'monitorVideoId')
+  const job = validateClipRequest({
+    sessionId: body.sessionId,
+    videoId: body.videoId,
+    requestId: body.requestId,
+    sourceOffsetMs: body.sourceOffsetMs,
+    clipStartMs: body.clipStartMs,
+    clipEndMs: body.clipEndMs,
+  })
+  return {
+    ...job,
+    document: body.document,
+    monitorSessionId: body.monitorSessionId,
+    monitorVideoId: body.monitorVideoId,
+  }
+}
+
 function validateClipRequest(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new LibraryError('invalid', 'body')
   const keys = Object.keys(body)
@@ -123,9 +170,7 @@ function validateClipRequest(body) {
     throw new LibraryError('invalid', 'body')
   }
   if (typeof body.sessionId !== 'string' || !SESSION_ID.test(body.sessionId)) throw new LibraryError('invalid', 'sessionId')
-  if (typeof body.videoId !== 'string' || body.videoId.trim() === '' || body.videoId.length > 160 || /[\u0000-\u001F]/.test(body.videoId)) {
-    throw new LibraryError('invalid', 'videoId')
-  }
+  if (!validVideoId(body.videoId)) throw new LibraryError('invalid', 'videoId')
   if (typeof body.requestId !== 'string' || !REQUEST_ID.test(body.requestId)) throw new LibraryError('invalid', 'requestId')
   for (const field of ['sourceOffsetMs', 'clipStartMs', 'clipEndMs']) {
     if (!Number.isInteger(body[field]) || body[field] < 0) throw new LibraryError('invalid', field)
@@ -204,6 +249,21 @@ function clipMediaWindow(sourceOffsetMs, durationMs) {
 function insideWindow(value, window) {
   if (!window) return false
   return value >= window.startMs && value <= window.endMs
+}
+
+function validVideoId(value) {
+  return typeof value === 'string' && value.trim() !== '' && value.length <= 160 && !/[\u0000-\u001F]/.test(value)
+}
+
+function provenanceOf(document) {
+  if (!document || typeof document !== 'object' || Array.isArray(document)) return 'adapter'
+  const modelId = typeof document.modelId === 'string' ? document.modelId : ''
+  if (document.synthetic === true || modelId.toLowerCase().startsWith('synthetic')) return 'synthetic'
+  return 'adapter'
+}
+
+function tagged(review, document) {
+  return { ...review, provenance: provenanceOf(document) }
 }
 
 function requestKey(sessionId, videoId) {
@@ -293,5 +353,14 @@ function result(job, fields) {
     appearances: fields.appearances,
     warnings: fields.warnings,
     raw: fields.raw,
+    provenance: fields.provenance ?? 'adapter',
+    monitorSessionId: job.monitorSessionId ?? null,
+    monitorVideoId: job.monitorVideoId ?? null,
+    matchesOpenReview: Boolean(
+      job.monitorSessionId
+      && job.monitorVideoId
+      && job.monitorSessionId === job.sessionId
+      && job.monitorVideoId === job.videoId,
+    ),
   }
 }

@@ -1,4 +1,4 @@
-import { beginClipCheck, finishClipCheck } from './clipObservation.mjs'
+import { beginClipCheck, finishClipCheck, importAdapterReview } from './clipObservation.mjs'
 import { LibraryError } from './errors.mjs'
 import { SHARED_MEDIA_LIMIT_BYTES, mediaContentType } from './mediaLimit.mjs'
 import {
@@ -181,6 +181,11 @@ async function route(req, res, store, mediaLimit) {
   if (req.method === 'POST' && url.pathname === '/clip-observations') {
     const job = beginClipCheck(await readJson(req))
     send(res, 200, await finishClipCheck(job, { env: process.env }))
+    return
+  }
+
+  if (req.method === 'POST' && url.pathname === '/clip-observations/reviews') {
+    send(res, 200, importAdapterReview(await readJson(req)))
     return
   }
 

@@ -1,6 +1,8 @@
 {
   "synthetic": true,
-  "cursorCommit": "65f78a42b379fd2c4163bbfbc96a0754c035d64b",
+  "fixtureOriginalCommit": "65f78a42b379fd2c4163bbfbc96a0754c035d64b",
+  "reviewedCommit": null,
+  "layer": "parser",
   "results": [
     {
       "name": "valid_hypothesis_nonzero_offset",
@@ -566,6 +568,114 @@
           "error": null,
           "warnings": [],
           "videoDurationMs": 8000,
+          "samplingFps": 4,
+          "sourceOffsetMs": 84000,
+          "remoteCallMade": false
+        }
+      }
+    },
+    {
+      "name": "evidence_outside_event",
+      "expectedState": "uncertain",
+      "actualState": "uncertain",
+      "status": "passed",
+      "actual": {
+        "accepted": true,
+        "state": "uncertain",
+        "reason": "a cup is unknown or the model was unclear",
+        "events": [
+          {
+            "sourceCupId": "RED",
+            "destinationCupId": "BLUE",
+            "eventStartMs": 85000,
+            "eventEndMs": 87000,
+            "evidenceTimestampsMs": [
+              88000
+            ],
+            "observationStatus": "observed",
+            "needsHumanVerification": true
+          }
+        ],
+        "latencyMs": null,
+        "raw": {
+          "schemaVersion": "three-cup-gemini-observation/v0.1",
+          "sessionId": "synthetic-session",
+          "videoId": "synthetic-video",
+          "events": [
+            {
+              "sourceCupId": "RED",
+              "destinationCupId": "BLUE",
+              "eventStartMs": 85000,
+              "eventEndMs": 87000,
+              "evidenceTimestampsMs": [
+                88000
+              ],
+              "observationStatus": "observed",
+              "needsHumanVerification": true
+            }
+          ],
+          "appearances": [],
+          "observationStatus": "observed",
+          "needsHumanVerification": true,
+          "modelId": "synthetic-model",
+          "latencyMs": null,
+          "error": null,
+          "warnings": [],
+          "videoDurationMs": 8000,
+          "samplingFps": 4,
+          "sourceOffsetMs": 84000,
+          "remoteCallMade": false
+        }
+      }
+    },
+    {
+      "name": "response_window_exceeds_request",
+      "expectedState": "rejected",
+      "actualState": "hypothesis",
+      "status": "gap",
+      "actual": {
+        "accepted": true,
+        "state": "hypothesis",
+        "reason": "unverified model hypothesis",
+        "events": [
+          {
+            "sourceCupId": "RED",
+            "destinationCupId": "BLUE",
+            "eventStartMs": 93000,
+            "eventEndMs": 94000,
+            "evidenceTimestampsMs": [
+              93500
+            ],
+            "observationStatus": "observed",
+            "needsHumanVerification": true
+          }
+        ],
+        "latencyMs": null,
+        "raw": {
+          "schemaVersion": "three-cup-gemini-observation/v0.1",
+          "sessionId": "synthetic-session",
+          "videoId": "synthetic-video",
+          "events": [
+            {
+              "sourceCupId": "RED",
+              "destinationCupId": "BLUE",
+              "eventStartMs": 93000,
+              "eventEndMs": 94000,
+              "evidenceTimestampsMs": [
+                93500
+              ],
+              "observationStatus": "observed",
+              "needsHumanVerification": true
+            }
+          ],
+          "appearances": [],
+          "observationStatus": "observed",
+          "needsHumanVerification": true,
+          "modelId": "synthetic-model",
+          "latencyMs": null,
+          "error": null,
+          "warnings": [],
+          "videoDurationMs": 16000,
           "samplingFps": 4,
           "sourceOffsetMs": 84000,
           "remoteCallMade": false

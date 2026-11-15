@@ -16,20 +16,18 @@ const fixtures = JSON.parse(readFileSync(FIXTURES, 'utf8'))
 const disabled = JSON.parse(readFileSync(DISABLED, 'utf8'))
 
 function jobFor(fixture, requestId) {
-  const offset = Number.isInteger(fixture.payload?.sourceOffsetMs) ? fixture.payload.sourceOffsetMs : 0
-  const duration = Number.isInteger(fixture.payload?.videoDurationMs) ? fixture.payload.videoDurationMs : 1000
   return {
     sessionId: fixture.expected.sessionId,
     videoId: fixture.expected.videoId,
     requestId,
-    sourceOffsetMs: offset,
-    clipStartMs: offset,
-    clipEndMs: offset + duration,
+    sourceOffsetMs: 84_000,
+    clipStartMs: 84_000,
+    clipEndMs: 92_000,
   }
 }
 
 test('synthetic acceptance fixtures pass through the wrapper', () => {
-  assert.equal(fixtures.cases.length, 15)
+  assert.equal(fixtures.cases.length, 17)
   const results = []
   for (const fixture of fixtures.cases) {
     resetClipChecks()
@@ -51,7 +49,7 @@ test('synthetic acceptance fixtures pass through the wrapper', () => {
     }
     if (result.status !== 'rejected') assert.deepEqual(result.raw, fixture.payload, fixture.name)
     if (fixture.layer !== 'request_wrapper') {
-      const review = reviewModelObservation(fixture.payload, fixture.expected)
+      const review = reviewModelObservation(fixture.payload, { ...fixture.expected, clipStartMs: 84_000, clipEndMs: 92_000 })
       assert.equal(review.state, fixture.expectedState, fixture.name)
       assert.deepEqual(review.raw, fixture.payload, fixture.name)
       if (fixture.expectedFirstEventStartMs != null) {
@@ -63,8 +61,8 @@ test('synthetic acceptance fixtures pass through the wrapper', () => {
   writeFileSync(new URL('./integration-acceptance-record.json', import.meta.url), JSON.stringify({
     synthetic: true,
     fixtureCursorCommit: fixtures.cursorCommit,
-    adapterCommit: 'a34c5a6b9dc29c5bdf9f8f382c48755c98c3d1c6',
-    probe: 'Codex probe_integration.mjs loads only the parser and reports the stale case as blocked. This wrapper run rejects that same-session old request.',
+    adapterCommit: '119e048931069b817eb7e3a14b4f6d860a050ef5',
+    probe: 'Codex probe_integration.mjs loads only the parser and reports the stale case as blocked. This wrapper run rejects that same-session old request. Evidence inside the clip but outside its event stays uncertain with seeking disabled. Negative times, reversed intervals, zero-length intervals, evidence outside the clip, and identical cups stay rejected, matching the fixtures.',
     results,
   }, null, 2))
 })

@@ -9,7 +9,7 @@ import type { PreparedMonitorProtocol } from '../prepare/sixWell.ts'
 import { formatRgb, rgbToCss, COLOR_PRESETS, type ColorPresetId } from '../vision/color.ts'
 import { normalizedToContent, type WellRegions } from '../vision/geometry.ts'
 import { SYNTHETIC_SEQUENCES } from '../vision/synthetic.ts'
-import { buildClipCheckRequest, clipHeadline, clipStatusCopy, localVideoId, shouldApplyClipResponse, type ClipCheckResponse } from '../capture/clipCheck.ts'
+import { buildAdapterImport, buildClipCheckRequest, clipHeadline, clipIdentityCopy, clipRailItems, clipStatusCopy, localVideoId, shouldApplyClipResponse, type ClipCheckResponse } from '../capture/clipCheck.ts'
 import { CAPTURE_MARKERS, CAPTURE_PROTOCOLS, compareHumanMarker, DEFAULT_CAPTURE_PROTOCOL_ID, recordingSeekSeconds, THREE_CUP_DEMO_PLAN, captureProtocol } from '../capture/threeCup.ts'
 import { useVisionSession, type VisionSession } from '../vision/useVisionSession.ts'
 import type { WellMeasurement } from '../vision/analyze.ts'
@@ -948,6 +948,20 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
       setSeekNotice('Playback did not move to that time.')
     }
   }
+  function applyClipResult(generation: number, requestId: string, result: ClipCheckResponse): boolean {
+    if (result.requestId && result.requestId !== requestId) return false
+    if (!shouldApplyClipResponse(
+      { generation, requestId },
+      { generation: clipGeneration.current, requestId: result.requestId },
+    )) {
+      if (clipGeneration.current === generation) {
+        setClipPhase('error')
+        setClipResult({ status: 'rejected', requestId, message: 'The response had no matching request id. No video was sent.' })
+      }
+      return false
+    }
+    return true
+  }
   async function requestClipCheck(): Promise<void> {
     if (!session.reviewFile) return
     const generation = clipGeneration.current + 1
@@ -975,10 +989,7 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
       })
       const payload: unknown = await response.json()
       const result = payload && typeof payload === 'object' ? payload as ClipCheckResponse : {}
-      if (!shouldApplyClipResponse(
-        { generation, requestId },
-        { generation: clipGeneration.current, requestId: result.requestId ?? requestId },
-      )) return
+      if (!applyClipResult(generation, requestId, result)) return
       if (!response.ok) {
         setClipPhase('error')
         setClipResult({ status: 'unavailable', requestId, message: 'The clip check was rejected. No video was sent.' })
@@ -990,6 +1001,56 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
       if (clipGeneration.current !== generation) return
       setClipPhase('error')
       setClipResult({ status: 'unavailable', requestId, message: 'The clip check could not be reached. No video was sent.' })
+    }
+  }
+  async function importAdapterResult(file: File): Promise<void> {
+    if (!session.reviewFile) return
+    const generation = clipGeneration.current + 1
+    clipGeneration.current = generation
+    const requestId = `request_${crypto.randomUUID()}`
+    setClipPhase('processing')
+    setClipResult(null)
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(await file.text())
+    } catch {
+      if (clipGeneration.current !== generation) return
+      setClipPhase('error')
+      setClipResult({ status: 'rejected', requestId, message: 'The adapter result was not valid JSON. No video was sent.' })
+      return
+    }
+    const built = buildAdapterImport({
+      monitorSessionId: session.live.sessionId,
+      monitorVideoId: localVideoId(session.reviewFile),
+      requestId,
+      document: parsed,
+    })
+    if (!built.ok) {
+      if (clipGeneration.current !== generation) return
+      setClipPhase('error')
+      setClipResult({ status: 'rejected', requestId, message: built.error })
+      return
+    }
+    try {
+      const response = await fetch('/library/clip-observations/reviews', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(built.body),
+      })
+      const payload: unknown = await response.json()
+      const result = payload && typeof payload === 'object' ? payload as ClipCheckResponse : {}
+      if (!applyClipResult(generation, requestId, result)) return
+      if (!response.ok) {
+        setClipPhase('error')
+        setClipResult({ status: 'unavailable', requestId, message: 'The adapter result was rejected. No video was sent.' })
+        return
+      }
+      setClipPhase('done')
+      setClipResult({ ...result, message: result.message ?? null })
+    } catch {
+      if (clipGeneration.current !== generation) return
+      setClipPhase('error')
+      setClipResult({ status: 'unavailable', requestId, message: 'The adapter result could not be reviewed. No video was sent.' })
     }
   }
   function watchMedia(mediaMs: number): void {
@@ -1033,7 +1094,8 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
         )}
         <details>
           <summary>Status</summary>
-          <p>{clipPhase === 'idle' ? 'No observation request is in flight. A missing result is not a verdict.' : clipStatusCopy(clipResult?.status ?? (clipPhase === 'processing' ? 'processing' : undefined), clipResult?.message)}</p>
+          <p>{clipPhase === 'idle' ? 'No observation request is in flight. A missing result is not a verdict.' : clipStatusCopy(clipResult?.status ?? (clipPhase === 'processing' ? 'processing' : undefined), clipResult?.message, clipResult?.reason, clipResult?.remoteCallMade)}</p>
+          {clipResult ? <p>{clipIdentityCopy(clipResult)}</p> : null}
         </details>
       </section>
       <section className="protocol-compare" aria-label="Protocol comparison">
@@ -1080,7 +1142,21 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
           <button type="button" onClick={() => void requestClipCheck()} disabled={clipPhase === 'processing'}>
             Check this clip
           </button>
-          <p role="status">{clipPhase === 'idle' ? 'A check sends the clip times only. The recording stays on this computer.' : clipStatusCopy(clipResult?.status ?? (clipPhase === 'processing' ? 'processing' : undefined), clipResult?.message)}</p>
+          <label className="file-field">
+            Import adapter result
+            <input
+              type="file"
+              accept="application/json,.json"
+              disabled={clipPhase === 'processing'}
+              onChange={(event) => {
+                const file = event.target.files?.[0]
+                if (file) void importAdapterResult(file)
+                event.target.value = ''
+              }}
+            />
+          </label>
+          <p role="status">{clipPhase === 'idle' ? 'A check sends the clip times only. The recording stays on this computer. Times alone cannot run the adapter.' : clipStatusCopy(clipResult?.status ?? (clipPhase === 'processing' ? 'processing' : undefined), clipResult?.message, clipResult?.reason, clipResult?.remoteCallMade)}</p>
+          {clipResult ? <p>{clipIdentityCopy(clipResult)}</p> : null}
         </section>
       ) : null}
       {seekNotice ? <p className="media-notice" role="alert">{seekNotice}</p> : null}
@@ -1098,7 +1174,14 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
               onWatch: () => watch(marker.observationTimestamp),
             }
           }),
-          ...(clipResult?.needsHumanVerification ? modelEvidence(clipResult, watchMedia) : []),
+          ...clipRailItems(clipResult).map((item) => ({
+            id: item.id,
+            time: item.time,
+            source: item.source,
+            title: item.title,
+            detail: item.detail,
+            onWatch: item.seekable ? () => watchMedia(item.mediaMs) : undefined,
+          })),
         ]}
       />
       {previewUrl ? (
@@ -1126,21 +1209,6 @@ function clipBadge(phase: 'idle' | 'processing' | 'done' | 'error', result: Clip
   if (phase === 'error' || result?.status === 'unavailable') return 'Check unavailable'
   if (result?.status === 'hypothesis' || result?.status === 'uncertain' || result?.status === 'no-transfer') return 'Needs review'
   return 'Detector not connected'
-}
-
-function modelEvidence(
-  result: ClipCheckResponse,
-  watchMediaTime: (mediaMs: number) => void,
-): Array<{ id: string; time: string; source: string; title: string; detail: string; onWatch?: () => void }> {
-  if (result.status !== 'hypothesis' && result.status !== 'uncertain') return []
-  return (result.events ?? []).filter((event) => event.needsHumanVerification).map((event) => ({
-    id: event.eventId,
-    time: formatSeconds(event.eventStartMs),
-    source: 'Unverified',
-    title: event.sourceCupId && event.destinationCupId ? `${event.sourceCupId} → ${event.destinationCupId}` : 'Unclear transfer',
-    detail: 'Unverified model hypothesis. It does not complete a step.',
-    onWatch: event.seekable === false ? undefined : () => watchMediaTime(event.eventStartMs),
-  }))
 }
 
 function markerCups(marker: string): string[] {

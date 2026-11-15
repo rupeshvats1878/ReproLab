@@ -1,8 +1,8 @@
 {
   "synthetic": true,
   "fixtureCursorCommit": "65f78a42b379fd2c4163bbfbc96a0754c035d64b",
-  "adapterCommit": "a34c5a6b9dc29c5bdf9f8f382c48755c98c3d1c6",
-  "probe": "Codex probe_integration.mjs loads only the parser and reports the stale case as blocked. This wrapper run rejects that same-session old request.",
+  "adapterCommit": "119e048931069b817eb7e3a14b4f6d860a050ef5",
+  "probe": "Codex probe_integration.mjs loads only the parser and reports the stale case as blocked. This wrapper run rejects that same-session old request. Evidence inside the clip but outside its event stays uncertain with seeking disabled. Negative times, reversed intervals, zero-length intervals, evidence outside the clip, and identical cups stay rejected, matching the fixtures.",
   "results": [
     {
       "name": "valid_hypothesis_nonzero_offset",
@@ -93,6 +93,18 @@
       "layer": "parser",
       "status": "passed",
       "actualState": "uncertain"
+    },
+    {
+      "name": "evidence_outside_event",
+      "layer": "parser",
+      "status": "passed",
+      "actualState": "uncertain"
+    },
+    {
+      "name": "response_window_exceeds_request",
+      "layer": "parser",
+      "status": "passed",
+      "actualState": "rejected"
     }
   ]
 }

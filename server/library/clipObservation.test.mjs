@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { createServer, request as httpRequest } from 'node:http'
 import test from 'node:test'
 import { createLibraryServer } from './http.mjs'
@@ -8,8 +9,11 @@ import {
   adapterArguments,
   beginClipCheck,
   finishClipCheck,
+  importAdapterReview,
   resetClipChecks,
 } from './clipObservation.mjs'
+
+const DISABLED = 'C:/Users/rupes/Projects/labbench-codex-offline/server/three-cup-offline/local/integration/adapter-disabled-response.json'
 
 const SESSION = 'session_6a6a6a6a-6a6a-6a6a-8a6a-6a6a6a6a6a6a'
 const REQUEST = 'request_6b6b6b6b-6b6b-6b6b-8b6b-6b6b6b6b6b6b'
@@ -230,14 +234,110 @@ test('the library route returns authorization status and does not require a vide
   }
 })
 
-function ask(server, body) {
+function importBody(document, overrides = {}) {
+  const sourceOffsetMs = document.sourceOffsetMs
+  const duration = document.videoDurationMs
+  return {
+    sessionId: document.sessionId,
+    videoId: document.videoId,
+    requestId: REQUEST,
+    sourceOffsetMs,
+    clipStartMs: sourceOffsetMs,
+    clipEndMs: sourceOffsetMs + duration,
+    monitorSessionId: document.sessionId,
+    monitorVideoId: document.videoId,
+    document,
+    ...overrides,
+  }
+}
+
+test('an imported synthetic result stays labeled synthetic and an offset is not applied twice', () => {
+  resetClipChecks()
+  const document = adapterDocument({ modelId: 'synthetic-model', remoteCallMade: false })
+  const matching = importAdapterReview(importBody(document))
+  assert.equal(matching.status, 'hypothesis')
+  assert.equal(matching.provenance, 'synthetic')
+  assert.equal(matching.matchesOpenReview, true)
+  assert.equal(matching.events[0].eventStartMs, 85_000)
+  assert.equal(matching.raw.events[0].eventStartMs, 85_000)
+  assert.equal(matching.needsHumanVerification, true)
+  assert.equal(matching.remoteCallMade, false)
+
+  const otherSession = importAdapterReview(importBody(document, {
+    requestId: REQUEST_TWO,
+    monitorSessionId: 'session_6d6d6d6d-6d6d-6d6d-8d6d-6d6d6d6d6d6d',
+    monitorVideoId: 'local-other',
+  }))
+  assert.equal(otherSession.status, 'hypothesis')
+  assert.equal(otherSession.matchesOpenReview, false)
+  assert.equal(otherSession.events[0].eventStartMs, 85_000)
+
+  const wrongBody = importBody(document, { requestId: 'request_6e6e6e6e-6e6e-6e6e-8e6e-6e6e6e6e6e6e' })
+  wrongBody.document = { ...document, sessionId: 'other-session' }
+  const wrong = importAdapterReview(wrongBody)
+  assert.equal(wrong.status, 'rejected')
+  assert.equal(wrong.reason, 'wrong-session')
+  assert.deepEqual(wrong.events, [])
+
+  const stale = importAdapterReview(importBody({ ...document, requestId: REQUEST }, {
+    requestId: 'request_6f6f6f6f-6f6f-6f6f-8f6f-6f6f6f6f6f6f',
+  }))
+  assert.equal(stale.status, 'rejected')
+  assert.equal(stale.reason, 'stale')
+
+  const bounds = importAdapterReview(importBody(document, {
+    requestId: 'request_70707070-7070-4070-8070-707070707070',
+    clipEndMs: document.sourceOffsetMs + 1000,
+  }))
+  assert.equal(bounds.status, 'rejected')
+  assert.equal(bounds.reason, 'clip-bounds')
+})
+
+test('the saved disabled adapter response imports as unavailable and makes no remote call', async () => {
+  resetClipChecks()
+  const document = JSON.parse(readFileSync(DISABLED, 'utf8'))
+  const imported = importAdapterReview(importBody(document, {
+    monitorSessionId: SESSION,
+    monitorVideoId: 'local-4-recording.mov',
+  }))
+  assert.equal(imported.status, 'unavailable')
+  assert.equal(imported.reason, 'remote_disabled')
+  assert.equal(imported.remoteCallMade, false)
+  assert.equal(imported.provenance, 'adapter')
+  assert.equal(imported.matchesOpenReview, false)
+  assert.equal(imported.needsHumanVerification, true)
+  assert.equal(imported.raw.latencyMs, null)
+  assert.deepEqual(imported.events, [])
+  assert.notEqual(imported.reason, 'no-transfer')
+  assert.equal(imported.raw.sourceOffsetMs, 84_000)
+
+  const store = createMemoryStore()
+  const server = createServer(createLibraryServer({ store }))
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+  try {
+    const response = await ask(server, importBody(document, {
+      requestId: REQUEST_TWO,
+      monitorSessionId: SESSION,
+      monitorVideoId: 'local-4-recording.mov',
+    }), '/clip-observations/reviews')
+    assert.equal(response.status, 200)
+    assert.equal(response.body.status, 'unavailable')
+    assert.equal(response.body.remoteCallMade, false)
+    const blocked = await ask(server, { ...importBody(document), clipPath: DISABLED }, '/clip-observations/reviews')
+    assert.equal(blocked.status, 400)
+  } finally {
+    server.close()
+  }
+})
+
+function ask(server, body, path = '/clip-observations') {
   const payload = JSON.stringify(body)
   return new Promise((resolve, reject) => {
     const req = httpRequest({
       hostname: '127.0.0.1',
       port: server.address().port,
       method: 'POST',
-      path: '/clip-observations',
+      path,
       headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) },
     }, (res) => {
       const chunks = []

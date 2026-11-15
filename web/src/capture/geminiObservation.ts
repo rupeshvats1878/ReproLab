@@ -31,7 +31,7 @@ export interface GeminiObservationReview {
 
 export function reviewModelObservation(
   payload: unknown,
-  expected: { sessionId: string; videoId: string },
+  expected: { sessionId: string; videoId: string; clipStartMs?: number; clipEndMs?: number },
 ): GeminiObservationReview {
   const raw = cloneRaw(payload)
   const rejected = (reason: string): GeminiObservationReview => ({
@@ -51,6 +51,9 @@ export function reviewModelObservation(
   if (latencyMs != null && (typeof latencyMs !== 'number' || !Number.isFinite(latencyMs) || latencyMs < 0)) {
     return rejected('malformed')
   }
+  if (hasTrustedWindow(expected) && (body.sourceOffsetMs !== expected.clipStartMs || body.videoDurationMs !== expected.clipEndMs - expected.clipStartMs)) {
+    return rejected('clip-bounds')
+  }
   if (body.error != null) {
     const error = body.error
     if (!error || typeof error !== 'object' || typeof (error as { category?: unknown }).category !== 'string') {
@@ -67,7 +70,9 @@ export function reviewModelObservation(
   }
   const status = body.observationStatus
   if (typeof status !== 'string' || !STATUSES.includes(status as (typeof STATUSES)[number])) return rejected('malformed')
-  const window = mediaWindow(body)
+  const window = hasTrustedWindow(expected)
+    ? { startMs: expected.clipStartMs, endMs: expected.clipEndMs }
+    : mediaWindow(body)
   const events: GeminiTransferHypothesis[] = []
   let eventUncertain = false
   for (const item of body.events) {
@@ -113,6 +118,8 @@ function parseEvent(
   if (typeof event.sourceCupId !== 'string' || !CUP_IDS.includes(event.sourceCupId as (typeof CUP_IDS)[number])) return { ok: false, reason: 'malformed' }
   if (typeof event.destinationCupId !== 'string' || !CUP_IDS.includes(event.destinationCupId as (typeof CUP_IDS)[number])) return { ok: false, reason: 'malformed' }
   if (!isFiniteTime(event.eventStartMs) || !isFiniteTime(event.eventEndMs)) return { ok: false, reason: 'malformed' }
+  const start = event.eventStartMs as number
+  const end = event.eventEndMs as number
   if (!Array.isArray(event.evidenceTimestampsMs) || event.evidenceTimestampsMs.some((item) => !isFiniteTime(item))) return { ok: false, reason: 'malformed' }
   if (typeof event.observationStatus !== 'string' || !EVENT_STATUSES.includes(event.observationStatus as (typeof EVENT_STATUSES)[number])) {
     return { ok: false, reason: 'malformed' }
@@ -120,25 +127,32 @@ function parseEvent(
   if (event.needsHumanVerification !== true) return { ok: false, reason: 'malformed' }
   const evidence = event.evidenceTimestampsMs as number[]
   if (event.sourceCupId === event.destinationCupId) return { ok: false, reason: 'same-cups' }
-  if (event.eventStartMs < 0 || event.eventEndMs < 0 || evidence.some((item) => item < 0)) return { ok: false, reason: 'negative-time' }
-  if (event.eventEndMs < event.eventStartMs) return { ok: false, reason: 'reversed-interval' }
-  if (event.eventEndMs === event.eventStartMs) return { ok: false, reason: 'zero-length' }
+  if (start < 0 || end < 0 || evidence.some((item) => item < 0)) return { ok: false, reason: 'negative-time' }
+  if (end < start) return { ok: false, reason: 'reversed-interval' }
+  if (end === start) return { ok: false, reason: 'zero-length' }
   if (!window) return { ok: false, reason: 'malformed' }
-  const times = [event.eventStartMs, event.eventEndMs, ...evidence]
+  const times = [start, end, ...evidence]
   if (times.some((item) => item < window.startMs || item > window.endMs)) return { ok: false, reason: 'outside-clip' }
+  const evidenceOutsideEvent = evidence.some((item) => item < start || item > end)
   return {
     ok: true,
-    uncertain: event.observationStatus === 'unclear' || event.sourceCupId === 'unknown' || event.destinationCupId === 'unknown',
+    uncertain: event.observationStatus === 'unclear' || event.sourceCupId === 'unknown' || event.destinationCupId === 'unknown' || evidenceOutsideEvent,
     event: {
       sourceCupId: event.sourceCupId,
       destinationCupId: event.destinationCupId,
-      eventStartMs: event.eventStartMs,
-      eventEndMs: event.eventEndMs,
+      eventStartMs: start,
+      eventEndMs: end,
       evidenceTimestampsMs: evidence.slice(),
       observationStatus: event.observationStatus,
       needsHumanVerification: true,
     },
   }
+}
+
+function hasTrustedWindow(expected: { clipStartMs?: number; clipEndMs?: number }): expected is { clipStartMs: number; clipEndMs: number } {
+  const start = expected.clipStartMs
+  const end = expected.clipEndMs
+  return typeof start === 'number' && Number.isInteger(start) && typeof end === 'number' && Number.isInteger(end) && end > start
 }
 
 function mediaWindow(body: Record<string, unknown>): { startMs: number; endMs: number } | null {
