@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Review } from '../components/Review.tsx'
 import {
+  BROWSER_MONITOR_SESSION_KEY,
+  RESULTS_SELECTION_KEY,
   listMonitorSessions,
   loadMonitorSession,
   type MonitorSessionSummary,
@@ -8,7 +10,7 @@ import {
 } from '../monitor/saveSession.ts'
 import { ReferenceLab } from '../reference/ReferenceLab.tsx'
 import type { ReviewController } from '../shared/types.ts'
-import { MONITOR_SESSION_ID, sessionChoiceLabel, sourceLabel, statusLabel } from './sessionBrowse.ts'
+import { MONITOR_SESSION_ID, chooseSavedSession, sessionChoiceLabel, sourceLabel, statusLabel } from './sessionBrowse.ts'
 import './results.css'
 
 type ListKind = 'loading' | 'ready' | 'empty' | 'unavailable' | 'unreachable'
@@ -45,8 +47,15 @@ export function Results(props: { review: ReviewController; active: boolean }) {
       }
       setSummaries(result.sessions)
       setListKind(result.sessions.length === 0 ? 'empty' : 'ready')
-      setSelectedId((current) => current || result.sessions[0]?.id || '')
-      setSessionKind((current) => (current === 'idle' && result.sessions[0] ? 'loading' : current))
+      const explicitId = sessionStorage.getItem(RESULTS_SELECTION_KEY)
+      const browserSessionId = sessionStorage.getItem(BROWSER_MONITOR_SESSION_KEY)
+      setSelectedId((current) => chooseSavedSession({
+        currentId: current,
+        explicitId,
+        browserSessionId,
+        newestId: result.sessions[0]?.id ?? null,
+      }))
+      setSessionKind((current) => (current === 'idle' && (explicitId || browserSessionId || result.sessions[0]) ? 'loading' : current))
     })
     return () => {
       cancel = true
@@ -72,6 +81,7 @@ export function Results(props: { review: ReviewController; active: boolean }) {
   }, [selectedId, loadToken])
 
   function chooseSession(id: string) {
+    sessionStorage.setItem(RESULTS_SELECTION_KEY, id)
     setSession(null)
     setSessionKind('loading')
     setSelectedId(id)

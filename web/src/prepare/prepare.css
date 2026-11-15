@@ -11,6 +11,19 @@
 .prepare-lab button:disabled { opacity: .5; cursor: default }
 .prepare-lab :focus-visible { outline: 3px solid var(--teal); outline-offset: 3px }
 .prepare-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin: .75rem 0 }
+.prepare-entries { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; margin: .75rem 0 1rem }
+.prepare-entry {
+  display: grid; gap: .35rem; text-align: left; padding: .9rem 1rem;
+  border: 1px solid var(--teal); border-radius: .75rem; background: var(--card); color: var(--ink); cursor: pointer;
+}
+.prepare-entry strong { font-size: 1.05rem }
+.prepare-entry span { color: var(--muted); line-height: 1.4 }
+.prepare-extra { margin: 1rem 0; padding: .75rem; border: 1px solid var(--line); border-radius: .6rem }
+.prepare-lab input[type='file'] { color: var(--ink) }
+.prepare-lab input[type='file']::file-selector-button {
+  color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: .4rem; padding: .4rem .7rem; margin-right: .6rem;
+}
+@media (max-width: 700px) { .prepare-entries { grid-template-columns: 1fr } }
 .prepare-step { margin: 1rem 0; padding: .75rem; border: 1px solid var(--line); border-radius: .6rem }
 .prepare-step h3 { margin: 0 }
 .prepare-warning, .prepare-problems { color: #ffb4a8 }

@@ -19,6 +19,18 @@ export function formatRecordedTime(iso: string | null | undefined): string {
   return date.toLocaleString()
 }
 
+export function chooseSavedSession(input: {
+  currentId: string
+  explicitId: string | null
+  browserSessionId: string | null
+  newestId: string | null
+}): string {
+  if (input.currentId) return input.currentId
+  if (input.explicitId) return input.explicitId
+  if (input.browserSessionId) return input.browserSessionId
+  return input.newestId ?? ''
+}
+
 export function sessionChoiceLabel(session: {
   sourceKind: string
   startedAtIso?: string | null

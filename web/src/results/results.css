@@ -12,5 +12,6 @@
 .results-lookup { display: flex; gap: 0.5rem; align-items: end; flex-wrap: wrap; }
 .results-lookup label { flex: 1 1 16rem; }
 .results .session-id { overflow-wrap: anywhere; }
-.results select, .results button { font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 0.4rem; padding: 0.45rem; }
+.results select, .results button, .results input { font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 0.4rem; padding: 0.45rem; max-width: 100%; }
+.results select { width: 100%; }
 .results :focus-visible { outline: 3px solid var(--teal); outline-offset: 3px; }

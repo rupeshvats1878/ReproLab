@@ -4,6 +4,7 @@ import { PROTOCOL_ORDER, WELL_GRID, type WellId, type WellState } from '../share
 import type { MonitorProps } from '../shared/types.ts'
 import { type FrameEvidence, type LiveAlert, type LiveDecisionEntry } from '../monitor/liveDecisions.ts'
 import { describeRetrieved, readMonitorSession } from '../monitor/saveSession.ts'
+import { sourceLabel } from '../results/sessionBrowse.ts'
 import type { PreparedMonitorProtocol } from '../prepare/sixWell.ts'
 import { formatRgb, rgbToCss, COLOR_PRESETS, type ColorPresetId } from '../vision/color.ts'
 import { normalizedToContent, type WellRegions } from '../vision/geometry.ts'
@@ -44,6 +45,16 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
   const highlightedWell = issueActive ? selected.wellId : expected
   const demoEnded = session.inputKind === 'synthetic' && session.playbackNote.includes('ended')
   const showSummary = demoEnded && !session.summaryHeld
+  const running = session.localPhase === 'running'
+  const pictureReady = session.cameraPhase === 'live' || session.inputKind === 'prerecorded'
+  const [setupStep, setSetupStep] = useState<SetupStep>('camera')
+  const [runningSeen, setRunningSeen] = useState(running)
+  const [setupOpen, setSetupOpen] = useState(true)
+  if (!pictureReady && setupStep !== 'camera') setSetupStep('camera')
+  if (running !== runningSeen) {
+    setRunningSeen(running)
+    setSetupOpen(!running)
+  }
 
   if (session.correctionNote !== correctionFor) {
     setCorrectionFor(session.correctionNote)
@@ -62,10 +73,10 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
   }
 
   return (
-    <section className="monitor" aria-labelledby="monitor-title" data-debug={session.debugOverlay ? 'true' : 'false'}>
+    <section className="monitor" aria-labelledby="monitor-title" data-debug={session.debugOverlay ? 'true' : 'false'} data-running={running ? 'true' : 'false'}>
       <div className="monitor-heading">
         <h2 id="monitor-title">Monitor</h2>
-        <p>Camera first. Fixed order A1, A2, A3, B1, B2, B3. A prepared protocol does not change the detector.</p>
+        <p>Six-well colored-water procedure. Fixed order A1, A2, A3, B1, B2, B3.</p>
         {preparedProtocol ? (
           <div>
             <p>
@@ -123,9 +134,13 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
         />
           </div>
           <p className="live-clock" role="status">
+            {session.inputKind === 'none' ? '' : `${sourceLabel(session.inputKind)} · `}
             {session.observationStatus} · {formatSeconds(session.localElapsedMs)}
             {session.cameraPhase === 'live' || session.cameraPhase === 'starting' ? (
               <button type="button" onClick={session.stopCamera}>Stop camera</button>
+            ) : null}
+            {running ? (
+              <button type="button" onClick={session.completeRun}>Stop monitoring</button>
             ) : null}
           </p>
           {session.seekMessage ? (
@@ -182,18 +197,11 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
             ) : session.localPhase === 'idle' ? (
               <>
                 <h3>Now</h3>
-                <p className="guide-line">
-                  {session.inputKind === 'prerecorded' ? 'Start monitoring when the video is ready.' : 'Open Setup and start the camera.'}
-                </p>
+                <p className="guide-line">{setupPrompt(setupStep, pictureReady)}</p>
               </>
             ) : (
               <DecisionGuide guide={guide} issueActive={issueActive} correctionNote={correctionHidden ? null : session.correctionNote} />
             )}
-            {session.inputKind !== 'synthetic' && session.localPhase === 'running' ? (
-              <button type="button" onClick={session.completeRun}>
-                Complete monitoring
-              </button>
-            ) : null}
             {selected && selected.status !== 'corrected' ? (
               <>
                 <div className="button-row">
@@ -277,12 +285,23 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
         </aside>
       </div>
 
-      <details className="fold" open>
+      <details
+        className="fold"
+        open={setupOpen}
+        onToggle={(event) => setSetupOpen(event.currentTarget.open)}
+      >
         <summary>Setup</summary>
-        <p className="monitor-note">Supported monitoring: six-well colored-water procedure. Only an approved version of those six fill instructions can be associated with a session. Other protocols do not configure this detector.</p>
-        <CameraSetup session={session} wellSize={wellSize} setWellSize={setWellSize} />
-        <h3>Demo</h3>
-        <p className="monitor-note">Optional synthetic sequence. Pause on an issue applies only here, not to the camera.</p>
+        <CameraSetup
+          session={session}
+          wellSize={wellSize}
+          setWellSize={setWellSize}
+          step={setupStep}
+          setStep={setSetupStep}
+          pictureReady={pictureReady}
+        />
+        <details className="fold">
+          <summary>Demo and imported video</summary>
+        <p className="monitor-note">Optional. A synthetic sequence is not a camera recording. Pause on an issue applies only there.</p>
         <button type="button" onClick={startSkipDemo}>
           {session.inputKind === 'synthetic' && session.monitorGeneration > 0 ? 'Replay demo' : 'Play skip-then-fill demo'}
         </button>
@@ -351,12 +370,7 @@ export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonit
             {session.debugOverlay ? 'Hide debug measurements' : 'Show debug measurements'}
           </button>
         </div>
-        <p className="monitor-note">
-          {session.inputKind === 'synthetic'
-            ? 'On a synthetic sequence, pause holds the next drawn frame and the run clock.'
-            : 'Pause stops new observations. A live run clock still advances. A prerecorded clock follows the file.'}{' '}
-          Scores are heuristic, not calibrated probabilities. A hand or pipette crossing a well is not treated as a dispense. Mixed regions stay unknown; that is not automatic occlusion detection.
-        </p>
+        </details>
       </details>
 
       <details className="fold">
@@ -802,37 +816,78 @@ function DecisionGuide({
   )
 }
 
+type SetupStep = 'camera' | 'position' | 'calibrate' | 'preview' | 'monitor'
+
+const SETUP_STEPS: { id: SetupStep; label: string }[] = [
+  { id: 'camera', label: 'Start camera' },
+  { id: 'position', label: 'Position regions' },
+  { id: 'calibrate', label: 'Calibrate' },
+  { id: 'preview', label: 'Preview' },
+  { id: 'monitor', label: 'Start monitoring' },
+]
+
+function setupPrompt(step: SetupStep, pictureReady: boolean): string {
+  if (!pictureReady) return 'Start the camera.'
+  if (step === 'position') return 'Position the six regions.'
+  if (step === 'calibrate') return 'Calibrate the empty plate and dye color.'
+  if (step === 'preview') return 'Check the preview.'
+  if (step === 'monitor') return 'Start monitoring when the preview looks usable.'
+  return 'Camera is on. Continue to the regions.'
+}
+
 function CameraSetup({
   session,
   wellSize,
   setWellSize,
+  step,
+  setStep,
+  pictureReady,
 }: {
   session: VisionSession
   wellSize: number
   setWellSize: (size: number) => void
+  step: SetupStep
+  setStep: (step: SetupStep) => void
+  pictureReady: boolean
 }) {
-  const pictureReady = session.cameraPhase === 'live' || session.inputKind === 'prerecorded'
   const starting = session.cameraPhase === 'starting' || session.cameraPhase === 'live'
+  const calibrationMissing = session.referenceLabel.startsWith('Not captured')
+  const previewUnknown = session.measurements.length === 0 || session.measurements.every((item) => item.state === 'unknown')
   return (
     <div className="camera-setup">
-      <h3>1. Camera</h3>
-      <button type="button" className="primary-action" onClick={session.startCamera} disabled={starting}>
-        Start camera
-      </button>
+      <div className="button-row" role="group" aria-label="Setup steps">
+        {SETUP_STEPS.map((item, index) => (
+          <button
+            key={item.id}
+            type="button"
+            aria-pressed={step === item.id}
+            disabled={item.id !== 'camera' && !pictureReady}
+            onClick={() => setStep(item.id)}
+          >
+            {index + 1}. {item.label}
+          </button>
+        ))}
+      </div>
       {session.cameraPhase === 'live' ? (
-        <button type="button" onClick={session.stopCamera}>
-          Stop camera
-        </button>
+        <button type="button" onClick={session.stopCamera}>Stop camera</button>
       ) : null}
-      <p className="monitor-note" role={cameraFailed(session) ? 'alert' : 'status'}>
-        {session.inputKind === 'prerecorded' ? session.inputLabel : session.cameraMessage}
-      </p>
-      {pictureReady ? (
+      {step === 'camera' ? (
         <>
-          <h3>2. Position</h3>
-          <p className="monitor-note">
-            Drag A1, A2, A3, B1, B2, and B3 onto the six containers. Arrow keys nudge the focused label. Shift moves farther.
+          <button type="button" className="primary-action" onClick={session.startCamera} disabled={starting}>
+            Start camera
+          </button>
+          <p className="monitor-note" role={cameraFailed(session) ? 'alert' : 'status'}>
+            {session.inputKind === 'prerecorded' ? session.inputLabel : session.cameraMessage}
+            {session.cameraPhase === 'live' ? ' The camera is open. That is not a calibrated reading.' : ''}
           </p>
+          {pictureReady ? (
+            <button type="button" onClick={() => setStep('position')}>Position regions</button>
+          ) : null}
+        </>
+      ) : null}
+      {step === 'position' ? (
+        <>
+          <p className="monitor-note">Drag A1, A2, A3, B1, B2, and B3 onto the six containers. Arrow keys nudge the focused label. Shift moves farther.</p>
           <label className="file-field">
             Well size
             <input
@@ -857,11 +912,13 @@ function CameraSetup({
           >
             Reset positions
           </button>
-          <h3>3. Empty reference and dye</h3>
+          <button type="button" onClick={() => setStep('calibrate')}>Calibrate</button>
+        </>
+      ) : null}
+      {step === 'calibrate' ? (
+        <>
           <div className="button-row">
-            <button type="button" onClick={session.captureReference}>
-              Capture empty reference
-            </button>
+            <button type="button" onClick={session.captureReference}>Capture empty reference</button>
             <button
               type="button"
               aria-pressed={session.samplingColor}
@@ -871,11 +928,12 @@ function CameraSetup({
             </button>
           </div>
           <p className="monitor-note">{session.referenceLabel}</p>
+          {calibrationMissing ? (
+            <p className="attention-note" role="status">Calibration is missing. Capture an empty reference or sample the dye color. An open camera is not a ready reading.</p>
+          ) : null}
           <div className="color-row">
             <span className="swatch" style={{ background: rgbToCss(session.expectedColor) }} />
-            <span>
-              Dye: {session.expectedLabel} ({formatRgb(session.expectedColor)})
-            </span>
+            <span>Dye: {session.expectedLabel} ({formatRgb(session.expectedColor)})</span>
           </div>
           <div className="button-row" role="group" aria-label="Expected dye color">
             {COLOR_PRESETS.map((preset) => (
@@ -890,23 +948,40 @@ function CameraSetup({
               </button>
             ))}
           </div>
-          <h3>4. Preview</h3>
+          <button type="button" onClick={() => setStep('preview')}>Preview</button>
+        </>
+      ) : null}
+      {step === 'preview' ? (
+        <>
           {session.measurements.length === 0 ? (
-            <p className="monitor-note">The latest frame has not been read yet. Empty, filled, and unknown appear here before monitoring starts.</p>
+            <p className="monitor-note">The latest frame has not been read yet.</p>
           ) : (
             <ul className="preview-readings" aria-label="Preview readings">
               {PROTOCOL_ORDER.map((wellId) => {
                 const state = session.measurements.find((item) => item.wellId === wellId)?.state ?? 'unknown'
                 return (
-                  <li key={wellId} data-state={state}>
-                    {wellId} {STATE_LABEL[state]}
-                  </li>
+                  <li key={wellId} data-state={state}>{wellId} {STATE_LABEL[state]}</li>
                 )
               })}
             </ul>
           )}
-          <p className="monitor-note">This preview is the latest frame. Monitoring uses the stable reading.</p>
-          <h3>5. Monitor</h3>
+          {previewUnknown ? (
+            <p className="attention-note" role="status">The preview is still unknown. Recheck the regions, the empty reference, and the dye color. Unknown is not a filled or empty reading.</p>
+          ) : (
+            <p className="monitor-note">This preview is the latest frame. Monitoring uses the stable reading.</p>
+          )}
+          <button type="button" onClick={() => setStep('monitor')}>Start monitoring</button>
+        </>
+      ) : null}
+      {step === 'monitor' ? (
+        <>
+          {calibrationMissing || previewUnknown ? (
+            <p className="attention-note" role="status">
+              {calibrationMissing
+                ? 'Calibration is missing, so a started run can stay unknown.'
+                : 'The preview is still unknown, so a started run can stay unknown.'}
+            </p>
+          ) : null}
           <button type="button" className="primary-action" onClick={session.startRun} disabled={!session.canStartRun}>
             Start monitoring
           </button>

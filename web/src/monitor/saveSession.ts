@@ -16,6 +16,8 @@ interface SessionBody {
 }
 
 const MONITOR_INDEX_KEY = 'reprolab-monitor-session-index'
+export const BROWSER_MONITOR_SESSION_KEY = 'reprolab-monitor-session-id'
+export const RESULTS_SELECTION_KEY = 'reprolab-results-selection'
 
 export interface MonitorSessionRef {
   id: string
@@ -106,7 +108,8 @@ export function createMonitorSaver(notify: (status: SaveStatus) => void, fetchIm
           ...(input.preparedProtocol ? { preparedProtocol: input.preparedProtocol } : {}),
         })
         if (typeof sessionStorage !== 'undefined') {
-          sessionStorage.setItem('reprolab-monitor-session-id', input.sessionId)
+          sessionStorage.setItem(BROWSER_MONITOR_SESSION_KEY, input.sessionId)
+          sessionStorage.setItem(RESULTS_SELECTION_KEY, input.sessionId)
         }
         if (typeof localStorage !== 'undefined') {
           rememberMonitorSession(

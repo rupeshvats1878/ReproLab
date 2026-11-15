@@ -50,12 +50,29 @@
 .stage {
   position: relative;
   width: 100%;
-  min-height: 28rem;
+  min-height: 12rem;
   aspect-ratio: 16 / 9;
   overflow: hidden;
   border-radius: 0.75rem;
   background: #12181f;
   border: 1px solid #31404e;
+}
+
+.monitor[data-running='false'] .stage {
+  width: min(100%, 42rem);
+}
+
+@media (max-height: 820px) {
+  .monitor[data-running='false'] .stage {
+    width: min(100%, 26rem);
+  }
+}
+
+.live-clock {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
 }
 
 .final-stage {
@@ -176,7 +193,7 @@
 }
 
 .live-clock button {
-  margin-left: 0.75rem;
+  margin: 0;
 }
 
 .live-clock {
@@ -757,6 +774,16 @@
   border-radius: 0.45rem;
   background: #12181f;
   color: #e7eef2;
+  max-width: 100%;
+}
+
+.monitor input[type='file']::file-selector-button {
+  color: #e7eef2;
+  background: #1b242e;
+  border: 1px solid #4a5c6e;
+  border-radius: 0.45rem;
+  padding: 0.35rem 0.6rem;
+  margin-right: 0.6rem;
 }
 
 .monitor button:disabled {

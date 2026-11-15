@@ -161,7 +161,7 @@ export function Prepare(props: { onSetupMonitoring: (protocol: PreparedMonitorPr
     setSourceText(draft.sourceText)
     setSteps(draft.steps)
     setError('')
-    setNotice('Six-well procedure loaded. Save and approve it before monitoring. Nothing is saved yet, and the camera has not started.')
+    setNotice('Six-well procedure loaded. This draft is supported for camera monitoring. Save and approve it before monitoring. Nothing is saved yet, and the camera has not started.')
   }
 
   function loadTextFile(file: File) {
@@ -250,10 +250,16 @@ export function Prepare(props: { onSetupMonitoring: (protocol: PreparedMonitorPr
     <section className="prepare-lab">
       <p className="app-kicker">ReproLab • Prepare</p>
       <h2>Prepare a protocol.</h2>
-      <p>Approve a written protocol here. Only the six-well template can be associated with Monitor.</p>
-      <div className="prepare-actions">
-        <button type="button" onClick={() => setView('library')}>Experiment library</button>
-        <button type="button" onClick={useSixWell}>Use six-well procedure</button>
+      <p>Start with the procedure the camera can monitor, or write a different protocol.</p>
+      <div className="prepare-entries">
+        <button type="button" className="prepare-entry" onClick={useSixWell}>
+          <strong>Use six-well procedure</strong>
+          <span>Supported for camera monitoring. Loads Fill A1 through Fill B3 as an editable draft.</span>
+        </button>
+        <button type="button" className="prepare-entry" onClick={() => document.getElementById('protocol-text')?.focus()}>
+          <strong>Write or upload a protocol</strong>
+          <span>Paste text or choose a .txt file. This does not configure the camera detector.</span>
+        </button>
       </div>
       <div className="prepare-layout">
         <div>
@@ -263,7 +269,7 @@ export function Prepare(props: { onSetupMonitoring: (protocol: PreparedMonitorPr
           </label>
           <label>
             Protocol text
-            <textarea value={sourceText} disabled={locked} rows={8} onChange={(event) => setSourceText(event.target.value)} />
+            <textarea id="protocol-text" value={sourceText} disabled={locked} rows={8} onChange={(event) => setSourceText(event.target.value)} />
           </label>
           <label>
             Or upload a .txt file
@@ -390,28 +396,34 @@ export function Prepare(props: { onSetupMonitoring: (protocol: PreparedMonitorPr
               <p>Automatic monitoring is unavailable for this version. The steps are not the supported six-well procedure.</p>
             )
           ) : null}
-          {locked ? (
-            <form onSubmit={(event) => { event.preventDefault(); void publishApproved() }}>
-              <h3>Publish this approved version</h3>
-              <p>Publishing sends this approved version only. A draft is not published, and later local edits do not change the saved snapshot.</p>
-              <label>
-                Display title
-                <input value={publishTitle} onChange={(event) => setPublishTitle(event.target.value)} maxLength={120} />
-              </label>
-              <label>
-                Description
-                <textarea value={publishDescription} rows={3} maxLength={500} onChange={(event) => setPublishDescription(event.target.value)} />
-              </label>
-              <label>
-                Author name
-                <input value={authorDisplayName} onChange={(event) => setAuthorDisplayName(event.target.value)} maxLength={80} />
-              </label>
-              <button type="submit" disabled={publishing}>
-                {publishing ? 'Publishing…' : 'Publish'}
-              </button>
-              {publishedId ? <p role="status">Atlas saved this experiment as {publishedId}.</p> : null}
-            </form>
-          ) : null}
+          <details className="prepare-extra">
+            <summary>Publishing and library</summary>
+            <button type="button" onClick={() => setView('library')}>Experiment library</button>
+            {locked ? (
+              <form onSubmit={(event) => { event.preventDefault(); void publishApproved() }}>
+                <h3>Publish this approved version</h3>
+                <p>Publishing sends this approved version only. A draft is not published, and later local edits do not change the saved snapshot.</p>
+                <label>
+                  Display title
+                  <input value={publishTitle} onChange={(event) => setPublishTitle(event.target.value)} maxLength={120} />
+                </label>
+                <label>
+                  Description
+                  <textarea value={publishDescription} rows={3} maxLength={500} onChange={(event) => setPublishDescription(event.target.value)} />
+                </label>
+                <label>
+                  Author name
+                  <input value={authorDisplayName} onChange={(event) => setAuthorDisplayName(event.target.value)} maxLength={80} />
+                </label>
+                <button type="submit" disabled={publishing}>
+                  {publishing ? 'Publishing…' : 'Publish'}
+                </button>
+                {publishedId ? <p role="status">Atlas saved this experiment as {publishedId}.</p> : null}
+              </form>
+            ) : (
+              <p>Approve a version before publishing. The experiment library stays separate from monitor sessions.</p>
+            )}
+          </details>
         </div>
         <aside>
           <h3>Saved in this browser</h3>

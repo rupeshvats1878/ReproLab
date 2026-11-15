@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MONITOR_SESSION_ID, sessionChoiceLabel, statusLabel } from './sessionBrowse.ts'
+import { MONITOR_SESSION_ID, chooseSavedSession, sessionChoiceLabel, statusLabel } from './sessionBrowse.ts'
 
 describe('saved session labels', () => {
   it('names an associated protocol without treating a saved session as finished', () => {
@@ -26,5 +26,35 @@ describe('saved session labels', () => {
     expect(label).toContain('Camera')
     expect(MONITOR_SESSION_ID.test('session_11111111-1111-4111-8111-111111111111')).toBe(true)
     expect(MONITOR_SESSION_ID.test('session_not-an-id')).toBe(false)
+  })
+
+  it('keeps this browser’s session when a newer shared session exists', () => {
+    const ryan = 'session_bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2'
+    const mine = 'session_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1'
+    const opened = 'session_cccccccc-cccc-4ccc-8ccc-ccccccccccc3'
+    expect(chooseSavedSession({
+      currentId: '',
+      explicitId: null,
+      browserSessionId: mine,
+      newestId: ryan,
+    })).toBe(mine)
+    expect(chooseSavedSession({
+      currentId: opened,
+      explicitId: mine,
+      browserSessionId: mine,
+      newestId: ryan,
+    })).toBe(opened)
+    expect(chooseSavedSession({
+      currentId: '',
+      explicitId: opened,
+      browserSessionId: mine,
+      newestId: ryan,
+    })).toBe(opened)
+    expect(chooseSavedSession({
+      currentId: '',
+      explicitId: null,
+      browserSessionId: null,
+      newestId: ryan,
+    })).toBe(ryan)
   })
 })
