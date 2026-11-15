@@ -1,5 +1,11 @@
 # Task 001 handoff
 
+Latest verification: see LATEST_ADAPTER_HANDOFF.md for Ryan df58da2 (30 tests),
+Cursor c6d9d42 (17/17 wrapper fixtures), and the saved-result association task.
+MONITOR_POLISH.md and monitor-preview.html provide a standalone layout proposal;
+the application was not edited. The preview's browser render remains unverified
+because the browser tool blocked local-file URLs.
+
 Branch codex/three-cup-offline.
 Pinned base 0dc59196a7eb14db506c81286fad8e37623fee92.
 Origin fetched and pinned base verified in origin/demo-ui history.

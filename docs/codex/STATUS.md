@@ -1,5 +1,19 @@
 # Current offline stream status
 
+Latest checkpoint: Ryan df58da202298bf1fccab60b72e675912978ca543 reviewed.
+30 upstream tests pass with network connection/DNS methods blocked. The new
+request explicitly uses store=false, despite the supplied "store enabled" note.
+Cursor c6d9d4264df7f54bd846b8a2a85bee25305b0e4d wrapper passes all 17 fixtures;
+parser alone passes 15, has one window gap and one wrapper-only blocked case.
+Our 40 tests pass and the disabled-response CLI smoke passes. Actual inference
+JSON is pending; no credentials, inference, upload or merge occurred.
+See LATEST_ADAPTER_HANDOFF.md for exact commands and a current Cursor prompt.
+
+Visual audit produced MONITOR_POLISH.md and standalone monitor-preview.html.
+The proposal brings entry controls and evidence higher on the page. It contains
+no real footage or model output. Local-file browser navigation was policy-blocked,
+so the new prototype has not been visually tested. Cursor's application is unchanged.
+
 Updated 2026-11-15. Branch codex/three-cup-offline.
 Pinned base 0dc59196a7eb14db506c81286fad8e37623fee92.
 Prior delivered source f288232cbabb3aa826644c15e52a443d1c3391c0.
