@@ -1,3 +1,4 @@
+import type { PreparedMonitorProtocol } from '../prepare/sixWell.ts'
 import type { MediaDraft } from '../shared/types.ts'
 import type { LiveMonitorState } from './liveDecisions.ts'
 import { eventsFromDecision, evidenceEvent, type StoredObservation } from './persistEvents.ts'
@@ -11,6 +12,7 @@ interface SessionBody {
   sessionId: string
   sourceKind: 'live' | 'prerecorded' | 'synthetic'
   startedAtIso: string
+  preparedProtocol?: PreparedMonitorProtocol | null
 }
 
 const MONITOR_INDEX_KEY = 'reprolab-monitor-session-index'
@@ -97,7 +99,12 @@ export function createMonitorSaver(notify: (status: SaveStatus) => void, fetchIm
       blockId = null
       enqueue(async () => {
         failed = false
-        await send('/monitor-sessions', input)
+        await send('/monitor-sessions', {
+          sessionId: input.sessionId,
+          sourceKind: input.sourceKind,
+          startedAtIso: input.startedAtIso,
+          ...(input.preparedProtocol ? { preparedProtocol: input.preparedProtocol } : {}),
+        })
         if (typeof sessionStorage !== 'undefined') {
           sessionStorage.setItem('reprolab-monitor-session-id', input.sessionId)
         }
@@ -200,6 +207,12 @@ export interface RetrievedMonitor {
   sourceKind: string
   startedAtIso?: string | null
   blockedReason?: string | null
+  preparedProtocol?: {
+    id: string
+    version: number
+    title: string
+    steps: string[]
+  } | null
   alerts?: Array<{
     id: string
     wellId: string

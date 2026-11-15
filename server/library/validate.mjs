@@ -259,12 +259,36 @@ const MAX_CLOCK_MS = 86_400_000
 
 export function validateMonitorSession(body) {
   plainObject(body, 'body')
-  exactKeys(body, optionalKeys(body, ['sessionId', 'sourceKind'], ['startedAtIso']), 'body')
+  exactKeys(body, optionalKeys(body, ['sessionId', 'sourceKind'], ['startedAtIso', 'preparedProtocol']), 'body')
   if (!MONITOR_SOURCES.includes(body.sourceKind)) throw new LibraryError('invalid', 'sourceKind')
   return {
     sessionId: prefixedId(body.sessionId, 'session_', 'sessionId'),
     sourceKind: body.sourceKind,
     startedAtIso: body.startedAtIso === undefined ? null : monitorInstant(body.startedAtIso),
+    preparedProtocol: body.preparedProtocol === undefined ? null : preparedProtocol(body.preparedProtocol),
+  }
+}
+
+const SIX_WELL_INSTRUCTIONS = ['Fill A1', 'Fill A2', 'Fill A3', 'Fill B1', 'Fill B2', 'Fill B3']
+
+function preparedProtocol(value) {
+  plainObject(value, 'preparedProtocol')
+  exactKeys(value, ['id', 'version', 'title', 'steps'], 'preparedProtocol')
+  if (!Number.isInteger(value.version) || value.version < 1 || value.version > 1000) {
+    throw new LibraryError('invalid', 'preparedProtocol.version')
+  }
+  if (!Array.isArray(value.steps) || value.steps.length !== SIX_WELL_INSTRUCTIONS.length) {
+    throw new LibraryError('invalid', 'preparedProtocol.steps')
+  }
+  const steps = value.steps.map((step, index) => {
+    if (step !== SIX_WELL_INSTRUCTIONS[index]) throw new LibraryError('invalid', 'preparedProtocol.steps')
+    return step
+  })
+  return {
+    id: boundedText(value.id, 'preparedProtocol.id', 80),
+    version: value.version,
+    title: boundedText(value.title, 'preparedProtocol.title', 120),
+    steps,
   }
 }
 

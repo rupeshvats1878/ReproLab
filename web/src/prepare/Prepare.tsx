@@ -5,6 +5,7 @@ import { publishRequest } from '../library/publish.ts'
 import { Run } from '../run/Run.tsx'
 import { commitVersion, readApprovedProtocols, readLibrary, writeLibrary } from './library.ts'
 import type { ProtocolVersion } from './library.ts'
+import { isSupportedSixWell, preparedMonitorProtocol, sixWellDraft, type PreparedMonitorProtocol } from './sixWell.ts'
 import { OBSERVATION_METHODS, readExtractedSteps, validateDraft } from './validate.ts'
 import type { ObservationMethod, ProtocolStep } from './validate.ts'
 import './prepare.css'
@@ -15,7 +16,7 @@ const EXTRACT_URL = 'http://127.0.0.1:8787/protocols/extract'
 const EXTRACT_TIMEOUT_MS = 70_000
 const EXTRACTING_NOTICE = 'Asking Gemini for a draft. This can take up to a minute.'
 
-export function Prepare() {
+export function Prepare(props: { onSetupMonitoring: (protocol: PreparedMonitorProtocol) => void }) {
   const [view, setView] = useState<'edit' | 'library' | 'replication'>('edit')
   const [replicationId, setReplicationId] = useState<string | null>(() => sessionStorage.getItem(OPEN_REPLICATION_KEY))
   const [library, setLibrary] = useState(() => readLibrary(localStorage))
@@ -149,6 +150,20 @@ export function Prepare() {
     )
   }
 
+  function useSixWell() {
+    const draft = sixWellDraft()
+    setProtocolId(null)
+    setOriginVersion(null)
+    setOriginStatus(null)
+    setRevising(false)
+    setPublishedId(null)
+    setTitle(draft.title)
+    setSourceText(draft.sourceText)
+    setSteps(draft.steps)
+    setError('')
+    setNotice('Six-well procedure loaded. Save and approve it before monitoring. Nothing is saved yet, and the camera has not started.')
+  }
+
   function loadTextFile(file: File) {
     const textFile = file.name.toLowerCase().endsWith('.txt') || file.type === 'text/plain' || file.type === ''
     if (!textFile) {
@@ -235,8 +250,11 @@ export function Prepare() {
     <section className="prepare-lab">
       <p className="app-kicker">ReproLab • Prepare</p>
       <h2>Prepare a protocol.</h2>
-      <p>Approve a written protocol here. Extracted steps do not configure the six-well monitor.</p>
-      <button type="button" onClick={() => setView('library')}>Experiment library</button>
+      <p>Approve a written protocol here. Only the six-well template can be associated with Monitor.</p>
+      <div className="prepare-actions">
+        <button type="button" onClick={() => setView('library')}>Experiment library</button>
+        <button type="button" onClick={useSixWell}>Use six-well procedure</button>
+      </div>
       <div className="prepare-layout">
         <div>
           <label>
@@ -357,6 +375,21 @@ export function Prepare() {
               </>
             )}
           </div>
+          {locked && protocolId != null && originVersion != null ? (
+            isSupportedSixWell(steps) ? (
+              <div className="prepare-actions">
+                <button
+                  type="button"
+                  onClick={() => props.onSetupMonitoring(preparedMonitorProtocol(protocolId, originVersion, title, steps))}
+                >
+                  Set up monitoring
+                </button>
+                <p>Opens Monitor with this approved version. It does not start the camera or a run.</p>
+              </div>
+            ) : (
+              <p>Automatic monitoring is unavailable for this version. The steps are not the supported six-well procedure.</p>
+            )
+          ) : null}
           {locked ? (
             <form onSubmit={(event) => { event.preventDefault(); void publishApproved() }}>
               <h3>Publish this approved version</h3>

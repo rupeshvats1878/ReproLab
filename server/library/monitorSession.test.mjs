@@ -65,6 +65,7 @@ test('stores six-well monitor events without rewriting alerts or camera state', 
     assert.equal(created.status, 201)
     assert.deepEqual(created.body.protocol.order, ['A1', 'A2', 'A3', 'B1', 'B2', 'B3'])
     assert.equal(created.body.protocol.id, 'six-well-colored-water')
+    assert.equal(created.body.preparedProtocol, null)
     assert.match(created.body.protocol.note, /not a monitor protocol/)
     const replaySession = await ask(server, 'POST', '/monitor-sessions', sessionBody())
     assert.equal(replaySession.status, 200)
@@ -207,6 +208,46 @@ test('stores six-well monitor events without rewriting alerts or camera state', 
     assert.equal(opened.body.observations.length, 1)
     assert.equal(opened.body.evidence.length, 1)
     assert.equal(opened.body.humanReports.length, 2)
+  } finally {
+    server.close()
+  }
+})
+
+test('stores an optional six-well protocol snapshot without changing older sessions', async () => {
+  const server = await listen(createMemoryStore())
+  const sessionId = 'session_99999999-9999-4999-8999-999999999999'
+  const preparedProtocol = {
+    id: '11111111-1111-4111-8111-111111111111',
+    version: 1,
+    title: 'Six-well colored water',
+    steps: ['Fill A1', 'Fill A2', 'Fill A3', 'Fill B1', 'Fill B2', 'Fill B3'],
+  }
+  try {
+    const rejected = await ask(server, 'POST', '/monitor-sessions', {
+      ...sessionBody({ sessionId }),
+      preparedProtocol: { ...preparedProtocol, steps: ['Mix', 'Wait', 'Fill A1', 'Fill A2', 'Fill A3', 'Fill B1'] },
+    })
+    assert.equal(rejected.status, 400)
+    assert.equal(rejected.body.field, 'preparedProtocol.steps')
+
+    const created = await ask(server, 'POST', '/monitor-sessions', { ...sessionBody({ sessionId }), preparedProtocol })
+    assert.equal(created.status, 201)
+    assert.deepEqual(created.body.preparedProtocol, preparedProtocol)
+    assert.equal(created.body.protocol.id, 'six-well-colored-water')
+
+    const replay = await ask(server, 'POST', '/monitor-sessions', { ...sessionBody({ sessionId }), preparedProtocol })
+    assert.equal(replay.status, 200)
+    const changed = await ask(server, 'POST', '/monitor-sessions', {
+      ...sessionBody({ sessionId }),
+      preparedProtocol: { ...preparedProtocol, version: 2 },
+    })
+    assert.equal(changed.status, 409)
+
+    const opened = await ask(server, 'GET', `/monitor-sessions/${sessionId}`)
+    assert.deepEqual(opened.body.preparedProtocol, preparedProtocol)
+    opened.body.preparedProtocol.steps[0] = 'Changed'
+    const again = await ask(server, 'GET', `/monitor-sessions/${sessionId}`)
+    assert.equal(again.body.preparedProtocol.steps[0], 'Fill A1')
   } finally {
     server.close()
   }

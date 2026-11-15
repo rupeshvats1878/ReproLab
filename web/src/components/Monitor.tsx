@@ -4,6 +4,7 @@ import { PROTOCOL_ORDER, WELL_GRID, type WellId, type WellState } from '../share
 import type { MonitorProps } from '../shared/types.ts'
 import { type FrameEvidence, type LiveAlert, type LiveDecisionEntry } from '../monitor/liveDecisions.ts'
 import { describeRetrieved, readMonitorSession } from '../monitor/saveSession.ts'
+import type { PreparedMonitorProtocol } from '../prepare/sixWell.ts'
 import { formatRgb, rgbToCss, COLOR_PRESETS, type ColorPresetId } from '../vision/color.ts'
 import { normalizedToContent, type WellRegions } from '../vision/geometry.ts'
 import { SYNTHETIC_SEQUENCES } from '../vision/synthetic.ts'
@@ -18,9 +19,9 @@ const STATE_LABEL: Record<WellState, string> = {
   unknown: 'Unknown',
 }
 
-export function Monitor(props: MonitorProps) {
-  const { protocol } = props
-  const session = useVisionSession(props)
+export function Monitor(props: MonitorProps & { preparedProtocol?: PreparedMonitorProtocol | null }) {
+  const { protocol, preparedProtocol = null } = props
+  const session = useVisionSession(props, preparedProtocol)
   const [wellSize, setWellSize] = useState(0.2)
   const [humanNote, setHumanNote] = useState('')
   const [reportedState, setReportedState] = useState<WellState>('filled')
@@ -64,7 +65,22 @@ export function Monitor(props: MonitorProps) {
     <section className="monitor" aria-labelledby="monitor-title" data-debug={session.debugOverlay ? 'true' : 'false'}>
       <div className="monitor-heading">
         <h2 id="monitor-title">Monitor</h2>
-        <p>Camera first. Fixed order A1, A2, A3, B1, B2, B3. A prepared protocol does not run here.</p>
+        <p>Camera first. Fixed order A1, A2, A3, B1, B2, B3. A prepared protocol does not change the detector.</p>
+        {preparedProtocol ? (
+          <div>
+            <p>
+              Approved protocol: {preparedProtocol.title}, version {preparedProtocol.version}. The camera has not been started.
+            </p>
+            <details>
+              <summary>Instructions for this session</summary>
+              <ol>
+                {preparedProtocol.steps.map((instruction) => (
+                  <li key={instruction}>{instruction}</li>
+                ))}
+              </ol>
+            </details>
+          </div>
+        ) : null}
       </div>
 
       <div className="live-split">
@@ -263,7 +279,7 @@ export function Monitor(props: MonitorProps) {
 
       <details className="fold" open>
         <summary>Setup</summary>
-        <p className="monitor-note">Supported monitoring: six-well colored-water procedure. A prepared or published protocol does not configure this detector.</p>
+        <p className="monitor-note">Supported monitoring: six-well colored-water procedure. Only an approved version of those six fill instructions can be associated with a session. Other protocols do not configure this detector.</p>
         <CameraSetup session={session} wellSize={wellSize} setWellSize={setWellSize} />
         <h3>Demo</h3>
         <p className="monitor-note">Optional synthetic sequence. Pause on an issue applies only here, not to the camera.</p>

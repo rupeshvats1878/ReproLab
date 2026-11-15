@@ -100,6 +100,19 @@ function MonitorResult({ session }: { session: RetrievedMonitor }) {
         {session.startedAtIso ? ` · started ${session.startedAtIso}` : ''}
       </p>
       {session.blockedReason ? <p>Session blocked: {session.blockedReason}</p> : null}
+      {session.preparedProtocol ? (
+        <div>
+          <p>Approved protocol: {session.preparedProtocol.title}, version {session.preparedProtocol.version}. This is not a library replication.</p>
+          <ol>
+            {session.preparedProtocol.steps.map((instruction) => (
+              <li key={instruction}>{instruction}</li>
+            ))}
+          </ol>
+          <p>These instructions were copied when the session started. A later draft edit does not change them.</p>
+        </div>
+      ) : (
+        <p>Protocol association not recorded.</p>
+      )}
       <h4>Detected issues</h4>
       {alerts.length === 0 ? <p>No issue was retrieved.</p> : null}
       <ul>

@@ -2,7 +2,7 @@
 
 Local storage for one Monitor session. The service stays on `127.0.0.1:8788`. Do not deploy it publicly. The browser calls `/library/monitor-sessions`.
 
-This stores the fixed six-well order only: `A1`, `A2`, `A3`, `B1`, `B2`, `B3`. The protocol id is `six-well-colored-water`. A published Prepare protocol is not a monitor protocol. The request cannot send a protocol snapshot, an experiment id, or a different well order.
+This stores the fixed six-well order only: `A1`, `A2`, `A3`, `B1`, `B2`, `B3`. The detector protocol id remains `six-well-colored-water`. An optional `preparedProtocol` may copy one approved six-well instruction list onto a new session. A published experiment or a replication is still a different record. The request cannot send an arbitrary protocol snapshot or a different well order.
 
 Synthetic `sourceKind` is a demonstration played through the analyzer. It is not a camera recording.
 
@@ -14,7 +14,9 @@ curl -s -X POST http://127.0.0.1:8788/monitor-sessions \
   -d '{"sessionId":"session_UUID","sourceKind":"live","startedAtIso":"2026-11-14T23:00:00.000Z"}'
 ```
 
-`sourceKind` is `live`, `prerecorded`, or `synthetic`. `startedAtIso` is optional wall-clock display time. `201` creates the session. The same id and the same source return `200`. The same id with a different source returns `409` `duplicate_event`.
+`sourceKind` is `live`, `prerecorded`, or `synthetic`. `startedAtIso` is optional wall-clock display time. `preparedProtocol` is optional. When present, it is a frozen copy of an approved six-well Prepare version: `id`, `version`, `title`, and the six instructions `Fill A1` through `Fill B3`. Any other step list is rejected. Omitting `preparedProtocol` still creates a session, and older sessions return `preparedProtocol: null`, which the interface shows as “Protocol association not recorded.” The same id, source, time, and protocol copy return `200`. A different protocol copy returns `409` `duplicate_event`. This field is not a library replication and does not change the detector protocol id `six-well-colored-water`.
+
+`201` creates the session. The same id and the same source return `200`. The same id with a different source returns `409` `duplicate_event`.
 
 `GET /monitor-sessions/:sessionId` returns the session, the append-only `events`, and separate `observations`, `alerts`, `evidence`, and `humanReports`. An alert view lists later `updates` beside the original alert. The stored alert event is not rewritten.
 

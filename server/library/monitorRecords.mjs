@@ -12,6 +12,7 @@ export function monitorSession(input, recordedAt) {
     protocolId: MONITOR_PROTOCOL_ID,
     protocolOrder: [...SIX_WELL_ORDER],
     startedAtIso: input.startedAtIso,
+    preparedProtocol: input.preparedProtocol ?? null,
     recordedAt,
     blockedReason: null,
     events: [],
@@ -35,6 +36,12 @@ export function appendMonitorEvent(session, input, recordedAt) {
   return { session: next, created: true }
 }
 
+export function sameMonitorIdentity(existing, input) {
+  return existing.sourceKind === input.sourceKind
+    && (existing.startedAtIso ?? null) === (input.startedAtIso ?? null)
+    && JSON.stringify(existing.preparedProtocol ?? null) === JSON.stringify(input.preparedProtocol ?? null)
+}
+
 export function presentMonitorSession(session) {
   const events = Array.isArray(session.events) ? session.events.map((event) => structuredClone(event)) : []
   const alerts = events.filter((event) => event.type === 'alert').map((alert) => ({
@@ -50,6 +57,7 @@ export function presentMonitorSession(session) {
       note: 'Only the fixed six-well order A1, A2, A3, B1, B2, B3 is stored. A published Prepare protocol is not a monitor protocol.',
     },
     startedAtIso: session.startedAtIso ?? null,
+    preparedProtocol: session.preparedProtocol ?? null,
     recordedAt: session.recordedAt,
     blockedReason: session.blockedReason ?? null,
     events,

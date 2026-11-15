@@ -3,6 +3,7 @@ import { Monitor } from './components/Monitor.tsx'
 import { useReviewController } from './review/useReviewController.ts'
 import './App.css'
 import { Prepare } from './prepare/Prepare.tsx'
+import type { PreparedMonitorProtocol } from './prepare/sixWell.ts'
 import { Results } from './results/Results.tsx'
 
 type TabId = 'prepare' | 'monitor' | 'results'
@@ -16,6 +17,7 @@ const TABS: readonly { id: TabId; label: string; line: string }[] = [
 export default function App() {
   const review = useReviewController()
   const [tab, setTab] = useState<TabId>('prepare')
+  const [preparedProtocol, setPreparedProtocol] = useState<PreparedMonitorProtocol | null>(null)
 
   return (
     <div className={tab === 'monitor' ? 'app-shell app-shell-monitor' : 'app-shell'}>
@@ -42,7 +44,10 @@ export default function App() {
       <main className="app-main">
         <p className="app-screen-line">{TABS.find((item) => item.id === tab)?.line}</p>
         <div hidden={tab !== 'prepare'}>
-          <Prepare />
+          <Prepare onSetupMonitoring={(protocol) => {
+            setPreparedProtocol(protocol)
+            setTab('monitor')
+          }} />
         </div>
         <div hidden={tab !== 'monitor'}>
           <Monitor
@@ -52,6 +57,7 @@ export default function App() {
             onObservation={review.recordObservation}
             onMediaAvailable={review.registerMedia}
             onRunComplete={review.completeRun}
+            preparedProtocol={preparedProtocol}
           />
         </div>
         <div hidden={tab !== 'results'}>

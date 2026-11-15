@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { MongoClient } from 'mongodb'
 import { LibraryError } from './errors.mjs'
-import { appendMonitorEvent, monitorSession, presentMonitorSession } from './monitorRecords.mjs'
+import { appendMonitorEvent, monitorSession, presentMonitorSession, sameMonitorIdentity } from './monitorRecords.mjs'
 import {
   appendExecutionEvent,
   beginExecution,
@@ -83,7 +83,7 @@ export function createMemoryStore({ now = () => new Date().toISOString(), ids = 
     async createMonitorSession(input) {
       const existing = monitorSessions.find((item) => item.id === input.sessionId)
       if (existing) {
-        if (existing.sourceKind !== input.sourceKind || (existing.startedAtIso ?? null) !== input.startedAtIso) {
+        if (!sameMonitorIdentity(existing, input)) {
           throw new LibraryError('duplicate', 'sessionId')
         }
         return { created: false, session: presentMonitorSession(existing) }
@@ -328,7 +328,7 @@ export function createMongoStore({ client, dbName }) {
         if (error?.code !== 11000) throw new LibraryError('unavailable')
         const existing = await monitorSessions().findOne({ _id: record.id }, { projection: { _id: 0 } })
         if (!existing) throw new LibraryError('unavailable')
-        if (existing.sourceKind !== input.sourceKind || (existing.startedAtIso ?? null) !== input.startedAtIso) {
+        if (!sameMonitorIdentity(existing, input)) {
           throw new LibraryError('duplicate', 'sessionId')
         }
         return { created: false, session: presentMonitorSession(existing) }

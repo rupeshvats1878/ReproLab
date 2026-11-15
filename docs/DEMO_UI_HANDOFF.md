@@ -21,7 +21,9 @@ The primary tabs are Prepare, Monitor, and Results.
 
 ## What is connected
 
-Prepare’s extract, save, approve, and publish calls are the existing ones. Publishing does not change the monitor. Monitor still writes the in-memory review record and, separately, the Atlas monitor session. Results reads those as different documents. A replication is reached only from its publication.
+Prepare’s extract, save, approve, and publish calls are the existing ones. **Use six-well procedure** loads an editable draft with Fill A1 through Fill B3 and no durations. After that version is approved, **Set up monitoring** opens Monitor with the title and version. It does not start the camera. Each new monitor session stores that approved snapshot as `preparedProtocol`. Later edits to the draft do not change the stored copy. Other approved protocols stay in Prepare and cannot start this path. Publishing still does not configure the detector.
+
+Monitor still writes the in-memory review record and, separately, the Atlas monitor session. Results reads the frozen instructions beside that session. A replication is reached only from its publication.
 
 ## Remaining disconnected or unsupported records
 

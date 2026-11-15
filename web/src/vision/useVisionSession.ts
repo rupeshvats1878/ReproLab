@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import type { PreparedMonitorProtocol } from '../prepare/sixWell.ts'
 import { createId, initialWellStates } from '../shared/protocol.ts'
 import {
   type FinalPlateDraft,
@@ -179,7 +180,7 @@ type Callbacks = Pick<
   'onRunStart' | 'onElapsedMs' | 'onObservation' | 'onMediaAvailable' | 'onRunComplete'
 >
 
-export function useVisionSession(callbacks: Callbacks): VisionSession {
+export function useVisionSession(callbacks: Callbacks, preparedProtocol: PreparedMonitorProtocol | null = null): VisionSession {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const stageRef = useRef<HTMLDivElement | null>(null)
@@ -188,6 +189,8 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
   const streamRef = useRef<MediaStream | null>(null)
   const cameraToken = useRef(0)
   const callbacksRef = useRef(callbacks)
+  const preparedRef = useRef(preparedProtocol)
+  preparedRef.current = preparedProtocol
   const mounted = useRef(true)
   const frameRef = useRef<SyntheticFrame | null>(null)
   const emptyFrameRef = useRef<SyntheticFrame | null>(null)
@@ -1208,7 +1211,12 @@ export function useVisionSession(callbacks: Callbacks): VisionSession {
     const startedAtIso = new Date().toISOString()
     const monitor = liveRef.current
     if (monitor.sourceKind === 'live' || monitor.sourceKind === 'prerecorded' || monitor.sourceKind === 'synthetic') {
-      monitorSaver().open({ sessionId: monitor.sessionId, sourceKind: monitor.sourceKind, startedAtIso })
+      monitorSaver().open({
+        sessionId: monitor.sessionId,
+        sourceKind: monitor.sourceKind,
+        startedAtIso,
+        preparedProtocol: preparedRef.current,
+      })
     }
     callbacksRef.current.onRunStart({
       source,
