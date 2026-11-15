@@ -1,29 +1,21 @@
 import { useState } from 'react'
 import { Monitor } from './components/Monitor.tsx'
-import { Review } from './components/Review.tsx'
 import { useReviewController } from './review/useReviewController.ts'
 import './App.css'
-import { Library } from './library/Library.tsx'
 import { Prepare } from './prepare/Prepare.tsx'
-import { ReferenceLab } from './reference/ReferenceLab.tsx'
-import { Run } from './run/Run.tsx'
+import { Results } from './results/Results.tsx'
 
-type TabId = 'prepare' | 'monitor' | 'review' | 'reference' | 'library' | 'run'
+type TabId = 'prepare' | 'monitor' | 'results'
 
 const TABS: readonly { id: TabId; label: string; line: string }[] = [
-  { id: 'prepare', label: 'Prepare', line: 'Draft and approve a protocol. It does not control the six-well monitor.' },
-  { id: 'monitor', label: 'Monitor', line: 'Start the camera and watch six wells in order.' },
-  { id: 'review', label: 'Review', line: 'Compare observations, alerts, and human reports from a colored-water run.' },
-  { id: 'reference', label: 'Footage', line: 'Inspect external dye-dispersion recordings. They are not a replication result.' },
-  { id: 'library', label: 'Library', line: 'Browse experiments that have been published.' },
-  { id: 'run', label: 'Record', line: 'Record events for one published replication.' },
+  { id: 'prepare', label: 'Prepare', line: 'Write a protocol, approve a version, and publish it when you choose.' },
+  { id: 'monitor', label: 'Monitor', line: 'Watch the six-well colored-water procedure with the camera.' },
+  { id: 'results', label: 'Results', line: 'Inspect a saved monitor session, a review record, or an optional reference comparison.' },
 ]
-const OPEN_REPLICATION_KEY = 'reprolab-open-replication-id'
 
 export default function App() {
   const review = useReviewController()
-  const [tab, setTab] = useState<TabId>('monitor')
-  const [runId, setRunId] = useState<string | null>(() => sessionStorage.getItem(OPEN_REPLICATION_KEY))
+  const [tab, setTab] = useState<TabId>('prepare')
 
   return (
     <div className={tab === 'monitor' ? 'app-shell app-shell-monitor' : 'app-shell'}>
@@ -31,7 +23,7 @@ export default function App() {
         <div>
           <p className="app-kicker">Prototype</p>
           <h1>ReproLab</h1>
-          <p className="app-subtitle">Prepare a protocol, monitor the six-well sequence, then review what was stored.</p>
+          <p className="app-subtitle">Prepare a protocol, notice visible deviations, and keep the evidence others can inspect.</p>
         </div>
         <nav className="app-tabs" aria-label="Primary">
           {TABS.map((item) => (
@@ -49,6 +41,9 @@ export default function App() {
 
       <main className="app-main">
         <p className="app-screen-line">{TABS.find((item) => item.id === tab)?.line}</p>
+        <div hidden={tab !== 'prepare'}>
+          <Prepare />
+        </div>
         <div hidden={tab !== 'monitor'}>
           <Monitor
             protocol={review.protocol}
@@ -59,23 +54,9 @@ export default function App() {
             onRunComplete={review.completeRun}
           />
         </div>
-        <div hidden={tab !== 'review'}>
-          <Review
-            protocol={review.protocol}
-            onAcknowledgeOmission={review.acknowledgeOmission}
-            onResolveOmission={review.resolveOmission}
-            onAddHumanEvent={review.addHumanEvent}
-            onLoadRun={review.loadRun}
-          />
+        <div hidden={tab !== 'results'}>
+          <Results review={review} active={tab === 'results'} />
         </div>
-        <div hidden={tab !== 'reference'}><ReferenceLab /></div>
-        <div hidden={tab !== 'prepare'}><Prepare /></div>
-        <div hidden={tab !== 'library'}><Library onOpenRun={(id) => {
-          sessionStorage.setItem(OPEN_REPLICATION_KEY, id)
-          setRunId(id)
-          setTab('run')
-        }} /></div>
-        <div hidden={tab !== 'run'}><Run replicationId={runId} /></div>
       </main>
     </div>
   )

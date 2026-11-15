@@ -175,6 +175,10 @@
   display: inline;
 }
 
+.live-clock button {
+  margin-left: 0.75rem;
+}
+
 .live-clock {
   margin: 0;
   color: #d5dee6;

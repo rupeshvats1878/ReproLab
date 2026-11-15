@@ -13,6 +13,39 @@ interface SessionBody {
   startedAtIso: string
 }
 
+const MONITOR_INDEX_KEY = 'reprolab-monitor-session-index'
+
+export interface MonitorSessionRef {
+  id: string
+  sourceKind: 'live' | 'prerecorded' | 'synthetic'
+  startedAtIso: string
+}
+
+export function rememberMonitorSession(entry: MonitorSessionRef, storage: Storage): void {
+  const next = [entry, ...readMonitorIndex(storage).filter((item) => item.id !== entry.id)].slice(0, 20)
+  storage.setItem(MONITOR_INDEX_KEY, JSON.stringify(next))
+}
+
+export function readMonitorIndex(storage: Storage): MonitorSessionRef[] {
+  try {
+    const parsed: unknown = JSON.parse(storage.getItem(MONITOR_INDEX_KEY) ?? '[]')
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter(isMonitorRef)
+  } catch {
+    return []
+  }
+}
+
+function isMonitorRef(value: unknown): value is MonitorSessionRef {
+  if (!value || typeof value !== 'object') return false
+  const entry = value as MonitorSessionRef
+  return (
+    typeof entry.id === 'string' &&
+    (entry.sourceKind === 'live' || entry.sourceKind === 'prerecorded' || entry.sourceKind === 'synthetic') &&
+    typeof entry.startedAtIso === 'string'
+  )
+}
+
 type FetchImpl = (path: string, body?: unknown) => Promise<void>
 
 export function createMonitorSaver(notify: (status: SaveStatus) => void, fetchImpl: FetchImpl = postMonitor) {
@@ -67,6 +100,12 @@ export function createMonitorSaver(notify: (status: SaveStatus) => void, fetchIm
         await send('/monitor-sessions', input)
         if (typeof sessionStorage !== 'undefined') {
           sessionStorage.setItem('reprolab-monitor-session-id', input.sessionId)
+        }
+        if (typeof localStorage !== 'undefined') {
+          rememberMonitorSession(
+            { id: input.sessionId, sourceKind: input.sourceKind, startedAtIso: input.startedAtIso },
+            localStorage,
+          )
         }
       })
     },
@@ -159,6 +198,8 @@ export async function readMonitorSession(id: string): Promise<RetrievedMonitor |
 export interface RetrievedMonitor {
   id: string
   sourceKind: string
+  startedAtIso?: string | null
+  blockedReason?: string | null
   alerts?: Array<{
     id: string
     wellId: string

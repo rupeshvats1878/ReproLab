@@ -24,6 +24,8 @@ export function Monitor(props: MonitorProps) {
   const [wellSize, setWellSize] = useState(0.2)
   const [humanNote, setHumanNote] = useState('')
   const [reportedState, setReportedState] = useState<WellState>('filled')
+  const [correctionFor, setCorrectionFor] = useState<string | null>(null)
+  const [correctionHidden, setCorrectionHidden] = useState(false)
   const storedObservations = protocol.observations.length
   const lastTrace = session.traces.at(-1)
   const expected = expectedWellId(PROTOCOL_ORDER, session.stableStates)
@@ -41,6 +43,17 @@ export function Monitor(props: MonitorProps) {
   const highlightedWell = issueActive ? selected.wellId : expected
   const demoEnded = session.inputKind === 'synthetic' && session.playbackNote.includes('ended')
   const showSummary = demoEnded && !session.summaryHeld
+
+  if (session.correctionNote !== correctionFor) {
+    setCorrectionFor(session.correctionNote)
+    setCorrectionHidden(false)
+  }
+
+  useEffect(() => {
+    if (!session.correctionNote) return
+    const timer = window.setTimeout(() => setCorrectionHidden(true), 3200)
+    return () => window.clearTimeout(timer)
+  }, [session.correctionNote])
 
   function startSkipDemo(): void {
     session.useSynthetic('skip-a2-then-fill')
@@ -95,6 +108,9 @@ export function Monitor(props: MonitorProps) {
           </div>
           <p className="live-clock" role="status">
             {session.observationStatus} · {formatSeconds(session.localElapsedMs)}
+            {session.cameraPhase === 'live' || session.cameraPhase === 'starting' ? (
+              <button type="button" onClick={session.stopCamera}>Stop camera</button>
+            ) : null}
           </p>
           {session.seekMessage ? (
             <p className="attention-note" role="alert">
@@ -145,21 +161,21 @@ export function Monitor(props: MonitorProps) {
                   <p className="correction-line">{session.correctionNote}</p>
                 </>
               ) : (
-                <DecisionGuide guide={guide} issueActive={issueActive} correctionNote={session.correctionNote} />
+                <DecisionGuide guide={guide} issueActive={issueActive} correctionNote={correctionHidden ? null : session.correctionNote} />
               )
-            ) : session.localPhase === 'running' ? (
-              <DecisionGuide guide={guide} issueActive={issueActive} correctionNote={session.correctionNote} />
+            ) : session.localPhase === 'idle' ? (
+              <>
+                <h3>Now</h3>
+                <p className="guide-line">
+                  {session.inputKind === 'prerecorded' ? 'Start monitoring when the video is ready.' : 'Open Setup and start the camera.'}
+                </p>
+              </>
             ) : (
-              <CameraSetup session={session} wellSize={wellSize} setWellSize={setWellSize} />
+              <DecisionGuide guide={guide} issueActive={issueActive} correctionNote={correctionHidden ? null : session.correctionNote} />
             )}
             {session.inputKind !== 'synthetic' && session.localPhase === 'running' ? (
               <button type="button" onClick={session.completeRun}>
                 Complete monitoring
-              </button>
-            ) : null}
-            {session.inputKind === 'synthetic' ? (
-              <button type="button" onClick={session.startCamera}>
-                Start camera
               </button>
             ) : null}
             {selected && selected.status !== 'corrected' ? (
@@ -245,9 +261,12 @@ export function Monitor(props: MonitorProps) {
         </aside>
       </div>
 
-      <details className="fold">
-        <summary>Demo</summary>
-        <p className="monitor-note">Optional synthetic sequence or imported video. Pause on an issue applies only to a synthetic demo, not the camera.</p>
+      <details className="fold" open>
+        <summary>Setup</summary>
+        <p className="monitor-note">Supported monitoring: six-well colored-water procedure. A prepared or published protocol does not configure this detector.</p>
+        <CameraSetup session={session} wellSize={wellSize} setWellSize={setWellSize} />
+        <h3>Demo</h3>
+        <p className="monitor-note">Optional synthetic sequence. Pause on an issue applies only here, not to the camera.</p>
         <button type="button" onClick={startSkipDemo}>
           {session.inputKind === 'synthetic' && session.monitorGeneration > 0 ? 'Replay demo' : 'Play skip-then-fill demo'}
         </button>
@@ -297,10 +316,6 @@ export function Monitor(props: MonitorProps) {
         <button type="button" onClick={session.togglePlayback} disabled={session.inputKind !== 'prerecorded'}>
           Play or pause video
         </button>
-      </details>
-
-      <details className="fold">
-        <summary>Setup</summary>
         <p className="input-banner" data-kind={session.inputKind} role="status">
           {session.inputLabel}
         </p>

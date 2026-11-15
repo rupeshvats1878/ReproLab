@@ -1,50 +1,37 @@
 # Demo UI handoff
 
-Branch `demo-ui`. Detection rules, server files, and the monitor-session API were not changed.
+Branch `demo-ui`. Detection rules, server contracts, and Ryan’s vision service were not changed.
 
-## Camera workflow
+## Three-screen workflow
 
-The Monitor leads with the webcam. Synthetic playback is optional and lives under Demo. Pause-on-issue stays synthetic-only.
+The primary tabs are Prepare, Monitor, and Results.
 
-1. **Start camera.** Permission denied, no camera, and other start failures stay on the picture and in the panel. Allow the camera in the browser, then press Start camera again.
-2. **Position** the six labels over the containers. Drag, or focus a label and use the arrow keys. Well size and Reset positions reuse the existing registration.
-3. **Capture empty reference** while the wells are empty, then choose a dye preset or sample the color from the picture.
-4. **Preview** shows the latest frame as empty, filled, or unknown. It is not the stable reading.
-5. **Start monitoring** uses the existing live alerts, later observed corrections, human reports, and Atlas save status.
+1. **Prepare.** Enter a title, paste protocol text or load a `.txt` file into that field, extract steps with the existing Gemini route, edit the steps, save a draft or approve a version, and optionally publish the approved version. Instruction and observation stay on the step card. The source quote, duration, and missing-information questions stay inside the card details. A question count shows when questions exist. Durations stay blank when the text does not state one. Experiment library opens from Prepare. Opening a publication and starting a replication still uses the library service. The replication execution screen opens from that replication record and is labeled as a replication, not a monitor session.
+2. **Monitor.** The large picture stays on the left. The right panel shows the current action, one issue, and one next step. Setup is one collapsible area for the camera, an imported video, region positions, the empty reference, dye color, and the optional synthetic demo. Pause-on-issue remains synthetic-only. Stop camera stays next to the clock while the camera is on. An observed correction is shown briefly, then the panel returns to the current action. The issue line stays until that alert’s state changes. History, measurements, and session identifiers stay in expandable sections. The setup label says supported monitoring is the fixed six-well colored-water procedure.
+3. **Results.** The latest monitor session saved in this browser is selected first. Older session ids remembered in this browser can be chosen. A monitor session shows its source, issues, stored corrections, human reports, and whether evidence bytes exist. It does not play video from frame metadata and does not request a Gemini explanation. Colored-water review records, including this visit’s in-memory record and IndexedDB copies, are shown separately. Their existing explanation request still uses only those review records. MIT reference comparison is under Reference analysis. Authored synthetic examples are closed by default.
 
-## What changed
+## Where former tabs moved
 
-The app shell, navigation, and existing screens use the Monitor’s dark slate background, teal accents, and amber for issues. Each tab has a short label and one sentence. Prepare, Monitor, Review, Footage, Library, and Record stay separate. The six-well Monitor still runs only the fixed colored-water order. A prepared or Gemini-extracted protocol does not drive it.
+- **Review** moved into Results as colored-water review records. Saving a review copy, human reports, and the grounded explanation stayed with that record type.
+- **Footage** moved into Results under Reference analysis.
+- **Library** moved into Prepare as Experiment library. Publishing still creates a library experiment. A replication is still a plan until its own execution screen is started.
+- **Record** stayed the replication execution screen, opened from a replication record in the experiment library. It is not a primary tab and it is not treated as a monitor session.
+- **Synthetic monitor demos** stayed under Monitor Setup. Authored review fixtures stayed behind Authored examples and are not the default results.
+- **Storage / session id** stayed expandable on Monitor. Results reads the same saved monitor session when the library returns it.
 
-Monitor changes:
+## What is connected
 
-- **Pause demo when an issue appears** is on by default. Synthetic playback stops after the frame that opens a new omission alert. The picture and highlighted well stay visible. The same alert does not pause the demo again. Live cameras and imported videos are not paused.
-- While paused, the clock and panel say Demo paused, which is separate from Observing. The panel shows the current issue and one next step, and offers **Continue demo**. Continue only resumes the sequence. Acknowledge remains a separate human report and does not correct the well.
-- After continue, a later fill shows “appears filled. The original alert remains.” before the end summary.
-- **Replay demo** clears the pause, the handled alert IDs, and the correction note, then starts a new session. Source timestamps stay one step of 220 ms per frame.
-- Synthetic playback defaults to Slow, four times the original 220 ms frame interval. Medium is twice as slow. Original keeps the 220 ms interval. The published timestamp remains `(frame index + 1) * 220 ms`, so slower playback does not add observations or change camera timing.
-- A six-step progress row highlights the current well and an open issue.
-- While the sequence runs, the panel shows the current action, one issue, and one next step.
-- When it ends, the panel shows issues detected, issues corrected by a later observation, unresolved issues, and human reports. A human report is not counted as an observed correction.
-- Save status stays `Saving. Not stored yet.`, `Saved.`, or `Save failed. Unsent events are not stored.`
-- The session ID and retrieved storage text are under Storage, with Copy session ID.
+Prepare’s extract, save, approve, and publish calls are the existing ones. Publishing does not change the monitor. Monitor still writes the in-memory review record and, separately, the Atlas monitor session. Results reads those as different documents. A replication is reached only from its publication.
 
-## Demo walkthrough
+## Remaining disconnected or unsupported records
 
-1. Open the app and stay on Monitor. Start camera is the primary action.
-2. For the synthetic check, open Demo, leave Synthetic speed on Slow, and press Play skip-then-fill demo. The synthetic label stays on the picture.
-3. When A3 is filled and A2 is still empty, playback pauses. The panel says Demo paused, “A2 appears empty,” and “Check A2.” A2 stays highlighted.
-4. Press Continue demo. That does not acknowledge or correct A2.
-5. When the later frame fills A2, the panel says A2 appears filled and the original alert remains. The warning then clears.
-6. At the end, read the summary: one issue detected, one corrected by a later observation, none unresolved, and no human reports unless you pressed Acknowledge or Report what you saw.
-7. Press Replay demo. The pause clears, the session ID changes, and the old alert is gone until the new sequence raises it again.
-8. Other synthetic sequences and an imported video are under Demo. Pause observations and debug measurements stay under Setup.
-9. Use Prepare, Review, Footage, Library, and Record from the top navigation. Storage stays collapsed unless you open it.
+- Gemini preparation does not turn an arbitrary protocol into camera monitoring.
+- A monitor session cannot be sent to the review explanation endpoint. No explanation is invented for it.
+- A monitor session with only frame metadata is not played as video.
+- Legacy review runs, monitor sessions, and replications are not converted into one another.
+- Real camera footage is still unvalidated. A high mix score still means unknown, not a hand or pipette.
+- The production build does not proxy `/library`. Use the Vite dev server with the library on `127.0.0.1:8788`.
 
-## Where a future model assessment fits
+## Synthetic demo notes
 
-Ryan’s vision service can add one short assessment line inside the decision panel, directly under the current issue and beside the presenter controls. Show it only when that service returns a judgment for the same session, well, and frame. It must not pause playback, resume playback, or replace an observation. Do not replace the existing action, issue, or next step, and do not invent a judgment while the service is absent. Human acknowledgement stays a separate report and must not mark the well corrected.
-
-## Remaining limitations
-
-Real camera footage has not been validated. Slow playback changes only the synthetic wall clock; the on-screen run clock still ends at 3.5 s because that is the source timestamp. A synthetic run stores frame metadata on the alert and does not store a recording or a data URL. A high mix score still means unknown, not a hand or pipette. The production build does not proxy `/library`; use the Vite dev server with the library on `127.0.0.1:8788`.
+Pause demo when an issue appears is on by default inside Setup and applies only to synthetic playback. Continue demo does not acknowledge or correct. Replay clears the pause and starts a new session. Source timestamps stay one 220 ms step per frame. Slow playback changes only the wall clock.

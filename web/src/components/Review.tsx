@@ -175,9 +175,9 @@ export function Review(props: ReviewProps) {
         </p>
       ) : null}
 
-      <div className="review-block">
-        <h3>Synthetic demos</h3>
-        <p>These three authored records are the demo. They are labeled synthetic and contain no footage.</p>
+      <details className="review-block">
+        <summary>Authored examples</summary>
+        <p>These three records are examples, not this user’s activity. They are labeled synthetic and contain no footage.</p>
         <ul className="fixture-list">
           {SYNTHETIC_DEMO_RUNS.map((run) => (
             <li key={run.metadata.id}>
@@ -189,7 +189,7 @@ export function Review(props: ReviewProps) {
             </li>
           ))}
         </ul>
-      </div>
+      </details>
 
       <div className="review-block">
         <h3>Saved in this browser</h3>
@@ -257,6 +257,7 @@ export function Review(props: ReviewProps) {
           ))}
         </ul>
         <p className="review-kicker">Live model explanation</p>
+        <p>The explanation is requested only for these colored-water review records. It is not created for a monitor session or a replication.</p>
         <button type="button" onClick={() => void requestExplanation()} disabled={aiState === 'loading' || comparisonRecords.length === 0}>
           Request an evidence-backed explanation
         </button>

@@ -1,17 +1,23 @@
 import { useRef, useState } from 'react'
 import { LibraryClientError, publishExperiment } from '../library/client.ts'
+import { Library } from '../library/Library.tsx'
 import { publishRequest } from '../library/publish.ts'
+import { Run } from '../run/Run.tsx'
 import { commitVersion, readApprovedProtocols, readLibrary, writeLibrary } from './library.ts'
 import type { ProtocolVersion } from './library.ts'
 import { OBSERVATION_METHODS, readExtractedSteps, validateDraft } from './validate.ts'
 import type { ObservationMethod, ProtocolStep } from './validate.ts'
 import './prepare.css'
 
+const TEXT_FILE_LIMIT = 200_000
+const OPEN_REPLICATION_KEY = 'reprolab-open-replication-id'
 const EXTRACT_URL = 'http://127.0.0.1:8787/protocols/extract'
 const EXTRACT_TIMEOUT_MS = 70_000
 const EXTRACTING_NOTICE = 'Asking Gemini for a draft. This can take up to a minute.'
 
 export function Prepare() {
+  const [view, setView] = useState<'edit' | 'library' | 'replication'>('edit')
+  const [replicationId, setReplicationId] = useState<string | null>(() => sessionStorage.getItem(OPEN_REPLICATION_KEY))
   const [library, setLibrary] = useState(() => readLibrary(localStorage))
   const [protocolId, setProtocolId] = useState<string | null>(null)
   const [originVersion, setOriginVersion] = useState<number | null>(null)
@@ -143,6 +149,29 @@ export function Prepare() {
     )
   }
 
+  function loadTextFile(file: File) {
+    const textFile = file.name.toLowerCase().endsWith('.txt') || file.type === 'text/plain' || file.type === ''
+    if (!textFile) {
+      setError('Only a .txt file is read into the protocol field. PDF text is not extracted.')
+      return
+    }
+    if (file.size > TEXT_FILE_LIMIT) {
+      setError('That file is larger than 200 KB. Paste a shorter protocol.')
+      return
+    }
+    void file.text().then((text) => {
+      if (text.length > TEXT_FILE_LIMIT) {
+        setError('That file is larger than 200 KB. Paste a shorter protocol.')
+        return
+      }
+      setSourceText(text)
+      setError('')
+      setNotice('Loaded the text file into the protocol field. It is not saved until you save a version.')
+    }).catch(() => {
+      setError('The text file could not be read. Nothing was added.')
+    })
+  }
+
   async function publishApproved() {
     if (publishingRef.current || protocolId == null || originVersion == null) return
     const selected = readApprovedProtocols(localStorage).find((item) => item.id === protocolId && item.version === originVersion)
@@ -179,13 +208,35 @@ export function Prepare() {
     }
   }
 
+  if (view === 'library') {
+    return (
+      <section className="prepare-lab">
+        <button type="button" onClick={() => setView('edit')}>Back to the protocol</button>
+        <Library onOpenRun={(id) => {
+          sessionStorage.setItem(OPEN_REPLICATION_KEY, id)
+          setReplicationId(id)
+          setView('replication')
+        }} />
+      </section>
+    )
+  }
+
+  if (view === 'replication') {
+    return (
+      <section className="prepare-lab">
+        <button type="button" onClick={() => setView('library')}>Back to the experiment library</button>
+        <p>This is a replication record. A planned replication is not a performed monitor session.</p>
+        <Run replicationId={replicationId} />
+      </section>
+    )
+  }
+
   return (
     <section className="prepare-lab">
       <p className="app-kicker">ReproLab • Prepare</p>
-      <h2>Turn a written protocol into an approved draft.</h2>
-      <p>
-        Approve a written protocol here. This page does not run the six-well monitor.
-      </p>
+      <h2>Prepare a protocol.</h2>
+      <p>Approve a written protocol here. Extracted steps do not configure the six-well monitor.</p>
+      <button type="button" onClick={() => setView('library')}>Experiment library</button>
       <div className="prepare-layout">
         <div>
           <label>
@@ -195,6 +246,19 @@ export function Prepare() {
           <label>
             Protocol text
             <textarea value={sourceText} disabled={locked} rows={8} onChange={(event) => setSourceText(event.target.value)} />
+          </label>
+          <label>
+            Or upload a .txt file
+            <input
+              type="file"
+              accept=".txt,text/plain"
+              disabled={locked}
+              onChange={(event) => {
+                const file = event.target.files?.[0]
+                if (file) loadTextFile(file)
+                event.target.value = ''
+              }}
+            />
           </label>
           <div className="prepare-actions">
             <button
@@ -211,63 +275,71 @@ export function Prepare() {
           </div>
           <p role="status">{notice}</p>
           {error ? <p role="alert" className="prepare-warning">{error}</p> : null}
-          {steps.map((step, index) => (
-            <article key={index} className="prepare-step">
-              <h3>Step {index + 1}</h3>
-              <label>
-                Instruction
-                <textarea
-                  value={step.instruction}
-                  disabled={locked}
-                  rows={2}
-                  onChange={(event) => updateSteps(replaceStep(steps, index, { ...step, instruction: event.target.value }))}
-                />
-              </label>
-              <label>
-                Supporting quote
-                <textarea
-                  value={step.quote}
-                  disabled={locked}
-                  rows={2}
-                  onChange={(event) => updateSteps(replaceStep(steps, index, { ...step, quote: event.target.value }))}
-                />
-              </label>
-              <label>
-                Stated duration
-                <input
-                  value={step.duration ?? ''}
-                  disabled={locked}
-                  placeholder="Leave blank when the text does not state one"
-                  onChange={(event) => updateSteps(replaceStep(steps, index, { ...step, duration: event.target.value.trim() === '' ? null : event.target.value }))}
-                />
-              </label>
-              <label>
-                Observation
-                <select
-                  value={step.observationMethod}
-                  disabled={locked}
-                  onChange={(event) => updateSteps(replaceStep(steps, index, { ...step, observationMethod: event.target.value as ObservationMethod }))}
-                >
-                  {OBSERVATION_METHODS.map((method) => (
-                    <option key={method} value={method}>{methodLabel(method)}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Missing information
-                <textarea
-                  value={step.questions.join('\n')}
-                  disabled={locked}
-                  rows={2}
-                  placeholder="One question per line"
-                  onChange={(event) => updateSteps(replaceStep(steps, index, { ...step, questions: event.target.value.split('\n') }))}
-                />
-              </label>
-              <button type="button" disabled={locked} onClick={() => updateSteps(steps.filter((_, item) => item !== index))}>
-                Remove step
-              </button>
-            </article>
-          ))}
+          {steps.map((step, index) => {
+            const questionCount = step.questions.map((question) => question.trim()).filter(Boolean).length
+            return (
+              <article key={index} className="prepare-step">
+                <h3>Step {index + 1}</h3>
+                <label>
+                  Instruction
+                  <textarea
+                    value={step.instruction}
+                    disabled={locked}
+                    rows={2}
+                    onChange={(event) => updateSteps(replaceStep(steps, index, { ...step, instruction: event.target.value }))}
+                  />
+                </label>
+                <label>
+                  Observation
+                  <select
+                    value={step.observationMethod}
+                    disabled={locked}
+                    onChange={(event) => updateSteps(replaceStep(steps, index, { ...step, observationMethod: event.target.value as ObservationMethod }))}
+                  >
+                    {OBSERVATION_METHODS.map((method) => (
+                      <option key={method} value={method}>{methodLabel(method)}</option>
+                    ))}
+                  </select>
+                </label>
+                <details>
+                  <summary>
+                    {questionCount > 0 ? `Source and ${questionCount} question${questionCount === 1 ? '' : 's'}` : 'Source quote'}
+                  </summary>
+                  <label>
+                    Supporting quote
+                    <textarea
+                      value={step.quote}
+                      disabled={locked}
+                      rows={2}
+                      onChange={(event) => updateSteps(replaceStep(steps, index, { ...step, quote: event.target.value }))}
+                    />
+                  </label>
+                  <label>
+                    Stated duration
+                    <input
+                      value={step.duration ?? ''}
+                      disabled={locked}
+                      placeholder="Leave blank when the text does not state one"
+                      onChange={(event) => updateSteps(replaceStep(steps, index, { ...step, duration: event.target.value.trim() === '' ? null : event.target.value }))}
+                    />
+                  </label>
+                  <label>
+                    Missing information
+                    <textarea
+                      value={step.questions.join('\n')}
+                      disabled={locked}
+                      rows={2}
+                      placeholder="One question per line"
+                      onChange={(event) => updateSteps(replaceStep(steps, index, { ...step, questions: event.target.value.split('\n') }))}
+                    />
+                  </label>
+                </details>
+                <button type="button" disabled={locked} onClick={() => updateSteps(steps.filter((_, item) => item !== index))}>
+                  Remove step
+                </button>
+              </article>
+            )
+          })}
           {problems.length > 0 && steps.length > 0 ? (
             <ul className="prepare-problems">
               {problems.map((problem) => <li key={problem}>{problem}</li>)}
