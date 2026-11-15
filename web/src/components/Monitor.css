@@ -487,6 +487,21 @@
   align-items: center;
 }
 
+.clip-range {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.clip-range label {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.clip-range input {
+  width: 6.5rem;
+}
+
 .media-notice {
   margin: 0;
   padding: 0.55rem 0.7rem;

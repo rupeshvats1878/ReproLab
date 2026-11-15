@@ -22,6 +22,8 @@ function payload(overrides: Record<string, unknown> = {}) {
     observationStatus: 'observed',
     latencyMs: 45000,
     error: null,
+    sourceOffsetMs: 0,
+    videoDurationMs: 20000,
     ...overrides,
   }
 }

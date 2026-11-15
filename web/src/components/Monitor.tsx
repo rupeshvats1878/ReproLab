@@ -9,6 +9,7 @@ import type { PreparedMonitorProtocol } from '../prepare/sixWell.ts'
 import { formatRgb, rgbToCss, COLOR_PRESETS, type ColorPresetId } from '../vision/color.ts'
 import { normalizedToContent, type WellRegions } from '../vision/geometry.ts'
 import { SYNTHETIC_SEQUENCES } from '../vision/synthetic.ts'
+import { buildClipCheckRequest, clipHeadline, clipStatusCopy, localVideoId, shouldApplyClipResponse, type ClipCheckResponse } from '../capture/clipCheck.ts'
 import { CAPTURE_MARKERS, CAPTURE_PROTOCOLS, compareHumanMarker, DEFAULT_CAPTURE_PROTOCOL_ID, recordingSeekSeconds, THREE_CUP_DEMO_PLAN, captureProtocol } from '../capture/threeCup.ts'
 import { useVisionSession, type VisionSession } from '../vision/useVisionSession.ts'
 import type { WellMeasurement } from '../vision/analyze.ts'
@@ -902,6 +903,19 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
   const previewUrl = useObjectUrl(session.localRecording)
   const previewRef = useRef<HTMLVideoElement>(null)
   const [seekNotice, setSeekNotice] = useState('')
+  const [clipStart, setClipStart] = useState('0')
+  const [clipEnd, setClipEnd] = useState('10')
+  const [clipPhase, setClipPhase] = useState<'idle' | 'processing' | 'done' | 'error'>('idle')
+  const [clipResult, setClipResult] = useState<ClipCheckResponse | null>(null)
+  const clipGeneration = useRef(0)
+  const reviewKey = session.reviewFile ? `${session.reviewFile.name}:${session.reviewFile.bytes}` : ''
+  const [clipReviewKey, setClipReviewKey] = useState(reviewKey)
+  if (clipReviewKey !== reviewKey) {
+    setClipReviewKey(reviewKey)
+    setClipPhase('idle')
+    setClipResult(null)
+    clipGeneration.current += 1
+  }
   const protocol = captureProtocol(session.captureProtocolId)
   const latest = session.markers.at(-1) ?? null
   const latestComparison = latest ? compareHumanMarker(latest.marker, session.captureProtocolId) : null
@@ -934,10 +948,76 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
       setSeekNotice('Playback did not move to that time.')
     }
   }
+  async function requestClipCheck(): Promise<void> {
+    if (!session.reviewFile) return
+    const generation = clipGeneration.current + 1
+    clipGeneration.current = generation
+    const requestId = `request_${crypto.randomUUID()}`
+    const body = buildClipCheckRequest({
+      sessionId: session.live.sessionId,
+      videoId: localVideoId(session.reviewFile),
+      requestId,
+      startSeconds: Number(clipStart),
+      endSeconds: Number(clipEnd),
+    })
+    if (!body) {
+      setClipPhase('error')
+      setClipResult({ status: 'rejected', requestId, message: 'Use a clip longer than 0 seconds and no longer than 60 seconds.' })
+      return
+    }
+    setClipPhase('processing')
+    setClipResult(null)
+    try {
+      const response = await fetch('/library/clip-observations', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const payload: unknown = await response.json()
+      const result = payload && typeof payload === 'object' ? payload as ClipCheckResponse : {}
+      if (!shouldApplyClipResponse(
+        { generation, requestId },
+        { generation: clipGeneration.current, requestId: result.requestId ?? requestId },
+      )) return
+      if (!response.ok) {
+        setClipPhase('error')
+        setClipResult({ status: 'unavailable', requestId, message: 'The clip check was rejected. No video was sent.' })
+        return
+      }
+      setClipPhase('done')
+      setClipResult({ ...result, message: result.message ?? null })
+    } catch {
+      if (clipGeneration.current !== generation) return
+      setClipPhase('error')
+      setClipResult({ status: 'unavailable', requestId, message: 'The clip check could not be reached. No video was sent.' })
+    }
+  }
+  function watchMedia(mediaMs: number): void {
+    if (session.inputKind === 'prerecorded') {
+      session.seekStage(mediaMs)
+      return
+    }
+    const video = previewRef.current
+    if (!video || video.readyState < 1 || !Number.isFinite(video.duration)) {
+      setSeekNotice('The video time is not loaded yet.')
+      return
+    }
+    const seconds = mediaMs / 1000
+    if (seconds < 0 || seconds > video.duration) {
+      setSeekNotice('That time is outside the recording.')
+      return
+    }
+    try {
+      video.currentTime = seconds
+      setSeekNotice('')
+    } catch {
+      setSeekNotice('Playback did not move to that time.')
+    }
+  }
   return (
     <>
       <section className="decision-now" aria-label="Current observation">
-        <p className="state-badge" data-tone="pending">Detector not connected</p>
+        <p className="state-badge" data-tone="pending">{clipBadge(clipPhase, clipResult)}</p>
         {latest && latestComparison ? (
           <>
             <p className="decision-title">{latestComparison.reported}</p>
@@ -949,11 +1029,11 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
             ) : null}
           </>
         ) : (
-          <p className="decision-title">No observation yet.</p>
+          <p className="decision-title">{clipPhase === 'idle' ? 'No observation yet.' : clipHeadline(clipResult?.status ?? (clipPhase === 'processing' ? 'processing' : undefined))}</p>
         )}
         <details>
           <summary>Status</summary>
-          <p>No observation request is in flight. A missing result is not a verdict.</p>
+          <p>{clipPhase === 'idle' ? 'No observation request is in flight. A missing result is not a verdict.' : clipStatusCopy(clipResult?.status ?? (clipPhase === 'processing' ? 'processing' : undefined), clipResult?.message)}</p>
         </details>
       </section>
       <section className="protocol-compare" aria-label="Protocol comparison">
@@ -984,20 +1064,42 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
           ))}
         </div>
       </section>
+      {session.reviewFile ? (
+        <section className="report-controls" aria-label="Clip check">
+          <h3>Clip check</h3>
+          <div className="clip-range">
+            <label>
+              Start (s)
+              <input type="number" min={0} step={0.1} value={clipStart} onChange={(event) => setClipStart(event.target.value)} />
+            </label>
+            <label>
+              End (s)
+              <input type="number" min={0} step={0.1} value={clipEnd} onChange={(event) => setClipEnd(event.target.value)} />
+            </label>
+          </div>
+          <button type="button" onClick={() => void requestClipCheck()} disabled={clipPhase === 'processing'}>
+            Check this clip
+          </button>
+          <p role="status">{clipPhase === 'idle' ? 'A check sends the clip times only. The recording stays on this computer.' : clipStatusCopy(clipResult?.status ?? (clipPhase === 'processing' ? 'processing' : undefined), clipResult?.message)}</p>
+        </section>
+      ) : null}
       {seekNotice ? <p className="media-notice" role="alert">{seekNotice}</p> : null}
       <EvidenceStream
         empty="No person report yet."
-        items={session.markers.map((marker) => {
-          const comparison = compareHumanMarker(marker.marker, session.captureProtocolId)
-          return {
-            id: marker.id,
-            time: formatSeconds(marker.observationTimestamp),
-            source: 'Person',
-            title: marker.label,
-            detail: comparison.review,
-            onWatch: () => watch(marker.observationTimestamp),
-          }
-        })}
+        items={[
+          ...session.markers.map((marker) => {
+            const comparison = compareHumanMarker(marker.marker, session.captureProtocolId)
+            return {
+              id: marker.id,
+              time: formatSeconds(marker.observationTimestamp),
+              source: 'Person',
+              title: marker.label,
+              detail: comparison.review,
+              onWatch: () => watch(marker.observationTimestamp),
+            }
+          }),
+          ...(clipResult?.needsHumanVerification ? modelEvidence(clipResult, watchMedia) : []),
+        ]}
       />
       {previewUrl ? (
         <video
@@ -1015,6 +1117,30 @@ function CapturePanel({ session, running }: { session: VisionSession; running: b
       </div>
     </>
   )
+}
+
+function clipBadge(phase: 'idle' | 'processing' | 'done' | 'error', result: ClipCheckResponse | null): string {
+  if (phase === 'processing') return 'Checking clip'
+  if (result?.status === 'awaiting-authorization') return 'Awaiting authorization'
+  if (result?.status === 'rejected') return 'Response rejected'
+  if (phase === 'error' || result?.status === 'unavailable') return 'Check unavailable'
+  if (result?.status === 'hypothesis' || result?.status === 'uncertain' || result?.status === 'no-transfer') return 'Needs review'
+  return 'Detector not connected'
+}
+
+function modelEvidence(
+  result: ClipCheckResponse,
+  watchMediaTime: (mediaMs: number) => void,
+): Array<{ id: string; time: string; source: string; title: string; detail: string; onWatch?: () => void }> {
+  if (result.status !== 'hypothesis' && result.status !== 'uncertain') return []
+  return (result.events ?? []).filter((event) => event.needsHumanVerification).map((event) => ({
+    id: event.eventId,
+    time: formatSeconds(event.eventStartMs),
+    source: 'Unverified',
+    title: event.sourceCupId && event.destinationCupId ? `${event.sourceCupId} → ${event.destinationCupId}` : 'Unclear transfer',
+    detail: 'Unverified model hypothesis. It does not complete a step.',
+    onWatch: event.seekable === false ? undefined : () => watchMediaTime(event.eventStartMs),
+  }))
 }
 
 function markerCups(marker: string): string[] {

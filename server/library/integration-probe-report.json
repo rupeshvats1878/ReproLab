@@ -1,0 +1,576 @@
+{
+  "synthetic": true,
+  "cursorCommit": "65f78a42b379fd2c4163bbfbc96a0754c035d64b",
+  "results": [
+    {
+      "name": "valid_hypothesis_nonzero_offset",
+      "expectedState": "hypothesis",
+      "actualState": "hypothesis",
+      "status": "passed",
+      "actual": {
+        "accepted": true,
+        "state": "hypothesis",
+        "reason": "unverified model hypothesis",
+        "events": [
+          {
+            "sourceCupId": "RED",
+            "destinationCupId": "BLUE",
+            "eventStartMs": 85000,
+            "eventEndMs": 87000,
+            "evidenceTimestampsMs": [
+              86000
+            ],
+            "observationStatus": "observed",
+            "needsHumanVerification": true
+          }
+        ],
+        "latencyMs": null,
+        "raw": {
+          "schemaVersion": "three-cup-gemini-observation/v0.1",
+          "sessionId": "synthetic-session",
+          "videoId": "synthetic-video",
+          "events": [
+            {
+              "sourceCupId": "RED",
+              "destinationCupId": "BLUE",
+              "eventStartMs": 85000,
+              "eventEndMs": 87000,
+              "evidenceTimestampsMs": [
+                86000
+              ],
+              "observationStatus": "observed",
+              "needsHumanVerification": true
+            }
+          ],
+          "appearances": [],
+          "observationStatus": "observed",
+          "needsHumanVerification": true,
+          "modelId": "synthetic-model",
+          "latencyMs": null,
+          "error": null,
+          "warnings": [],
+          "videoDurationMs": 8000,
+          "samplingFps": 4,
+          "sourceOffsetMs": 84000,
+          "remoteCallMade": false
+        }
+      }
+    },
+    {
+      "name": "unknown_identity",
+      "expectedState": "uncertain",
+      "actualState": "uncertain",
+      "status": "passed",
+      "actual": {
+        "accepted": true,
+        "state": "uncertain",
+        "reason": "a cup is unknown or the model was unclear",
+        "events": [
+          {
+            "sourceCupId": "unknown",
+            "destinationCupId": "BLUE",
+            "eventStartMs": 85000,
+            "eventEndMs": 87000,
+            "evidenceTimestampsMs": [
+              86000
+            ],
+            "observationStatus": "unclear",
+            "needsHumanVerification": true
+          }
+        ],
+        "latencyMs": null,
+        "raw": {
+          "schemaVersion": "three-cup-gemini-observation/v0.1",
+          "sessionId": "synthetic-session",
+          "videoId": "synthetic-video",
+          "events": [
+            {
+              "sourceCupId": "unknown",
+              "destinationCupId": "BLUE",
+              "eventStartMs": 85000,
+              "eventEndMs": 87000,
+              "evidenceTimestampsMs": [
+                86000
+              ],
+              "observationStatus": "unclear",
+              "needsHumanVerification": true
+            }
+          ],
+          "appearances": [],
+          "observationStatus": "unclear",
+          "needsHumanVerification": true,
+          "modelId": "synthetic-model",
+          "latencyMs": null,
+          "error": null,
+          "warnings": [],
+          "videoDurationMs": 8000,
+          "samplingFps": 4,
+          "sourceOffsetMs": 84000,
+          "remoteCallMade": false
+        }
+      }
+    },
+    {
+      "name": "explicit_no_transfer",
+      "expectedState": "no-transfer",
+      "actualState": "no-transfer",
+      "status": "passed",
+      "actual": {
+        "accepted": true,
+        "state": "no-transfer",
+        "reason": "model reported no visible transfer",
+        "events": [],
+        "latencyMs": null,
+        "raw": {
+          "schemaVersion": "three-cup-gemini-observation/v0.1",
+          "sessionId": "synthetic-session",
+          "videoId": "synthetic-video",
+          "events": [],
+          "appearances": [],
+          "observationStatus": "no_transfer",
+          "needsHumanVerification": true,
+          "modelId": "synthetic-model",
+          "latencyMs": null,
+          "error": null,
+          "warnings": [],
+          "videoDurationMs": 8000,
+          "samplingFps": 4,
+          "sourceOffsetMs": 84000,
+          "remoteCallMade": false
+        }
+      }
+    },
+    {
+      "name": "unavailable",
+      "expectedState": "unavailable",
+      "actualState": "unavailable",
+      "status": "passed",
+      "actual": {
+        "accepted": false,
+        "state": "unavailable",
+        "reason": "remote_disabled",
+        "events": [],
+        "latencyMs": null,
+        "raw": {
+          "schemaVersion": "three-cup-gemini-observation/v0.1",
+          "sessionId": "synthetic-session",
+          "videoId": "synthetic-video",
+          "events": [],
+          "appearances": [],
+          "observationStatus": "unavailable",
+          "needsHumanVerification": true,
+          "modelId": "synthetic-model",
+          "latencyMs": null,
+          "error": {
+            "category": "remote_disabled",
+            "message": "Synthetic disabled service"
+          },
+          "warnings": [],
+          "videoDurationMs": 8000,
+          "samplingFps": 4,
+          "sourceOffsetMs": 84000,
+          "remoteCallMade": false
+        }
+      }
+    },
+    {
+      "name": "malformed_shape",
+      "expectedState": "rejected",
+      "actualState": "rejected",
+      "status": "passed",
+      "actual": {
+        "accepted": false,
+        "state": "rejected",
+        "reason": "malformed",
+        "events": [],
+        "latencyMs": null,
+        "raw": {
+          "schemaVersion": "wrong"
+        }
+      }
+    },
+    {
+      "name": "wrong_session",
+      "expectedState": "rejected",
+      "actualState": "rejected",
+      "status": "passed",
+      "actual": {
+        "accepted": false,
+        "state": "rejected",
+        "reason": "wrong-session",
+        "events": [],
+        "latencyMs": null,
+        "raw": {
+          "schemaVersion": "three-cup-gemini-observation/v0.1",
+          "sessionId": "old-session",
+          "videoId": "synthetic-video",
+          "events": [
+            {
+              "sourceCupId": "RED",
+              "destinationCupId": "BLUE",
+              "eventStartMs": 85000,
+              "eventEndMs": 87000,
+              "evidenceTimestampsMs": [
+                86000
+              ],
+              "observationStatus": "observed",
+              "needsHumanVerification": true
+            }
+          ],
+          "appearances": [],
+          "observationStatus": "observed",
+          "needsHumanVerification": true,
+          "modelId": "synthetic-model",
+          "latencyMs": null,
+          "error": null,
+          "warnings": [],
+          "videoDurationMs": 8000,
+          "samplingFps": 4,
+          "sourceOffsetMs": 84000,
+          "remoteCallMade": false
+        }
+      }
+    },
+    {
+      "name": "wrong_video",
+      "expectedState": "rejected",
+      "actualState": "rejected",
+      "status": "passed",
+      "actual": {
+        "accepted": false,
+        "state": "rejected",
+        "reason": "wrong-session",
+        "events": [],
+        "latencyMs": null,
+        "raw": {
+          "schemaVersion": "three-cup-gemini-observation/v0.1",
+          "sessionId": "synthetic-session",
+          "videoId": "wrong-video",
+          "events": [
+            {
+              "sourceCupId": "RED",
+              "destinationCupId": "BLUE",
+              "eventStartMs": 85000,
+              "eventEndMs": 87000,
+              "evidenceTimestampsMs": [
+                86000
+              ],
+              "observationStatus": "observed",
+              "needsHumanVerification": true
+            }
+          ],
+          "appearances": [],
+          "observationStatus": "observed",
+          "needsHumanVerification": true,
+          "modelId": "synthetic-model",
+          "latencyMs": null,
+          "error": null,
+          "warnings": [],
+          "videoDurationMs": 8000,
+          "samplingFps": 4,
+          "sourceOffsetMs": 84000,
+          "remoteCallMade": false
+        }
+      }
+    },
+    {
+      "name": "negative_event_time",
+      "expectedState": "rejected",
+      "actualState": "rejected",
+      "status": "passed",
+      "actual": {
+        "accepted": false,
+        "state": "rejected",
+        "reason": "negative-time",
+        "events": [],
+        "latencyMs": null,
+        "raw": {
+          "schemaVersion": "three-cup-gemini-observation/v0.1",
+          "sessionId": "synthetic-session",
+          "videoId": "synthetic-video",
+          "events": [
+            {
+              "sourceCupId": "RED",
+              "destinationCupId": "BLUE",
+              "eventStartMs": -1,
+              "eventEndMs": 87000,
+              "evidenceTimestampsMs": [
+                86000
+              ],
+              "observationStatus": "observed",
+              "needsHumanVerification": true
+            }
+          ],
+          "appearances": [],
+          "observationStatus": "observed",
+          "needsHumanVerification": true,
+          "modelId": "synthetic-model",
+          "latencyMs": null,
+          "error": null,
+          "warnings": [],
+          "videoDurationMs": 8000,
+          "samplingFps": 4,
+          "sourceOffsetMs": 84000,
+          "remoteCallMade": false
+        }
+      }
+    },
+    {
+      "name": "reversed_interval",
+      "expectedState": "rejected",
+      "actualState": "rejected",
+      "status": "passed",
+      "actual": {
+        "accepted": false,
+        "state": "rejected",
+        "reason": "reversed-interval",
+        "events": [],
+        "latencyMs": null,
+        "raw": {
+          "schemaVersion": "three-cup-gemini-observation/v0.1",
+          "sessionId": "synthetic-session",
+          "videoId": "synthetic-video",
+          "events": [
+            {
+              "sourceCupId": "RED",
+              "destinationCupId": "BLUE",
+              "eventStartMs": 85000,
+              "eventEndMs": 84001,
+              "evidenceTimestampsMs": [
+                86000
+              ],
+              "observationStatus": "observed",
+              "needsHumanVerification": true
+            }
+          ],
+          "appearances": [],
+          "observationStatus": "observed",
+          "needsHumanVerification": true,
+          "modelId": "synthetic-model",
+          "latencyMs": null,
+          "error": null,
+          "warnings": [],
+          "videoDurationMs": 8000,
+          "samplingFps": 4,
+          "sourceOffsetMs": 84000,
+          "remoteCallMade": false
+        }
+      }
+    },
+    {
+      "name": "zero_length_interval",
+      "expectedState": "rejected",
+      "actualState": "rejected",
+      "status": "passed",
+      "actual": {
+        "accepted": false,
+        "state": "rejected",
+        "reason": "zero-length",
+        "events": [],
+        "latencyMs": null,
+        "raw": {
+          "schemaVersion": "three-cup-gemini-observation/v0.1",
+          "sessionId": "synthetic-session",
+          "videoId": "synthetic-video",
+          "events": [
+            {
+              "sourceCupId": "RED",
+              "destinationCupId": "BLUE",
+              "eventStartMs": 85000,
+              "eventEndMs": 85000,
+              "evidenceTimestampsMs": [
+                86000
+              ],
+              "observationStatus": "observed",
+              "needsHumanVerification": true
+            }
+          ],
+          "appearances": [],
+          "observationStatus": "observed",
+          "needsHumanVerification": true,
+          "modelId": "synthetic-model",
+          "latencyMs": null,
+          "error": null,
+          "warnings": [],
+          "videoDurationMs": 8000,
+          "samplingFps": 4,
+          "sourceOffsetMs": 84000,
+          "remoteCallMade": false
+        }
+      }
+    },
+    {
+      "name": "evidence_outside_clip",
+      "expectedState": "rejected",
+      "actualState": "rejected",
+      "status": "passed",
+      "actual": {
+        "accepted": false,
+        "state": "rejected",
+        "reason": "outside-clip",
+        "events": [],
+        "latencyMs": null,
+        "raw": {
+          "schemaVersion": "three-cup-gemini-observation/v0.1",
+          "sessionId": "synthetic-session",
+          "videoId": "synthetic-video",
+          "events": [
+            {
+              "sourceCupId": "RED",
+              "destinationCupId": "BLUE",
+              "eventStartMs": 85000,
+              "eventEndMs": 87000,
+              "evidenceTimestampsMs": [
+                93000
+              ],
+              "observationStatus": "observed",
+              "needsHumanVerification": true
+            }
+          ],
+          "appearances": [],
+          "observationStatus": "observed",
+          "needsHumanVerification": true,
+          "modelId": "synthetic-model",
+          "latencyMs": null,
+          "error": null,
+          "warnings": [],
+          "videoDurationMs": 8000,
+          "samplingFps": 4,
+          "sourceOffsetMs": 84000,
+          "remoteCallMade": false
+        }
+      }
+    },
+    {
+      "name": "event_unclear_top_observed",
+      "expectedState": "uncertain",
+      "actualState": "uncertain",
+      "status": "passed",
+      "actual": {
+        "accepted": true,
+        "state": "uncertain",
+        "reason": "a cup is unknown or the model was unclear",
+        "events": [
+          {
+            "sourceCupId": "RED",
+            "destinationCupId": "BLUE",
+            "eventStartMs": 85000,
+            "eventEndMs": 87000,
+            "evidenceTimestampsMs": [
+              86000
+            ],
+            "observationStatus": "unclear",
+            "needsHumanVerification": true
+          }
+        ],
+        "latencyMs": null,
+        "raw": {
+          "schemaVersion": "three-cup-gemini-observation/v0.1",
+          "sessionId": "synthetic-session",
+          "videoId": "synthetic-video",
+          "events": [
+            {
+              "sourceCupId": "RED",
+              "destinationCupId": "BLUE",
+              "eventStartMs": 85000,
+              "eventEndMs": 87000,
+              "evidenceTimestampsMs": [
+                86000
+              ],
+              "observationStatus": "unclear",
+              "needsHumanVerification": true
+            }
+          ],
+          "appearances": [],
+          "observationStatus": "observed",
+          "needsHumanVerification": true,
+          "modelId": "synthetic-model",
+          "latencyMs": null,
+          "error": null,
+          "warnings": [],
+          "videoDurationMs": 8000,
+          "samplingFps": 4,
+          "sourceOffsetMs": 84000,
+          "remoteCallMade": false
+        }
+      }
+    },
+    {
+      "name": "same_source_destination",
+      "expectedState": "rejected",
+      "actualState": "rejected",
+      "status": "passed",
+      "actual": {
+        "accepted": false,
+        "state": "rejected",
+        "reason": "same-cups",
+        "events": [],
+        "latencyMs": null,
+        "raw": {
+          "schemaVersion": "three-cup-gemini-observation/v0.1",
+          "sessionId": "synthetic-session",
+          "videoId": "synthetic-video",
+          "events": [
+            {
+              "sourceCupId": "RED",
+              "destinationCupId": "RED",
+              "eventStartMs": 85000,
+              "eventEndMs": 87000,
+              "evidenceTimestampsMs": [
+                86000
+              ],
+              "observationStatus": "observed",
+              "needsHumanVerification": true
+            }
+          ],
+          "appearances": [],
+          "observationStatus": "observed",
+          "needsHumanVerification": true,
+          "modelId": "synthetic-model",
+          "latencyMs": null,
+          "error": null,
+          "warnings": [],
+          "videoDurationMs": 8000,
+          "samplingFps": 4,
+          "sourceOffsetMs": 84000,
+          "remoteCallMade": false
+        }
+      }
+    },
+    {
+      "name": "stale_same_session",
+      "status": "blocked",
+      "reason": "Request wrapper is absent from this parser contract"
+    },
+    {
+      "name": "empty_unclear",
+      "expectedState": "uncertain",
+      "actualState": "uncertain",
+      "status": "passed",
+      "actual": {
+        "accepted": true,
+        "state": "uncertain",
+        "reason": "empty events are not a no-pour result",
+        "events": [],
+        "latencyMs": null,
+        "raw": {
+          "schemaVersion": "three-cup-gemini-observation/v0.1",
+          "sessionId": "synthetic-session",
+          "videoId": "synthetic-video",
+          "events": [],
+          "appearances": [],
+          "observationStatus": "unclear",
+          "needsHumanVerification": true,
+          "modelId": "synthetic-model",
+          "latencyMs": null,
+          "error": null,
+          "warnings": [],
+          "videoDurationMs": 8000,
+          "samplingFps": 4,
+          "sourceOffsetMs": 84000,
+          "remoteCallMade": false
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,98 @@
+{
+  "synthetic": true,
+  "fixtureCursorCommit": "65f78a42b379fd2c4163bbfbc96a0754c035d64b",
+  "adapterCommit": "a34c5a6b9dc29c5bdf9f8f382c48755c98c3d1c6",
+  "probe": "Codex probe_integration.mjs loads only the parser and reports the stale case as blocked. This wrapper run rejects that same-session old request.",
+  "results": [
+    {
+      "name": "valid_hypothesis_nonzero_offset",
+      "layer": "parser",
+      "status": "passed",
+      "actualState": "hypothesis"
+    },
+    {
+      "name": "unknown_identity",
+      "layer": "parser",
+      "status": "passed",
+      "actualState": "uncertain"
+    },
+    {
+      "name": "explicit_no_transfer",
+      "layer": "parser",
+      "status": "passed",
+      "actualState": "no-transfer"
+    },
+    {
+      "name": "unavailable",
+      "layer": "parser",
+      "status": "passed",
+      "actualState": "unavailable"
+    },
+    {
+      "name": "malformed_shape",
+      "layer": "parser",
+      "status": "passed",
+      "actualState": "rejected"
+    },
+    {
+      "name": "wrong_session",
+      "layer": "parser",
+      "status": "passed",
+      "actualState": "rejected"
+    },
+    {
+      "name": "wrong_video",
+      "layer": "parser",
+      "status": "passed",
+      "actualState": "rejected"
+    },
+    {
+      "name": "negative_event_time",
+      "layer": "parser",
+      "status": "passed",
+      "actualState": "rejected"
+    },
+    {
+      "name": "reversed_interval",
+      "layer": "parser",
+      "status": "passed",
+      "actualState": "rejected"
+    },
+    {
+      "name": "zero_length_interval",
+      "layer": "parser",
+      "status": "passed",
+      "actualState": "rejected"
+    },
+    {
+      "name": "evidence_outside_clip",
+      "layer": "parser",
+      "status": "passed",
+      "actualState": "rejected"
+    },
+    {
+      "name": "event_unclear_top_observed",
+      "layer": "parser",
+      "status": "passed",
+      "actualState": "uncertain"
+    },
+    {
+      "name": "same_source_destination",
+      "layer": "parser",
+      "status": "passed",
+      "actualState": "rejected"
+    },
+    {
+      "name": "stale_same_session",
+      "layer": "request_wrapper",
+      "status": "passed",
+      "actualState": "rejected"
+    },
+    {
+      "name": "empty_unclear",
+      "layer": "parser",
+      "status": "passed",
+      "actualState": "uncertain"
+    }
+  ]
+}
