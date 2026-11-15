@@ -47,7 +47,7 @@ export function shouldAnalyze(active:boolean,enabled:boolean,automatic:boolean,b
 
 export interface HandlingEvent {
  id:string; category:string; summary:string; startMs:number|null; endMs:number|null; evidence:number[];
- cups:string[]; source?:string; destination?:string; utensil:string; status:string; visibility:string; windows:string[]
+ liquidColor?:string; cups:string[]; source?:string; destination?:string; utensil:string; status:string; visibility:string; windows:string[]
 }
 export function mergeHandling(previous:HandlingEvent[],result:WindowResult):HandlingEvent[] {
  const expanded=(result.observation as {expanded?:{schemaVersion:string;sessionId:string;videoId:string;observations:unknown[]}}).expanded
@@ -63,7 +63,7 @@ export function mergeHandling(previous:HandlingEvent[],result:WindowResult):Hand
   const end=typeof e.eventEndMs==='number'&&Number.isInteger(e.eventEndMs)?e.eventEndMs:null
   const valid=start!==null&&end!==null&&start>=result.sourceOffsetMs&&end>start&&end<=result.sourceOffsetMs+result.durationMs
   const evidence=Array.isArray(e.evidenceTimestampsMs)?e.evidenceTimestampsMs.filter((v):v is number=>typeof v==='number'&&Number.isInteger(v)&&valid&&v>=start!&&v<=end!):[]
-  const item:HandlingEvent={source:typeof e.sourceCupId==='string'?e.sourceCupId:'unknown',destination:typeof e.destinationCupId==='string'?e.destinationCupId:'unknown',id:`${result.windowId}:${String(e.eventId)}`,category:String(e.category),summary:e.summary.slice(0,1000),startMs:valid?start:null,endMs:valid?end:null,evidence,cups:Array.isArray(e.cupIds)?e.cupIds.filter((c):c is string=>['RED','GREEN','BLUE','unknown'].includes(String(c))):[],utensil:String(e.utensil),status:valid&&evidence.length?String(e.observationStatus):'unclear',visibility:typeof e.visibilityNote==='string'?e.visibilityNote:'',windows:[result.windowId]}
+  const item:HandlingEvent={liquidColor:typeof e.liquidColor==='string'&&['red','green','blue','yellow','orange','purple','brown','clear','mixed','other'].includes(e.liquidColor)?e.liquidColor:'unknown',source:typeof e.sourceCupId==='string'?e.sourceCupId:'unknown',destination:typeof e.destinationCupId==='string'?e.destinationCupId:'unknown',id:`${result.windowId}:${String(e.eventId)}`,category:String(e.category),summary:e.summary.slice(0,1000),startMs:valid?start:null,endMs:valid?end:null,evidence,cups:Array.isArray(e.cupIds)?e.cupIds.filter((c):c is string=>['RED','GREEN','BLUE','unknown'].includes(String(c))):[],utensil:String(e.utensil),status:valid&&evidence.length?String(e.observationStatus):'unclear',visibility:typeof e.visibilityNote==='string'?e.visibilityNote:'',windows:[result.windowId]}
   // Conservative overlap only. Near-but-disjoint actions can be distinct repeats.
   const old=next.find(x=>x.category===item.category&&(item.category!=='liquid_transfer'||(item.source!=='unknown'&&item.destination!=='unknown'&&x.source===item.source&&x.destination===item.destination))&&x.utensil===item.utensil&&x.cups.join()===item.cups.join()&&!x.windows.includes(result.windowId)&&x.startMs!==null&&item.startMs!==null&&x.endMs!==null&&item.endMs!==null&&x.startMs<item.endMs&&item.startMs<x.endMs)
   if(old){old.windows.push(result.windowId);old.startMs=Math.min(old.startMs!,item.startMs!);old.endMs=Math.max(old.endMs!,item.endMs!);old.evidence=[...new Set([...old.evidence,...item.evidence])];if(item.status!=='observed')old.status=item.status}

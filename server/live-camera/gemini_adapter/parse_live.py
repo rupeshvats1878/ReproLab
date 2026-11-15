@@ -2,7 +2,7 @@
 
 import json
 
-from gemini_adapter.parse_observation import _cup_id, _exact_int, _strip_fence
+from gemini_adapter.parse_observation import _cup_id, _exact_int, _strip_fence, _liquid_color
 
 CATEGORIES = {
     "liquid_transfer",
@@ -114,6 +114,9 @@ def _observation(raw, index, duration_ms, warnings):
         "cupIds": cups,
         "sourceCupId": source,
         "destinationCupId": destination,
+        "sourceLiquidColor": _liquid_color(raw.get("sourceLiquidColor")),
+        "destinationLiquidColor": _liquid_color(raw.get("destinationLiquidColor")),
+        "liquidColor": _liquid_color(raw.get("liquidColor")),
         "utensil": utensil,
         "visibilityNote": note.strip(),
         "observationStatus": status,

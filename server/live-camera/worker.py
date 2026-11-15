@@ -33,7 +33,7 @@ def compatible(result):
         if source == destination and source != 'unknown': continue
         if not isinstance(start,int) or not isinstance(end,int) or end <= start: continue
         if start < result['window']['sourceOffsetMs'] or end > result['window']['sourceOffsetMs']+result['window']['durationMs']: continue
-        events.append(dict(sourceCupId=source,destinationCupId=destination,eventStartMs=start,eventEndMs=end,
+        events.append(dict(sourceLiquidColor=item.get("sourceLiquidColor","unknown"),destinationLiquidColor=item.get("destinationLiquidColor","unknown"),sourceCupId=source,destinationCupId=destination,eventStartMs=start,eventEndMs=end,
             evidenceTimestampsMs=item['evidenceTimestampsMs'],observationStatus='observed' if item['observationStatus']=='observed' else 'unclear',needsHumanVerification=True))
     return dict(schemaVersion='three-cup-gemini-observation/v0.1',sessionId=result['sessionId'],videoId=result['videoId'],
         modelId=result['modelId'],sourceOffsetMs=result['window']['sourceOffsetMs'],videoDurationMs=result['window']['durationMs'],

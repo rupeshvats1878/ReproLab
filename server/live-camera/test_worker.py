@@ -45,3 +45,14 @@ class ExpandedCompatibilityTest(unittest.TestCase):
         from gemini_adapter.budget import BudgetError
         with patch.dict('os.environ',{},clear=True):
             with self.assertRaises(BudgetError): BridgeReservation().reserve(.1,label='mock')
+
+class ExpandedColorTest(unittest.TestCase):
+    def test_visible_colors_are_preserved_without_promoting_identity(self):
+        from gemini_adapter.parse_live import normalize_live_observation
+        item={'category':'liquid_transfer','summary':'Mock pour','eventStartMs':100,'eventEndMs':900,'evidenceTimestampsMs':[500],'cupIds':[],'sourceCupId':'unknown','destinationCupId':'unknown','sourceLiquidColor':'RED','destinationLiquidColor':'blue','liquidColor':'imaginary','utensil':'none','observationStatus':'observed'}
+        event=normalize_live_observation({'observations':[item]},1000)['observations'][0]
+        self.assertEqual(event['sourceLiquidColor'],'red')
+        self.assertEqual(event['destinationLiquidColor'],'blue')
+        self.assertEqual(event['liquidColor'],'unknown')
+        self.assertEqual(event['sourceCupId'],'unknown')
+        self.assertEqual(event['observationStatus'],'unclear')
